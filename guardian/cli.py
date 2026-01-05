@@ -1,0 +1,691 @@
+"""CLI interface for Guardian."""
+
+import asyncio
+import json
+import logging
+import os
+from pathlib import Path
+
+import typer
+from rich.console import Console
+from rich.prompt import Prompt
+
+from guardian.config import get_settings
+from guardian.core import Guardian
+from guardian.dashboard import run_dashboard
+from guardian.reporting import Reporter
+
+app = typer.Typer(
+    help="Guardian - Unified monitoring for npm packages, GitHub repos, and deployments"
+)
+console = Console()
+
+
+def _configure_logging(json_output: bool = False) -> None:
+    """Configure logging based on output mode.
+
+    In JSON mode, suppress INFO logs from httpx/httpcore to keep output clean.
+    """
+    if json_output:
+        # Suppress verbose HTTP logs in JSON mode
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
+        logging.getLogger("guardian").setLevel(logging.WARNING)
+
+
+@app.command()
+def check(
+    json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
+    watch: bool = typer.Option(False, "--watch", "-w", help="Watch mode (continuous checks)"),
+    interval: int = typer.Option(
+        None, "--interval", "-i", help="Interval in seconds for watch mode"
+    ),
+    skip_validation: bool = typer.Option(
+        False, "--skip-validation", help="Skip configuration validation"
+    ),
+) -> None:
+    """Run monitoring checks."""
+    _configure_logging(json_output)
+    settings = get_settings()
+    guardian = Guardian(settings)
+    reporter = Reporter(settings)
+
+    # Validate configuration
+    if not skip_validation:
+        warnings = guardian.validate_configuration()
+        if warnings:
+            console.print("[bold yellow]Configuration Warnings:[/bold yellow]")
+            for warning in warnings:
+                console.print(f"  ⚠ {warning}")
+            console.print()
+
+    async def run_check():
+        report = await guardian.run_checks()
+
+        if json_output:
+            report_dict = reporter._report_to_dict(report)
+            console.print(json.dumps(report_dict, indent=2))
+        else:
+            await reporter.report(report)
+
+    if watch:
+        # Don't run watch mode if no checkers configured
+        if not skip_validation and not guardian.checkers:
+            console.print(
+                "[bold red]Error: No checkers configured. Cannot run in watch mode.[/bold red]"
+            )
+            console.print("Configure at least one checker or use --skip-validation to proceed.")
+            raise typer.Exit(code=1)
+
+        interval_seconds = interval or settings.check_interval_seconds
+        console.print(f"[bold]Watching with interval: {interval_seconds}s[/bold]\n")
+
+        async def watch_loop():
+            while True:
+                await run_check()
+                await asyncio.sleep(interval_seconds)
+
+        asyncio.run(watch_loop())
+    else:
+        asyncio.run(run_check())
+
+
+@app.command()
+def config() -> None:
+    """Show current configuration."""
+    settings = get_settings()
+
+    console.print("[bold blue]Guardian Configuration[/bold blue]\n")
+
+    console.print(f"GitHub: {'✓' if settings.github_token else '✗'}")
+    if settings.github_org:
+        console.print(f"  Organization: {settings.github_org}")
+    if settings.github_repos_to_monitor:
+        console.print(f"  Repos: {', '.join(settings.github_repos_to_monitor)}")
+
+    console.print(f"\nVercel: {'✓' if settings.vercel_token else '✗'}")
+    if settings.vercel_team_id:
+        console.print(f"  Team ID: {settings.vercel_team_id}")
+    if settings.vercel_projects_to_monitor:
+        console.print(f"  Projects: {', '.join(settings.vercel_projects_to_monitor)}")
+
+    console.print(f"\nFly.io: {'✓' if settings.fly_api_token else '✗'}")
+    if settings.fly_apps_to_monitor:
+        console.print(f"  Apps: {', '.join(settings.fly_apps_to_monitor)}")
+
+    console.print(f"\nnpm: {'✓' if settings.npm_packages_to_monitor else '✗'}")
+    if settings.npm_packages_to_monitor:
+        console.print(f"  Packages: {', '.join(settings.npm_packages_to_monitor)}")
+    if settings.snyk_token:
+        console.print("  Snyk: ✓")
+    if settings.npm_security_enabled:
+        console.print("  Deep Security Analysis: ✓")
+
+
+@app.command()
+def auth(
+    service: str = typer.Argument(..., help="Service to authenticate (gh, vercel, fly, snyk)"),
+    token: str = typer.Option(
+        None, "--token", "-t", help="Token value (if not provided, will prompt)"
+    ),
+    test: bool = typer.Option(False, "--test", help="Test the token after setting it"),
+) -> None:
+    """Authenticate with a service by setting API token."""
+    service = service.lower()
+    valid_services = ["gh", "github", "vercel", "fly", "snyk"]
+
+    if service not in valid_services:
+        console.print(f"[bold red]Error: Invalid service '{service}'[/bold red]")
+        console.print(f"Valid services: {', '.join(valid_services)}")
+        raise typer.Exit(code=1)
+
+    # Get token
+    if not token:
+        console.print(f"[bold]Setting up {service.upper()} authentication[/bold]")
+        token = Prompt.ask(f"Enter your {service.upper()} token", password=True)
+        if not token:
+            console.print("[bold red]Error: Token cannot be empty[/bold red]")
+            raise typer.Exit(code=1)
+
+    # Determine env var name
+    env_var_map = {
+        "gh": "GITHUB_TOKEN",
+        "github": "GITHUB_TOKEN",  # Alias for backwards compatibility
+        "vercel": "VERCEL_TOKEN",
+        "fly": "FLY_API_TOKEN",
+        "snyk": "SNYK_TOKEN",
+    }
+    env_var = env_var_map[service]
+
+    # Write to .env file
+    env_file = Path(".env")
+    env_content = ""
+
+    # Read existing .env if it exists
+    if env_file.exists():
+        env_content = env_file.read_text()
+
+    # Update or add the token
+    lines = env_content.split("\n") if env_content else []
+    updated = False
+    new_lines = []
+
+    for line in lines:
+        if line.startswith(f"{env_var}="):
+            new_lines.append(f"{env_var}={token}")
+            updated = True
+        else:
+            new_lines.append(line)
+
+    if not updated:
+        new_lines.append(f"{env_var}={token}")
+
+    # Write back to .env
+    env_file.write_text("\n".join(new_lines) + "\n")
+
+    console.print(f"[bold green]✓[/bold green] {service.upper()} token saved to .env file")
+
+    # Test the token if requested
+    if test:
+        console.print(f"\n[bold]Testing {service.upper()} token...[/bold]")
+        from guardian.cli_helpers import test_service_token
+
+        success, message = asyncio.run(test_service_token(service, token))
+        if success:
+            console.print(f"[bold green]✓[/bold green] {message}")
+        else:
+            console.print(f"[bold red]✗[/bold red] {message}")
+            console.print("[yellow]Token saved but test failed. Please verify manually.[/yellow]")
+
+    console.print(
+        "\n[bold]Note:[/bold] Restart Guardian or reload environment to use the new token."
+    )
+
+
+@app.command()
+def mcp() -> None:
+    """Start the Guardian MCP server."""
+    from guardian.mcp_server import run_mcp_server
+
+    console.print("[bold green]Starting Guardian MCP Server...[/bold green]")
+    run_mcp_server()
+
+
+@app.command()
+def auth_status() -> None:
+    """Show authentication status for all services."""
+    from guardian.cli_helpers import show_auth_status
+
+    settings = get_settings()
+    show_auth_status(settings)
+
+
+@app.command()
+def dashboard(
+    host: str = typer.Option(None, "--host", help="Host to bind to"),
+    port: int = typer.Option(None, "--port", help="Port to bind to"),
+) -> None:
+    """Start the web dashboard server."""
+    settings = get_settings()
+
+    if not settings.dashboard_enabled and not host:
+        console.print("[bold yellow]Warning:[/bold yellow] Dashboard is not enabled in config.")
+        console.print("Set DASHBOARD_ENABLED=true or use --host/--port to override.")
+        console.print()
+
+    if settings.dashboard_api_key:
+        console.print("[bold green]✓[/bold green] Dashboard API key configured")
+    else:
+        console.print(
+            "[bold yellow]⚠[/bold yellow] DASHBOARD_API_KEY not set - "
+            "dashboard will be accessible without authentication (development mode)"
+        )
+        console.print("Generate a key with: [dim]openssl rand -hex 32[/dim]")
+        console.print()
+
+    console.print("[bold]Starting Guardian dashboard...[/bold]")
+    dashboard_url = f"http://{host or settings.dashboard_host}:{port or settings.dashboard_port}"
+    console.print(f"Access at: {dashboard_url}")
+    console.print()
+
+    try:
+        run_dashboard(host=host, port=port)
+    except KeyboardInterrupt:
+        console.print("\n[bold]Dashboard stopped[/bold]")
+        raise typer.Exit(0)
+
+    console.print()
+
+
+@app.command()
+def spec(
+    init: bool = typer.Option(False, "--init", help="Create a new spec file interactively"),
+    from_env: bool = typer.Option(False, "--from-env", help="Generate spec from current .env"),
+    edit: bool = typer.Option(False, "--edit", help="Open spec file in editor"),
+) -> None:
+    """Manage monitoring specifications."""
+    from pathlib import Path
+
+    from guardian.spec import MonitorSpec, get_default_spec, load_spec
+
+    spec_file = Path("guardian.spec.yaml")
+
+    if init:
+        if spec_file.exists():
+            if not typer.confirm(f"{spec_file} already exists. Overwrite?", default=False):
+                console.print("[yellow]Cancelled[/yellow]")
+                return
+
+        console.print("[bold]Creating new monitoring spec...[/bold]")
+        console.print()
+
+        # Ask basic questions
+        name = Prompt.ask("Spec name", default="default")
+        description = Prompt.ask("Description (optional)", default="")
+
+        # Ask what to discover
+        console.print("\n[bold]What should Guardian discover?[/bold]")
+        discover_npm = typer.confirm("  Discover npm packages?", default=True)
+        discover_github = typer.confirm("  Discover GitHub repos?", default=True)
+        discover_vercel = typer.confirm("  Discover Vercel projects?", default=True)
+        discover_fly = typer.confirm("  Discover Fly.io apps?", default=True)
+        discover_domains = typer.confirm("  Discover domains from configs?", default=False)
+        discover_commits = typer.confirm("  Track GitHub commits?", default=False)
+        discover_mentions = typer.confirm("  Track GitHub mentions?", default=False)
+
+        # Build spec
+        spec = MonitorSpec(name=name, description=description or None)
+        default_spec = get_default_spec()
+
+        # Copy relevant rules
+        rule_map = {
+            "npm": ["npm_list", "npm_package_json"],
+            "github": ["github_repos"],
+            "vercel": ["vercel_projects"],
+            "fly": ["fly_apps"],
+            "domains": ["domains"],
+            "commits": ["github_commits"],
+            "mentions": ["github_mentions"],
+        }
+
+        for key, rule_names in rule_map.items():
+            enabled = locals().get(f"discover_{key}", False)
+            if enabled:
+                for rule_name in rule_names:
+                    rule = next(
+                        (r for r in default_spec.discovery_rules if r.name == rule_name), None
+                    )
+                    if rule:
+                        spec.discovery_rules.append(rule)
+
+        # Always include username discovery (needed for mentions/commits)
+        username_rule = next(
+            (r for r in default_spec.discovery_rules if r.name == "github_username"), None
+        )
+        if username_rule:
+            spec.discovery_rules.append(username_rule)
+
+        # Save spec
+        import yaml
+
+        spec_dict = spec.model_dump(exclude_none=True)
+        with open(spec_file, "w") as f:
+            yaml.dump(spec_dict, f, default_flow_style=False, sort_keys=False)
+
+        console.print(f"\n[bold green]✓[/bold green] Created {spec_file}")
+        console.print(f"[dim]Edit it to customize discovery rules[/dim]")
+
+    elif from_env:
+        # Generate spec from current .env
+        from guardian.config import get_settings
+
+        settings = get_settings()
+        spec = MonitorSpec(name="from_env", description="Generated from current .env")
+
+        # Add rules based on what's configured
+        default_spec = get_default_spec()
+
+        if settings.npm_packages_to_monitor:
+            spec.manual_resources["npm"] = settings.npm_packages_to_monitor
+            # Also enable discovery
+            spec.discovery_rules.extend(
+                [r for r in default_spec.discovery_rules if "npm" in r.name]
+            )
+
+        if settings.github_token:
+            if settings.github_repos_to_monitor:
+                spec.manual_resources["github"] = settings.github_repos_to_monitor
+            spec.discovery_rules.extend(
+                [r for r in default_spec.discovery_rules if "github" in r.name]
+            )
+
+        if settings.vercel_token:
+            if settings.vercel_projects_to_monitor:
+                spec.manual_resources["vercel"] = settings.vercel_projects_to_monitor
+            spec.discovery_rules.extend(
+                [r for r in default_spec.discovery_rules if "vercel" in r.name]
+            )
+
+        if settings.fly_api_token:
+            if settings.fly_apps_to_monitor:
+                spec.manual_resources["fly"] = settings.fly_apps_to_monitor
+            spec.discovery_rules.extend(
+                [r for r in default_spec.discovery_rules if "fly" in r.name]
+            )
+
+        # Save
+        import yaml
+
+        spec_dict = spec.model_dump(exclude_none=True)
+        with open(spec_file, "w") as f:
+            yaml.dump(spec_dict, f, default_flow_style=False, sort_keys=False)
+
+        console.print(f"[bold green]✓[/bold green] Generated {spec_file} from current .env")
+
+    elif edit:
+        import subprocess
+        import os
+
+        editor = os.environ.get("EDITOR", "nano")
+        try:
+            subprocess.run([editor, str(spec_file)])
+        except Exception as e:
+            console.print(f"[bold red]Error opening editor: {e}[/bold red]")
+            console.print(f"Edit {spec_file} manually")
+
+    else:
+        # Show current spec
+        if spec_file.exists():
+            try:
+                spec = load_spec(spec_file)
+                console.print(f"[bold blue]Current Spec: {spec.name}[/bold blue]")
+                if spec.description:
+                    console.print(f"[dim]{spec.description}[/dim]")
+                console.print(f"\nDiscovery Rules: {len(spec.discovery_rules)}")
+                for rule in spec.discovery_rules:
+                    status = "✓" if rule.enabled else "○"
+                    console.print(f"  {status} {rule.name} ({rule.type})")
+                if spec.manual_resources:
+                    console.print(f"\nManual Resources:")
+                    for rtype, resources in spec.manual_resources.items():
+                        console.print(f"  {rtype}: {len(resources)} items")
+            except Exception as e:
+                console.print(f"[bold red]Error loading spec: {e}[/bold red]")
+        else:
+            console.print(f"[yellow]No spec file found: {spec_file}[/yellow]")
+            console.print("Run [bold]guardian spec --init[/bold] to create one")
+
+
+@app.command()
+def discover(
+    spec_file: str = typer.Option(
+        "guardian.spec.yaml", "--spec", "-s", help="Path to monitoring spec file"
+    ),
+    base_path: str = typer.Option(
+        None, "--base-path", "-b", help="Base path for file scanning (default: ~/Documents/dev)"
+    ),
+    json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
+    update_env: bool = typer.Option(
+        False, "--update-env", help="Update .env file with discovered resources"
+    ),
+) -> None:
+    """Auto-discover resources to monitor based on spec."""
+    from pathlib import Path
+
+    from guardian.discovery import discover_all
+    from guardian.spec import MonitorSpec, load_spec
+
+    # Load spec
+    spec_path = Path(spec_file)
+    if spec_path.exists():
+        try:
+            spec = load_spec(spec_path)
+        except Exception as e:
+            console.print(f"[bold red]Error loading spec: {e}[/bold red]")
+            raise typer.Exit(1)
+    else:
+        console.print(f"[bold yellow]Spec file not found: {spec_path}[/bold yellow]")
+        console.print("Using default spec...")
+        from guardian.spec import get_default_spec
+
+        spec = get_default_spec()
+
+    # Determine base path
+    if base_path:
+        base = Path(base_path)
+    else:
+        base = Path.home() / "Documents" / "dev"
+
+    console.print(f"[bold]Discovering resources from: {base}[/bold]")
+    console.print(f"[dim]Using spec: {spec.name}[/dim]\n")
+
+    async def run_discovery():
+        result = await discover_all(spec, base)
+        return result
+
+    result = asyncio.run(run_discovery())
+
+    if json_output:
+        console.print(json.dumps(result.to_dict(), indent=2))
+    else:
+        # Display results
+        from rich.table import Table
+
+        console.print("[bold blue]Discovery Results[/bold blue]\n")
+
+        if result.resources:
+            table = Table(title="Discovered Resources")
+            table.add_column("Type", style="cyan")
+            table.add_column("Count", style="magenta")
+            table.add_column("Examples", style="green")
+
+            for resource_type, resources in result.resources.items():
+                count = len(resources)
+                examples = ", ".join(str(r)[:50] for r in resources[:3])
+                if count > 3:
+                    examples += f" ... (+{count - 3} more)"
+                table.add_row(resource_type, str(count), examples)
+
+            console.print(table)
+            console.print()
+
+        if result.errors:
+            console.print("[bold red]Errors:[/bold red]")
+            for error in result.errors:
+                console.print(f"  • {error}")
+            console.print()
+
+        # Update .env if requested
+        if update_env:
+            env_file = Path(".env")
+            env_content = env_file.read_text() if env_file.exists() else ""
+
+            # Update npm packages
+            if "npm" in result.resources:
+                npm_packages = result.resources["npm"]
+                env_content = _update_env_var(
+                    env_content, "NPM_PACKAGES_TO_MONITOR", ",".join(npm_packages[:20])
+                )
+
+            # Update GitHub repos
+            if "github" in result.resources:
+                github_repos = result.resources["github"]
+                env_content = _update_env_var(
+                    env_content, "GITHUB_REPOS_TO_MONITOR", ",".join(github_repos[:20])
+                )
+
+            # Update Vercel projects
+            if "vercel" in result.resources:
+                vercel_projects = result.resources["vercel"]
+                env_content = _update_env_var(
+                    env_content, "VERCEL_PROJECTS_TO_MONITOR", ",".join(vercel_projects[:20])
+                )
+
+            # Update Fly apps
+            if "fly" in result.resources:
+                fly_apps = result.resources["fly"]
+                env_content = _update_env_var(
+                    env_content, "FLY_APPS_TO_MONITOR", ",".join(fly_apps[:20])
+                )
+
+            env_file.write_text(env_content)
+            console.print("[bold green]✓[/bold green] Updated .env file with discovered resources")
+
+
+@app.command()
+def stats(
+    live: bool = typer.Option(False, "--live", "-l", help="Live updating stats (refresh every 5s)"),
+) -> None:
+    """Show current monitoring statistics in a TUI."""
+    from rich.console import Console
+    from rich.layout import Layout
+    from rich.live import Live
+    from rich.panel import Panel
+    from rich.table import Table
+
+    console = Console()
+
+    def generate_stats() -> Layout:
+        """Generate the stats layout."""
+        settings = get_settings()
+        guardian = Guardian(settings)
+
+        # Run checks to get current stats
+        import asyncio
+
+        report = asyncio.run(guardian.run_checks())
+
+        # Create layout
+        layout = Layout()
+
+        # Header
+        header = Panel.fit(
+            "[bold blue]🛡️ Guardian Monitoring Stats[/bold blue]",
+            border_style="blue",
+        )
+
+        # Summary table
+        summary_table = Table(show_header=False, box=None, padding=(0, 2))
+        summary_table.add_column("Metric", style="cyan", width=25)
+        summary_table.add_column("Value", style="magenta")
+
+        summary = report.summary
+        summary_table.add_row("Total Checks", str(summary.get("total_checks", 0)))
+        summary_table.add_row("Successful", f"[green]{summary.get('successful_checks', 0)}[/green]")
+        summary_table.add_row("Failed", f"[red]{summary.get('failed_checks', 0)}[/red]")
+        summary_table.add_row("", "")
+        summary_table.add_row("Vulnerabilities", str(summary.get("total_vulnerabilities", 0)))
+        summary_table.add_row(
+            "Critical", f"[red]{summary.get('critical_vulnerabilities', 0)}[/red]"
+        )
+        summary_table.add_row(
+            "Unhealthy Deployments", f"[yellow]{summary.get('unhealthy_deployments', 0)}[/yellow]"
+        )
+        summary_table.add_row("Repository Alerts", str(summary.get("open_repository_alerts", 0)))
+        summary_table.add_row("", "")
+        summary_table.add_row(
+            "Total Cost (USD)",
+            f"[bold yellow]${summary.get('total_cost_usd', 0):.2f}[/bold yellow]",
+        )
+
+        summary_panel = Panel(summary_table, title="Summary", border_style="blue")
+
+        # Checks table
+        checks_table = Table(title="Check Results")
+        checks_table.add_column("Service", style="cyan")
+        checks_table.add_column("Status", style="magenta")
+        checks_table.add_column("Vulns", justify="right")
+        checks_table.add_column("Deployments", justify="right")
+        checks_table.add_column("Cost", justify="right", style="yellow")
+
+        for check in report.checks:
+            status_icon = "[green]✓[/green]" if check.success else "[red]✗[/red]"
+            vuln_count = len(check.vulnerabilities)
+            deploy_count = len(check.deployments)
+            cost = sum(cm.amount or 0 for cm in check.cost_metrics)
+            cost_str = f"${cost:.2f}" if cost > 0 else "-"
+
+            checks_table.add_row(
+                check.check_type.upper(),
+                status_icon,
+                str(vuln_count),
+                str(deploy_count),
+                cost_str,
+            )
+
+        checks_panel = Panel(checks_table, title="Service Checks", border_style="green")
+
+        # Cost breakdown
+        cost_table = Table(title="Cost Breakdown", show_header=False, box=None)
+        cost_table.add_column("Service", style="cyan")
+        cost_table.add_column("Amount", justify="right", style="yellow")
+        cost_table.add_column("Usage", style="green")
+
+        all_cost_metrics = report.get_cost_metrics()
+        if all_cost_metrics:
+            for cm in all_cost_metrics:
+                amount_str = f"${cm.amount:.2f}" if cm.amount else "$0.00"
+                usage_str = f"{cm.usage:.0f}/{cm.limit:.0f}" if cm.limit else f"{cm.usage:.0f}"
+                usage_pct = f"({cm.usage_percent:.1f}%)" if cm.usage_percent else ""
+                cost_table.add_row(cm.service, amount_str, f"{usage_str} {usage_pct}")
+        else:
+            cost_table.add_row("No cost data", "-", "-")
+
+        cost_panel = Panel(cost_table, title="Cost Metrics", border_style="yellow")
+
+        # Layout structure
+        layout.split_column(
+            Layout(header, size=3),
+            Layout(summary_panel, name="summary"),
+            Layout(checks_panel, name="checks"),
+            Layout(cost_panel, name="costs"),
+        )
+
+        layout["summary"].size = 12
+        layout["checks"].size = None
+        layout["costs"].size = None
+
+        return layout
+
+    if live:
+        # Live updating mode
+        with Live(generate_stats(), refresh_per_second=0.2, screen=True) as live:
+            import time
+
+            while True:
+                try:
+                    time.sleep(5)
+                    live.update(generate_stats())
+                except KeyboardInterrupt:
+                    break
+    else:
+        # Single snapshot
+        console.print(generate_stats())
+
+
+def _update_env_var(env_content: str, var_name: str, value: str) -> str:
+    """Update or add an environment variable in .env content."""
+    lines = env_content.split("\n")
+    updated = False
+    new_lines = []
+
+    for line in lines:
+        if line.startswith(f"{var_name}="):
+            new_lines.append(f"{var_name}={value}")
+            updated = True
+        else:
+            new_lines.append(line)
+
+    if not updated:
+        new_lines.append(f"{var_name}={value}")
+
+    return "\n".join(new_lines) + "\n"
+
+
+def main() -> None:
+    """Entry point for CLI."""
+    app()
+
+
+if __name__ == "__main__":
+    main()

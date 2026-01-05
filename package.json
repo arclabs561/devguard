@@ -1,0 +1,15 @@
+{
+  "name": "guardian",
+  "version": "0.1.0",
+  "description": "Unified monitoring for npm packages, GitHub repos, and Fly.io/Vercel deployments",
+  "type": "module",
+  "scripts": {
+    "test:visual": "playwright test tests/test_dashboard_visual.mjs",
+    "test:visual:ui": "playwright test tests/test_dashboard_visual.mjs --ui"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "ai-browser-test": "file:../ai-browser-test"
+  }
+}
+

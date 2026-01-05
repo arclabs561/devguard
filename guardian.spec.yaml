@@ -1,0 +1,102 @@
+name: default
+description: Default Guardian monitoring specification
+
+discovery_rules:
+  - name: npm_list
+    type: npm
+    method: cli
+    command: npm list --depth=0 --json
+    command_parser: json
+    extract_path: dependencies.keys()
+    timeout: 10
+    enabled: true
+
+  - name: npm_package_json
+    type: npm
+    method: file_scan
+    file_pattern: "**/package.json"
+    file_extractor: json_path
+    extract_path: name
+    timeout: 30
+    enabled: true
+
+  - name: github_repos
+    type: github
+    method: cli
+    command: gh repo list --json nameWithOwner --limit 100
+    command_parser: json
+    extract_path: "[].nameWithOwner"
+    timeout: 10
+    enabled: true
+
+  - name: fly_apps
+    type: fly
+    method: cli
+    command: flyctl apps list --json
+    command_parser: json
+    extract_path: "[].Name"
+    timeout: 10
+    enabled: true
+
+  - name: vercel_projects
+    type: vercel
+    method: file_scan
+    file_pattern: "**/vercel.json"
+    file_extractor: json_path
+    extract_path: name
+    timeout: 30
+    enabled: true
+
+  - name: domains
+    type: domain
+    method: file_scan
+    file_pattern: "**/*.{json,yaml,yml,toml,env}"
+    file_extractor: regex
+    extract_path: "https?://([a-zA-Z0-9.-]+\\.[a-zA-Z]{2,})"  # regex pattern
+    timeout: 30
+    enabled: true
+
+  - name: github_commits
+    type: github_commits
+    method: cli
+    command: gh api user/events --jq '[.[] | select(.type == "PushEvent") | {repo: .repo.name, message: .payload.commits[0].message, date: .created_at}]' --limit 20
+    command_parser: json
+    timeout: 10
+    enabled: true
+
+  - name: github_mentions
+    type: github_mentions
+    method: cli
+    command: gh api search/issues -f 'q=mentions:{username}' --jq '.items[] | {title: .title, url: .html_url, state: .state, created_at: .created_at}' --limit 20
+    command_parser: json_lines
+    timeout: 10
+    enabled: true
+
+  - name: ssh_keys
+    type: ssh_key
+    method: file_scan
+    file_pattern: "~/.ssh/*.pub"
+    file_extractor: raw
+    timeout: 5
+    enabled: true
+
+  - name: github_username
+    type: username
+    method: cli
+    command: gh api user --jq .login
+    command_parser: text
+    timeout: 5
+    enabled: true
+
+manual_resources:
+  # Add manually specified resources here
+  # npm: [package1, package2]
+  # github: [owner/repo1, owner/repo2]
+  # vercel: [project1, project2]
+  fly: [bop-wispy-voice-3017]
+
+filters:
+  # Filters to apply to discovered resources
+  # exclude_patterns: [".*test.*", ".*example.*"]
+  # include_patterns: []
+
