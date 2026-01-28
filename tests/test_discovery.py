@@ -1,6 +1,5 @@
 """Tests for discovery module."""
 
-import pytest
 
 from guardian.discovery import _parse_json_robustly
 

@@ -89,7 +89,7 @@ def main():
             if "note" in fix:
                 print(f"  Note: {fix['note']}")
             if fix.get("manual"):
-                print(f"  ⚠️  Manual review required")
+                print("  ⚠️  Manual review required")
             print()
 
     if medium_priority:
@@ -101,7 +101,7 @@ def main():
             if "command" in fix:
                 print(f"  Command: {fix['command']}")
             if fix.get("manual"):
-                print(f"  ⚠️  Manual review required")
+                print("  ⚠️  Manual review required")
             print()
 
     if low_priority:

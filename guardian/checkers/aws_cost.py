@@ -3,10 +3,7 @@
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
-
-import yaml
+from datetime import UTC, datetime, timedelta
 
 from guardian.checkers.base import BaseChecker
 from guardian.models import CheckResult, CostMetric, Finding, Severity
@@ -28,7 +25,7 @@ class AWSCostChecker(BaseChecker):
     DAILY_THRESHOLD = _budget_config.get("daily_warn", 5.0)  # Alert if daily spend exceeds this
 
     # Instance allowlist (from check-ec2-running-allowlist.sh)
-    ALLOWED_INSTANCES = ["gyarados", "alakazam"]
+    ALLOWED_INSTANCES = ["gyarados", "alakazam", "starmie"]
 
     async def check(self) -> CheckResult:
         """Check AWS costs and resource compliance."""
@@ -114,7 +111,7 @@ class AWSCostChecker(BaseChecker):
         else:
             s3_cost = s3_result.get("cost", 0.0)
             metadata["s3_cost"] = s3_cost
-            
+
             cost_metrics.append(
                 CostMetric(
                     service="s3",
@@ -122,7 +119,7 @@ class AWSCostChecker(BaseChecker):
                     amount=s3_cost,
                 )
             )
-            
+
             # Alert if S3 costs exceed $10/month (unusual for our usage)
             if s3_cost > 10.0:
                 findings.append(
@@ -167,7 +164,7 @@ class AWSCostChecker(BaseChecker):
     async def _get_mtd_cost(self) -> dict:
         """Get month-to-date AWS cost."""
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             start_date = now.replace(day=1).strftime("%Y-%m-%d")
             end_date = now.strftime("%Y-%m-%d")
 
@@ -198,7 +195,7 @@ class AWSCostChecker(BaseChecker):
                 return {"cost": float(amount)}
             return {"cost": 0.0}
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return {"error": "AWS CLI timeout"}
         except FileNotFoundError:
             return {"error": "aws CLI not found"}
@@ -208,7 +205,7 @@ class AWSCostChecker(BaseChecker):
     async def _get_yesterday_cost(self) -> dict:
         """Get yesterday's AWS cost."""
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             yesterday = now - timedelta(days=1)
             start_date = yesterday.strftime("%Y-%m-%d")
             end_date = now.strftime("%Y-%m-%d")
@@ -240,7 +237,7 @@ class AWSCostChecker(BaseChecker):
                 return {"cost": float(amount)}
             return {"cost": 0.0}
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return {"error": "AWS CLI timeout"}
         except FileNotFoundError:
             return {"error": "aws CLI not found"}
@@ -250,7 +247,7 @@ class AWSCostChecker(BaseChecker):
     async def _get_s3_costs(self) -> dict:
         """Get S3-specific costs for current month."""
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             start_date = now.replace(day=1).strftime("%Y-%m-%d")
             end_date = now.strftime("%Y-%m-%d")
 
@@ -265,9 +262,9 @@ class AWSCostChecker(BaseChecker):
                 "--metrics",
                 "UnblendedCost",
                 "--group-by",
-                "Type=SERVICE",
+                "Type=DIMENSION,Key=SERVICE",
                 "--filter",
-                '{"Dimensions":{"Service":["Amazon Simple Storage Service"]}}',
+                '{"Dimensions":{"Key":"SERVICE","Values":["Amazon Simple Storage Service"]}}',
                 "--output",
                 "json",
                 stdout=asyncio.subprocess.PIPE,
@@ -292,7 +289,7 @@ class AWSCostChecker(BaseChecker):
                 return {"cost": 0.0}
             return {"cost": 0.0}
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return {"error": "AWS CLI timeout"}
         except FileNotFoundError:
             return {"error": "aws CLI not found"}
@@ -324,7 +321,7 @@ class AWSCostChecker(BaseChecker):
             # AWS CLI returns a flat list of instance names
             return {"instances": instances if isinstance(instances, list) else []}
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return {"error": "AWS CLI timeout"}
         except FileNotFoundError:
             return {"error": "aws CLI not found"}

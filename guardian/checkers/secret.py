@@ -5,7 +5,6 @@ import json
 import logging
 import re
 import shutil
-from datetime import datetime
 from pathlib import Path
 
 from guardian.checkers.base import BaseChecker
@@ -140,7 +139,7 @@ class SecretChecker(BaseChecker):
                 stderr=asyncio.subprocess.PIPE,
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(f"Timeout scanning {repo_path}")
             if proc:
                 try:

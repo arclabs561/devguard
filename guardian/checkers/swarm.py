@@ -231,7 +231,7 @@ class SwarmChecker(BaseChecker):
 
             return json.loads(stdout.decode())
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return {"error": "docker info timed out"}
         except FileNotFoundError:
             return {"error": "docker CLI not found"}
@@ -264,7 +264,7 @@ class SwarmChecker(BaseChecker):
 
             return {"nodes": nodes}
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return {"error": "docker node ls timed out"}
         except Exception as e:
             return {"error": str(e)}
@@ -293,7 +293,7 @@ class SwarmChecker(BaseChecker):
 
             return {"services": services}
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return {"error": "docker service ls timed out"}
         except Exception as e:
             return {"error": str(e)}
@@ -380,7 +380,7 @@ class SwarmChecker(BaseChecker):
 
             return {"violations": violations}
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return {"violations": []}
         except Exception as e:
             logger.debug(f"Placement check failed for {service_name}: {e}")

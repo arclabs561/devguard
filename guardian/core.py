@@ -1,8 +1,8 @@
 """Core guardian orchestration."""
 
 import asyncio
-import httpx
 
+import httpx
 
 from guardian.checkers import (
     APIUsageChecker,
@@ -183,7 +183,7 @@ class Guardian:
                     success=False,
                     errors=[f"Network error: {str(e)}"],
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return CheckResult(
                     check_type=checker.check_type,
                     success=False,

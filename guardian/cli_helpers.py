@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+
 import httpx
 from rich.console import Console
 

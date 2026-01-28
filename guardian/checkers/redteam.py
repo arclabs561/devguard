@@ -6,8 +6,8 @@ from datetime import datetime
 import httpx
 
 from guardian.checkers.base import BaseChecker
-from guardian.http_client import create_client, retry_with_backoff
-from guardian.models import CheckResult, Vulnerability, Severity
+from guardian.http_client import create_client
+from guardian.models import CheckResult, Severity, Vulnerability
 
 logger = logging.getLogger(__name__)
 

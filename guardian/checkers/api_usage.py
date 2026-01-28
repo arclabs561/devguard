@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -44,7 +44,7 @@ class APIUsageChecker(BaseChecker):
     # Thresholds for warnings
     LOW_CREDITS_THRESHOLD_USD = 5.0
     LOW_CREDITS_PERCENT = 10  # Warn when <10% remaining
-    
+
     # Budget thresholds (daily/monthly)
     DAILY_BUDGET_OPENROUTER = 5.0  # USD per day
     MONTHLY_BUDGET_OPENROUTER = 50.0  # USD per month
@@ -151,7 +151,7 @@ class APIUsageChecker(BaseChecker):
                             remediation="Add credits at https://openrouter.ai/credits",
                         )
                     )
-                
+
                 # Check for high usage percentage (even if credits remain)
                 if usage.usage_percent > 90:
                     severity = Severity.CRITICAL if usage.usage_percent > 95 else Severity.HIGH
@@ -167,7 +167,7 @@ class APIUsageChecker(BaseChecker):
                             remediation="Review usage patterns and add credits if needed",
                         )
                     )
-                
+
                 # Budget alerts (based on recent usage patterns)
                 # Note: This requires tracking daily usage, which we'll get from shared tracker
                 # For now, we estimate based on total usage vs time
@@ -215,7 +215,7 @@ class APIUsageChecker(BaseChecker):
         try:
             async with httpx.AsyncClient() as client:
                 # Get this month's usage
-                today = datetime.now(timezone.utc)
+                today = datetime.now(UTC)
                 start_of_month = today.replace(day=1).strftime("%Y-%m-%d")
                 end_date = today.strftime("%Y-%m-%d")
 
@@ -325,7 +325,7 @@ class APIUsageChecker(BaseChecker):
 
         try:
             async with httpx.AsyncClient() as client:
-                today = datetime.now(timezone.utc)
+                today = datetime.now(UTC)
                 start_of_month = today.replace(day=1).strftime("%Y-%m-%d")
 
                 # Try the usage endpoint - OpenAI requires organization header for some endpoints

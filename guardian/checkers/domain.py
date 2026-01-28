@@ -2,9 +2,11 @@
 
 import asyncio
 import logging
-import ssl
 import socket
-from datetime import datetime, timezone
+import ssl
+from datetime import UTC, datetime
+
+import httpx
 
 from guardian.checkers.base import BaseChecker
 from guardian.models import CheckResult, CheckStatus, DeploymentStatus, Finding, Severity
@@ -128,7 +130,7 @@ class DomainChecker(BaseChecker):
                 )
             except httpx.RequestError as e:
                 errors.append(f"Network error checking {domain}: {e}")
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 errors.append(f"Timeout checking {domain}")
             except Exception as e:
                 errors.append(f"Unexpected error checking {domain}: {e}")
@@ -185,9 +187,9 @@ class DomainChecker(BaseChecker):
                     expiry_str = cert.get("notAfter", "")
                     # Format: 'Dec 25 23:59:59 2025 GMT'
                     expiry = datetime.strptime(expiry_str, "%b %d %H:%M:%S %Y %Z")
-                    expiry = expiry.replace(tzinfo=timezone.utc)
+                    expiry = expiry.replace(tzinfo=UTC)
 
-                    now = datetime.now(timezone.utc)
+                    now = datetime.now(UTC)
                     days_until_expiry = (expiry - now).days
 
                     # Get issuer
@@ -199,7 +201,7 @@ class DomainChecker(BaseChecker):
                         "days_until_expiry": days_until_expiry,
                         "issuer": issuer,
                     }
-        except socket.timeout:
+        except TimeoutError:
             return {
                 "error": f"Connection timeout to {domain}:443 - domain may be down or behind firewall"
             }

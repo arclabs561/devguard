@@ -4,7 +4,6 @@ import asyncio
 import json
 import logging
 import re
-import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -145,7 +144,7 @@ async def execute_cli_command(
         else:
             logger.warning(f"Unknown parser: {parser}")
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning(f"Command timed out: {command}")
     except Exception as e:
         logger.debug(f"Error executing command: {command}: {e}")

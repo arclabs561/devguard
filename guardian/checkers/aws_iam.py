@@ -8,9 +8,9 @@ from typing import Any
 
 import yaml
 
+from guardian.checkers.base import BaseChecker
 from guardian.config import Settings
 from guardian.models import CheckResult, Finding, Severity
-from guardian.checkers.base import BaseChecker
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ def load_iam_posture(path: Path | None = None) -> dict[str, Any]:
 
     if path.exists():
         try:
-            with open(config_path) as f:
+            with open(path) as f:
                 return yaml.safe_load(f)
         except Exception as e:
             logger.warning(f"Failed to load IAM posture config: {e}")
@@ -177,7 +177,7 @@ class AWSIAMChecker(BaseChecker):
 
                 metadata["nodes_checked"].append(node_info)
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 findings.append(
                     Finding(
                         severity=Severity.LOW,
@@ -233,7 +233,7 @@ class AWSIAMChecker(BaseChecker):
 
             return json.loads(stdout.decode().strip()), None
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             if proc:
                 try:
                     proc.kill()
@@ -291,7 +291,7 @@ class AWSIAMChecker(BaseChecker):
                 # For now, we record that check was attempted
                 metadata["ssm_checks"][node_name] = "initiated"
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 metadata["ssm_checks"][node_name] = "timeout"
             except Exception as e:
                 logger.debug(f"SSM check failed for {node_name}: {e}")

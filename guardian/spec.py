@@ -52,7 +52,7 @@ def load_spec(spec_path: Path) -> MonitorSpec:
     """Load a monitoring spec from a file."""
     import yaml
 
-    with open(spec_path, "r") as f:
+    with open(spec_path) as f:
         data = yaml.safe_load(f)
     return MonitorSpec(**data)
 

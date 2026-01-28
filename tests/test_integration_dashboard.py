@@ -1,6 +1,5 @@
 """Integration tests for dashboard functionality."""
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest

@@ -5,7 +5,6 @@ import json
 import logging
 import os
 import shutil
-from pathlib import Path
 
 from guardian.checkers.base import BaseChecker
 from guardian.models import CheckResult, Finding, Severity
@@ -36,13 +35,13 @@ class TailsnitchChecker(BaseChecker):
             else self._find_tailsnitch()
         )
         self.tailnet = settings.tailsnitch_tailnet
-        
+
         # Read auth from environment (pydantic-settings loads .env automatically)
         # Support both TSKEY and TS_API_KEY for compatibility
         self.tskey = os.getenv("TSKEY") or os.getenv("TS_API_KEY")
         self.ts_oauth_client_id = os.getenv("TS_OAUTH_CLIENT_ID")
         self.ts_oauth_client_secret = os.getenv("TS_OAUTH_CLIENT_SECRET")
-        
+
         logger.debug(
             "TailsnitchChecker initialized",
             extra={
@@ -116,7 +115,7 @@ class TailsnitchChecker(BaseChecker):
         try:
             # Build command
             cmd = [self.tailsnitch_path, "--json"]
-            
+
             # Add tailnet flag if specified
             if self.tailnet:
                 cmd.extend(["--tailnet", self.tailnet])
@@ -133,7 +132,7 @@ class TailsnitchChecker(BaseChecker):
             if self.ts_oauth_client_secret:
                 env["TS_OAUTH_CLIENT_SECRET"] = self.ts_oauth_client_secret
                 logger.debug("Using OAuth client secret")
-            
+
             logger.info("Running Tailsnitch security audit", extra={"command": " ".join(cmd[:3])})
 
             # Run Tailsnitch
@@ -279,7 +278,7 @@ class TailsnitchChecker(BaseChecker):
                 },
             )
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             errors.append("Tailsnitch timed out after 60s")
             return CheckResult(
                 check_type=self.check_type,

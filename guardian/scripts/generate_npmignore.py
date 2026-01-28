@@ -157,7 +157,7 @@ def main():
                 continue
             else:
                 print(f"⚠ {pkg_dir.name}: .npmignore exists but differs")
-                print(f"  Backup existing file? (y/n): ", end="")
+                print("  Backup existing file? (y/n): ", end="")
                 # For automation, we'll create a backup
                 backup_path = npmignore_path.with_suffix(".npmignore.backup")
                 npmignore_path.rename(backup_path)

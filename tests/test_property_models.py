@@ -4,20 +4,21 @@ These tests verify that data models maintain their invariants across
 various inputs and edge cases.
 """
 
+
 import pytest
-from hypothesis import given, strategies as st
-from datetime import datetime, UTC
+from hypothesis import given
+from hypothesis import strategies as st
 
 from guardian.models import (
-    CostMetric,
     APIUsage,
-    Vulnerability,
-    Finding,
-    Severity,
-    CheckStatus,
-    DeploymentStatus,
     CheckResult,
+    CheckStatus,
+    CostMetric,
+    DeploymentStatus,
+    Finding,
     GuardianReport,
+    Severity,
+    Vulnerability,
 )
 
 
@@ -217,7 +218,7 @@ def test_cost_metric_usage_percent_calculation(usage_percent: float, limit: floa
 def test_vulnerability_severity_ordering():
     """Severity enum should have correct ordering (CRITICAL > HIGH > MEDIUM > LOW > WARNING)."""
     severities = [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW, Severity.WARNING]
-    
+
     # Verify ordering
     for i in range(len(severities) - 1):
         # In practice, we'd compare by severity value, but enum comparison works

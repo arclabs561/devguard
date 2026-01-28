@@ -143,8 +143,9 @@ async def get_unified_alert_history(limit: int = 20, topic: str | None = None) -
         )
 
     try:
-        from guardian.utils import import_smart_email, get_smart_email_db_path
         import sqlite3
+
+        from guardian.utils import get_smart_email_db_path, import_smart_email
 
         smart_email = import_smart_email()
         if not smart_email:

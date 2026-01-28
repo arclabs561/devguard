@@ -3,12 +3,11 @@
 import json
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
 from guardian.discovery import DiscoveryResult, discover_all
-from guardian.spec import MonitorSpec, DiscoveryRule
+from guardian.spec import DiscoveryRule, MonitorSpec
 
 
 @pytest.fixture

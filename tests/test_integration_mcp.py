@@ -6,8 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from guardian.config import Settings
-from guardian.core import Guardian
-from guardian.models import GuardianReport, CheckResult
+from guardian.models import CheckResult, GuardianReport
 
 
 @pytest.fixture

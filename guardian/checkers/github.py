@@ -36,6 +36,15 @@ class GitHubChecker(BaseChecker):
         alerts: list[RepositoryAlert] = []
         errors: list[str] = []
 
+        # Skip if no repos or org explicitly configured
+        if not self.settings.github_repos_to_monitor and not self.settings.github_org:
+            return CheckResult(
+                check_type=self.check_type,
+                success=True,
+                repository_alerts=[],
+                errors=[],
+            )
+
         try:
             # Get repositories to check
             repos = await self._get_repositories()

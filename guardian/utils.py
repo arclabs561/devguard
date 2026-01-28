@@ -7,7 +7,7 @@ without fragile path manipulation.
 import logging
 import sys
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from guardian.config import Settings

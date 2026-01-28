@@ -3,7 +3,6 @@
 Tests the email sending functionality with both SMTP and smart_email backends.
 """
 
-import json
 import os
 import tempfile
 from pathlib import Path
@@ -12,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from guardian.config import Settings
-from guardian.models import GuardianReport, CheckResult, Vulnerability, Severity
+from guardian.models import CheckResult, GuardianReport, Severity, Vulnerability
 from guardian.reporting import Reporter
 
 

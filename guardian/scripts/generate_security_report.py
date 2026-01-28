@@ -3,15 +3,15 @@
 
 import asyncio
 import json
-from datetime import datetime, timezone
-from pathlib import Path
 
 # Import the red team analysis
 import sys
+from datetime import UTC, datetime
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from guardian.scripts.redteam_npm_packages import analyze_package, main as run_analysis
+from guardian.scripts.redteam_npm_packages import analyze_package
 
 
 async def generate_report(packages: list[str], versions: dict[str, str] | None = None) -> dict:
@@ -181,7 +181,7 @@ async def generate_report(packages: list[str], versions: dict[str, str] | None =
         )
 
     report = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "packages_analyzed": len(packages),
         "summary": {
             "critical_issues": len(critical_issues),
@@ -271,7 +271,6 @@ def generate_markdown_report(report: dict) -> str:
 
 async def main():
     """Main entry point."""
-    import sys
 
     packages = [
         "ai-browser-test",
@@ -313,13 +312,13 @@ async def main():
     print(f"Packages analyzed: {report['packages_analyzed']}")
     print(f"Critical issues: {report['summary']['critical_issues']}")
     print(f"Warnings: {report['summary']['warnings']}")
-    print(f"\nFindings:")
+    print("\nFindings:")
     for key, value in report["summary"]["total_findings"].items():
         if value > 0:
             print(f"  • {key}: {value}")
 
     if report["recommendations"]:
-        print(f"\nRecommendations:")
+        print("\nRecommendations:")
         for rec in report["recommendations"]:
             print(f"  [{rec['priority'].upper()}] {rec['action']}")
             if "packages_affected" in rec:

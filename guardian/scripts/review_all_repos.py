@@ -7,19 +7,15 @@ import signal
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
 
 import httpx
 from rich.console import Console
 from rich.table import Table
 
 # Import Guardian discovery
-import sys
 
 guardian_path = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(guardian_path))
-from guardian.discovery import discover_all
-from guardian.spec import load_spec, get_default_spec
 
 # Import npm security analysis
 from guardian.scripts.redteam_npm_packages import analyze_package
@@ -127,7 +123,7 @@ async def discover_published_npm_packages(packages: list[dict]) -> list[dict]:
                             "path": pkg.get("path", ""),
                         }
                     )
-            except (asyncio.TimeoutError, httpx.TimeoutException):
+            except (TimeoutError, httpx.TimeoutException):
                 console.print(f"    [yellow]Timeout checking {name}[/yellow]")
             except Exception as e:
                 console.print(f"    [yellow]Error checking {name}: {e}[/yellow]")
@@ -192,9 +188,9 @@ async def review_repos():
                         "result": result,
                     }
                 )
-                console.print(f"    [green]✓ Completed[/green]")
-            except asyncio.TimeoutError:
-                console.print(f"    [red]✗ Timeout after 2 minutes[/red]")
+                console.print("    [green]✓ Completed[/green]")
+            except TimeoutError:
+                console.print("    [red]✗ Timeout after 2 minutes[/red]")
                 results.append(
                     {
                         "package": name,

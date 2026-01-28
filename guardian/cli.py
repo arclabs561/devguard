@@ -3,7 +3,6 @@
 import asyncio
 import json
 import logging
-import os
 from pathlib import Path
 
 import typer
@@ -333,7 +332,7 @@ def spec(
             yaml.dump(spec_dict, f, default_flow_style=False, sort_keys=False)
 
         console.print(f"\n[bold green]✓[/bold green] Created {spec_file}")
-        console.print(f"[dim]Edit it to customize discovery rules[/dim]")
+        console.print("[dim]Edit it to customize discovery rules[/dim]")
 
     elif from_env:
         # Generate spec from current .env
@@ -383,8 +382,8 @@ def spec(
         console.print(f"[bold green]✓[/bold green] Generated {spec_file} from current .env")
 
     elif edit:
-        import subprocess
         import os
+        import subprocess
 
         editor = os.environ.get("EDITOR", "nano")
         try:
@@ -406,7 +405,7 @@ def spec(
                     status = "✓" if rule.enabled else "○"
                     console.print(f"  {status} {rule.name} ({rule.type})")
                 if spec.manual_resources:
-                    console.print(f"\nManual Resources:")
+                    console.print("\nManual Resources:")
                     for rtype, resources in spec.manual_resources.items():
                         console.print(f"  {rtype}: {len(resources)} items")
             except Exception as e:
@@ -433,7 +432,7 @@ def discover(
     from pathlib import Path
 
     from guardian.discovery import discover_all
-    from guardian.spec import MonitorSpec, load_spec
+    from guardian.spec import load_spec
 
     # Load spec
     spec_path = Path(spec_file)

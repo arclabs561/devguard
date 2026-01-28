@@ -7,6 +7,9 @@ import binascii
 import json
 import logging
 import re
+
+# Import retry logic from guardian
+import sys
 import tarfile
 import tempfile
 from pathlib import Path
@@ -14,9 +17,6 @@ from typing import Any
 from urllib.parse import quote
 
 import httpx
-
-# Import retry logic from guardian
-import sys
 
 guardian_path = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(guardian_path))
@@ -1051,7 +1051,7 @@ async def main():
 
         # Git history
         if findings.get("git_history"):
-            print(f"\n🔴 GIT HISTORY DETECTED")
+            print("\n🔴 GIT HISTORY DETECTED")
             print("  ⚠️  .git directory found in package - should not be published!")
 
         # Lock files
@@ -1071,7 +1071,7 @@ async def main():
 
         # Missing .npmignore
         if findings.get("npmignore_missing"):
-            print(f"\n🟡 MISSING .npmignore")
+            print("\n🟡 MISSING .npmignore")
             print("  ⚠️  No .npmignore found - ensure sensitive files are excluded")
             print("  💡 Recommendation: Add .npmignore or use 'files' field in package.json")
             print("  💡 Generate one with: uv run python guardian/scripts/generate_npmignore.py")
@@ -1146,14 +1146,14 @@ async def main():
                     print(f"  • {issue}")
 
             if pkg_issues.get("recommendations"):
-                print(f"\n💡 RECOMMENDATIONS:")
+                print("\n💡 RECOMMENDATIONS:")
                 for rec in pkg_issues["recommendations"]:
                     print(f"  • {rec}")
 
         # Package.json info
         pkg_json = findings.get("package_json")
         if pkg_json:
-            print(f"\n📄 Package Info:")
+            print("\n📄 Package Info:")
             print(f"  Name: {pkg_json.get('name', 'N/A')}")
             print(f"  Version: {pkg_json.get('version', 'N/A')}")
             print(f"  Description: {pkg_json.get('description', 'N/A')[:100]}")
@@ -1258,10 +1258,10 @@ async def main():
             print(f"   ⚠️  {critical_dep_vulns} CRITICAL/HIGH severity - prioritize fixing!")
 
     print(
-        f"\n💡 Generate detailed JSON report: uv run python guardian/scripts/generate_security_report.py"
+        "\n💡 Generate detailed JSON report: uv run python guardian/scripts/generate_security_report.py"
     )
     print(
-        f"💡 Get automated fix recommendations: uv run python guardian/scripts/auto_fix_recommendations.py"
+        "💡 Get automated fix recommendations: uv run python guardian/scripts/auto_fix_recommendations.py"
     )
 
 

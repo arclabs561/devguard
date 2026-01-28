@@ -181,7 +181,7 @@ class Reporter:
         thread_file = self._get_thread_id_file()
         try:
             if os.path.exists(thread_file):
-                with open(thread_file, "r") as f:
+                with open(thread_file) as f:
                     return f.read().strip() or None
         except Exception as e:
             logger.debug(f"Could not read thread ID file: {e}")
@@ -209,7 +209,7 @@ class Reporter:
         history_file = self._get_email_history_file()
         try:
             if os.path.exists(history_file):
-                with open(history_file, "r") as f:
+                with open(history_file) as f:
                     return json.load(f)
         except Exception as e:
             logger.debug(f"Could not read email history file: {e}")
@@ -310,9 +310,10 @@ class Reporter:
         use_smart_email = getattr(self.settings, "use_smart_email", False)
         if use_smart_email:
             try:
-                from guardian.utils import import_smart_email, get_smart_email_db_path
-                import sqlite3
                 import hashlib
+                import sqlite3
+
+                from guardian.utils import get_smart_email_db_path, import_smart_email
 
                 smart_email = import_smart_email()
                 if not smart_email:
@@ -424,8 +425,9 @@ class Reporter:
         if use_smart_email:
             # Try to read from smart_email SQLite
             try:
-                from guardian.utils import import_smart_email, get_smart_email_db_path
                 import sqlite3
+
+                from guardian.utils import get_smart_email_db_path, import_smart_email
 
                 smart_email = import_smart_email()
                 if not smart_email:
@@ -657,7 +659,7 @@ class Reporter:
         Returns True if sent successfully, False otherwise.
         """
         try:
-            from guardian.utils import import_smart_email, get_smart_email_db_path
+            from guardian.utils import get_smart_email_db_path, import_smart_email
 
             smart_email = import_smart_email()
             if not smart_email:
@@ -929,7 +931,7 @@ class Reporter:
         cost_metrics = report.get_cost_metrics()
         if cost_metrics:
             total_cost = report.get_total_cost()
-            lines.append(f"\n\nCOST METRICS")
+            lines.append("\n\nCOST METRICS")
             lines.append("-" * 60)
             lines.append(f"Total: ${total_cost:.2f} USD")
             for cost in cost_metrics:
@@ -944,7 +946,7 @@ class Reporter:
             api_usage.extend(check.api_usage)
 
         if api_usage:
-            lines.append(f"\n\nAPI USAGE")
+            lines.append("\n\nAPI USAGE")
             lines.append("-" * 60)
             for usage in api_usage:
                 if usage.usage_percent is not None:
@@ -953,7 +955,7 @@ class Reporter:
                         lines.append(f"    Remaining: {usage.credits_remaining:.0f} credits")
 
         # Check status
-        lines.append(f"\n\nCHECK STATUS")
+        lines.append("\n\nCHECK STATUS")
         lines.append("-" * 60)
         for check in report.checks:
             status = "✓" if check.success else "✗"
@@ -1420,7 +1422,7 @@ class Reporter:
         cost_metrics = report.get_cost_metrics()
         if cost_metrics:
             total_cost = report.get_total_cost()
-            html += f"""
+            html += """
             <div class="section">
                 <h2>Cost Metrics</h2>
                 <table>

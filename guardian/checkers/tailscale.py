@@ -126,7 +126,7 @@ class TailscaleChecker(BaseChecker):
                             )
                         )
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             errors.append("tailscale status timed out after 10s")
         except FileNotFoundError:
             errors.append("tailscale CLI not found")
