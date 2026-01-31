@@ -674,6 +674,107 @@ def stats(
         console.print(generate_stats())
 
 
+@app.command("sweep-dev")
+def sweep_dev(
+    dev_root: str = typer.Option(
+        None,
+        "--dev-root",
+        help="Dev workspace root (default: $DEV_DIR or ~/Documents/dev).",
+    ),
+    output: str = typer.Option(
+        "guardian_sweep_dev.json",
+        "--output",
+        "-o",
+        help="Where to write the JSON report.",
+    ),
+    max_blob_mb: int = typer.Option(
+        5,
+        "--max-blob-mb",
+        help="Flag tracked files larger than this many MiB (working tree size).",
+    ),
+    max_depth: int = typer.Option(
+        2,
+        "--max-depth",
+        help="How deep under dev_root to look for git repos (bounded).",
+    ),
+) -> None:
+    """Sweep local dev repos for likely accidental committed artifacts."""
+    from guardian.sweeps.local_dev import default_dev_root, sweep_dev_repos, write_report
+
+    root = Path(dev_root).expanduser() if dev_root else default_dev_root()
+    report_path = Path(output).expanduser()
+
+    hits, meta = sweep_dev_repos(
+        root,
+        max_blob_bytes=max_blob_mb * 1024 * 1024,
+        max_depth=max_depth,
+    )
+    write_report(report_path, hits, meta)
+
+    console.print(f"[bold]Wrote report:[/bold] {report_path}")
+    console.print(f"[bold]Repos scanned:[/bold] {meta['repos_scanned']}")
+    console.print(f"[bold]Findings:[/bold] {len(hits)}")
+
+    if hits:
+        console.print("[bold yellow]Action:[/bold yellow] Review report and clean up flagged files.")
+        raise typer.Exit(code=2)
+
+
+@app.command()
+def sweep(
+    spec_file: str = typer.Option(
+        "guardian.spec.yaml",
+        "--spec",
+        "-s",
+        help="Path to spec file (drives which sweeps run and their policy).",
+    ),
+    dev_root: str = typer.Option(
+        None,
+        "--dev-root",
+        help="Dev workspace root (default: $DEV_DIR or ~/Documents/dev).",
+    ),
+) -> None:
+    """Run spec-driven sweeps (policy checks).
+
+    Today this runs the local dev repo sweep (and will expand over time).
+    """
+    from guardian.spec import load_spec
+    from guardian.sweeps.local_dev import (
+        DEFAULT_DENY_GLOBS,
+        default_dev_root,
+        sweep_dev_repos,
+        write_report,
+    )
+
+    spec_path = Path(spec_file)
+    if not spec_path.exists():
+        console.print(f"[bold red]Spec file not found:[/bold red] {spec_path}")
+        raise typer.Exit(code=1)
+
+    spec = load_spec(spec_path)
+
+    # local-dev sweep
+    local = spec.sweeps.local_dev
+    if local.enabled:
+        root = Path(dev_root).expanduser() if dev_root else default_dev_root()
+        deny = list(DEFAULT_DENY_GLOBS) + list(local.deny_globs or [])
+        hits, meta = sweep_dev_repos(
+            root,
+            deny_globs=deny,
+            max_blob_bytes=local.max_blob_mb * 1024 * 1024,
+            max_depth=local.max_depth,
+        )
+        out_path = Path(local.output).expanduser()
+        write_report(out_path, hits, meta)
+        console.print(f"[bold]local_dev report:[/bold] {out_path}")
+        console.print(f"[bold]Repos scanned:[/bold] {meta['repos_scanned']}")
+        console.print(f"[bold]Findings:[/bold] {len(hits)}")
+        if hits:
+            raise typer.Exit(code=2)
+    else:
+        console.print("[yellow]No sweeps enabled in spec.[/yellow]")
+
+
 def _update_env_var(env_content: str, var_name: str, value: str) -> str:
     """Update or add an environment variable in .env content."""
     lines = env_content.split("\n")

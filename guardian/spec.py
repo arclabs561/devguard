@@ -30,6 +30,34 @@ class DiscoveryRule(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class LocalDevSweepSpec(BaseModel):
+    """Policy-based sweep over local dev repos (git working trees)."""
+
+    enabled: bool = Field(True, description="Whether this sweep is enabled")
+    max_depth: int = Field(
+        2,
+        description="How deep under dev_root to look for git repos (bounded).",
+    )
+    max_blob_mb: int = Field(
+        5, description="Flag tracked files larger than this many MiB (working tree size)."
+    )
+    output: str = Field(
+        "guardian_sweep_dev.json", description="Where to write the JSON report (path)."
+    )
+    deny_globs: list[str] = Field(
+        default_factory=list,
+        description="Additional deny globs (appended to Guardian defaults).",
+    )
+
+
+class SweepSpec(BaseModel):
+    """Spec for all sweeps (policy checks)."""
+
+    local_dev: LocalDevSweepSpec = Field(
+        default_factory=LocalDevSweepSpec, description="Local dev workspace sweep"
+    )
+
+
 class MonitorSpec(BaseModel):
     """Specification of what to monitor."""
 
@@ -45,6 +73,10 @@ class MonitorSpec(BaseModel):
     filters: dict[str, Any] = Field(
         default_factory=dict,
         description="Filters to apply to discovered resources",
+    )
+    sweeps: SweepSpec = Field(
+        default_factory=SweepSpec,
+        description="Policy sweeps (e.g., local dev repo hygiene).",
     )
 
 
