@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -72,6 +74,65 @@ def _list_public_repos(owner: str, include_forks: bool, timeout_s: int = 30) -> 
             continue
 
     return sorted(set(repos)), errors
+
+
+def _list_public_repos_via_api(owner: str, include_forks: bool, token: str | None) -> tuple[list[str], list[str]]:
+    """List public repos via GitHub REST API (token-only; no gh required)."""
+    errors: list[str] = []
+    headers = {"Accept": "application/vnd.github+json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    # Try orgs endpoint first; fall back to users endpoint.
+    endpoints = [
+        f"https://api.github.com/orgs/{owner}/repos",
+        f"https://api.github.com/users/{owner}/repos",
+    ]
+
+    repos: list[str] = []
+    with httpx.Client(timeout=20.0, headers=headers) as client:
+        for base_url in endpoints:
+            repos.clear()
+            try:
+                page = 1
+                while True:
+                    resp = client.get(
+                        base_url,
+                        params={
+                            "type": "public",
+                            "per_page": 100,
+                            "page": page,
+                            "sort": "full_name",
+                            "direction": "asc",
+                        },
+                    )
+                    # If org endpoint doesn't match, it commonly returns 404.
+                    if resp.status_code == 404 and "orgs/" in base_url:
+                        raise RuntimeError("not an org")
+                    resp.raise_for_status()
+                    data = resp.json()
+                    if not isinstance(data, list) or not data:
+                        break
+                    for r in data:
+                        if not isinstance(r, dict):
+                            continue
+                        full = r.get("full_name")
+                        if not isinstance(full, str) or not full:
+                            continue
+                        if r.get("fork") and not include_forks:
+                            continue
+                        repos.append(full)
+                    if len(data) < 100:
+                        break
+                    page += 1
+                # success for this endpoint
+                return sorted(set(repos)), errors
+            except Exception as e:
+                # try next endpoint
+                errors.append(f"github api list repos failed for {owner} via {base_url}: {e}")
+                continue
+
+    return [], errors
 
 
 def _get_github_token() -> tuple[str | None, list[str]]:
@@ -198,10 +259,23 @@ def scan_public_github_repos(
 
     # 1) Discover repos.
     repos: list[str] = []
+    discovery_errors: list[str] = []
+    discovery_method = "gh"
+
+    token, token_errors = _get_github_token()
+    errors.extend(token_errors)
+
     for owner in owners:
+        # Prefer `gh` if available because it respects local auth and avoids rate limits,
+        # but fall back to token-only GitHub API when `gh` isn't usable.
         rs, es = _list_public_repos(owner, include_forks=include_forks)
-        repos.extend(rs)
-        errors.extend(es)
+        if rs:
+            repos.extend(rs)
+        else:
+            discovery_method = "github_api"
+            rs2, es2 = _list_public_repos_via_api(owner, include_forks=include_forks, token=token)
+            repos.extend(rs2)
+            discovery_errors.extend(es + es2)
 
     repos = sorted(set(repos))
     if include_repos:
@@ -212,8 +286,6 @@ def scan_public_github_repos(
         repos = repos[:max_repos]
 
     # 2) Run TruffleHog github scan for explicit repos.
-    token, token_errors = _get_github_token()
-    errors.extend(token_errors)
     if not token:
         errors.append(
             "Missing GitHub token for trufflehog github scan. "
@@ -289,6 +361,10 @@ def scan_public_github_repos(
             "include_repos": include_repos,
             "exclude_repos": exclude_repos,
             "include_forks": include_forks,
+        },
+        "discovery": {
+            "method": discovery_method,
+            "errors": discovery_errors,
         },
         "engine": {
             "name": "trufflehog",
