@@ -1,0 +1,49 @@
+name: sweep-public-repos
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 7 * * 0" # weekly Sunday 07:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install guardian (for sweep script deps)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Policy sweep (unwanted uploads) across public repos
+        env:
+          GUARDIAN_SWEEP_OWNER: arclabs561
+          # For higher rate limits, set repo secret GUARDIAN_SWEEP_PAT
+          GUARDIAN_GITHUB_TOKEN: ${{ secrets.GUARDIAN_SWEEP_PAT || github.token }}
+        run: |
+          python tools/sweep_public_repos.py --owner "$GUARDIAN_SWEEP_OWNER" --output sweep_report.json
+
+      - name: Upload sweep report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sweep_report
+          path: sweep_report.json
+
+      - name: TruffleHog across public repos (verified only)
+        env:
+          GH_TOKEN: ${{ secrets.GUARDIAN_SWEEP_PAT }}
+        run: |
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "GUARDIAN_SWEEP_PAT not set; skipping TruffleHog cross-repo scan."
+            exit 0
+          fi
+          docker run --rm -e GH_TOKEN="$GH_TOKEN" ghcr.io/trufflesecurity/trufflehog:latest \
+            github --org=arclabs561 --token="$GH_TOKEN" --results=verified --fail --no-update
