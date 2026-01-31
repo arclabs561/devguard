@@ -55,3 +55,10 @@ Thumbs.db
 # Local-only lists
 private_repos.txt
 
+
+# Guardian local artifacts / reports (do not commit)
+.guardian-email-history.json
+.guardian-email-thread
+repo_review_results.json
+npm_security_report.json
+npm_security_report.md
