@@ -74,6 +74,47 @@ def _list_public_repos(owner: str, include_forks: bool, timeout_s: int = 30) -> 
     return sorted(set(repos)), errors
 
 
+def _get_github_token() -> tuple[str | None, list[str]]:
+    """Best-effort token retrieval.
+
+    Priority:
+    1) GITHUB_TOKEN env
+    2) GH_TOKEN env
+    3) `gh auth token` (requires prior gh login; non-interactive)
+    """
+    errors: list[str] = []
+    token = (os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN") or "").strip()
+    if token:
+        return token, errors
+
+    # Best effort: derive from gh if logged in.
+    try:
+        if subprocess.run(
+            ["gh", "auth", "status"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            env=os.environ.copy(),
+        ).returncode == 0:
+            res = subprocess.run(
+                ["gh", "auth", "token"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                env=os.environ.copy(),
+            )
+            t = (res.stdout or "").strip()
+            if t:
+                return t, errors
+    except FileNotFoundError:
+        # gh not installed
+        pass
+    except Exception as e:
+        errors.append(f"gh auth token failed: {e}")
+
+    return None, errors
+
+
 @dataclass
 class RedactedFinding:
     repo: str
@@ -171,17 +212,22 @@ def scan_public_github_repos(
         repos = repos[:max_repos]
 
     # 2) Run TruffleHog github scan for explicit repos.
-    token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+    token, token_errors = _get_github_token()
+    errors.extend(token_errors)
     if not token:
-        errors.append("Missing GITHUB_TOKEN (or GH_TOKEN) for trufflehog github scan.")
+        errors.append(
+            "Missing GitHub token for trufflehog github scan. "
+            "Set GITHUB_TOKEN/GH_TOKEN or run `gh auth login` then rerun."
+        )
 
     findings: list[RedactedFinding] = []
     if repos and token:
+        # Avoid passing tokens on argv (shows up in process lists).
+        env = os.environ.copy()
+        env["GITHUB_TOKEN"] = token
         cmd = [
             "trufflehog",
             "github",
-            "--token",
-            token,
             "--json",
             "--no-update",
             "--results",
@@ -192,7 +238,13 @@ def scan_public_github_repos(
             cmd.extend(["--repo", f"https://github.com/{r}"])
 
         try:
-            res = _run(cmd, timeout_s=timeout_s)
+            res = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout_s,
+                env=env,
+            )
         except Exception as e:
             errors.append(f"trufflehog github failed: {e}")
             res = None
