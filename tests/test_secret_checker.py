@@ -129,7 +129,8 @@ class TestSecretChecker:
         # or fall back to scanning Guardian itself (so the tool can self-audit).
         repo_names = [r.name for r in repos]
         assert any(
-            name in repo_names for name in ["_infra", "accounting", "dossier", "www", "guardian"]
+            name in repo_names
+            for name in ["infra", "_infra", "accounting", "dossier", "www", "guardian"]
         )
 
     def test_get_repos_to_scan_configured(self, settings, temp_git_repo):

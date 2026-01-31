@@ -42,10 +42,15 @@ def check(
     skip_validation: bool = typer.Option(
         False, "--skip-validation", help="Skip configuration validation"
     ),
+    env_file: str | None = typer.Option(
+        None,
+        "--env-file",
+        help="Optional env file path to load (overrides default env_file search).",
+    ),
 ) -> None:
     """Run monitoring checks."""
     _configure_logging(json_output)
-    settings = get_settings()
+    settings = get_settings(env_file=env_file)
     guardian = Guardian(settings)
     reporter = Reporter(settings)
 
@@ -427,6 +432,11 @@ def discover(
     update_env: bool = typer.Option(
         False, "--update-env", help="Update .env file with discovered resources"
     ),
+    env_file: str = typer.Option(
+        ".env",
+        "--env-file",
+        help="Env file path to write when using --update-env (default: .env).",
+    ),
 ) -> None:
     """Auto-discover resources to monitor based on spec."""
     from pathlib import Path
@@ -496,8 +506,8 @@ def discover(
 
         # Update .env if requested
         if update_env:
-            env_file = Path(".env")
-            env_content = env_file.read_text() if env_file.exists() else ""
+            env_path = Path(env_file)
+            env_content = env_path.read_text() if env_path.exists() else ""
 
             # Update npm packages
             if "npm" in result.resources:
@@ -527,13 +537,15 @@ def discover(
                     env_content, "FLY_APPS_TO_MONITOR", ",".join(fly_apps[:20])
                 )
 
-            env_file.write_text(env_content)
+            env_path.write_text(env_content)
             console.print("[bold green]✓[/bold green] Updated .env file with discovered resources")
 
 
 @app.command()
 def stats(
-    live: bool = typer.Option(False, "--live", "-l", help="Live updating stats (refresh every 5s)"),
+    live_mode: bool = typer.Option(
+        False, "--live", "-l", help="Live updating stats (refresh every 5s)"
+    ),
 ) -> None:
     """Show current monitoring statistics in a TUI."""
     from rich.console import Console
@@ -646,15 +658,15 @@ def stats(
 
         return layout
 
-    if live:
+    if live_mode:
         # Live updating mode
-        with Live(generate_stats(), refresh_per_second=0.2, screen=True) as live:
+        with Live(generate_stats(), refresh_per_second=0.2, screen=True) as live_view:
             import time
 
             while True:
                 try:
                     time.sleep(5)
-                    live.update(generate_stats())
+                    live_view.update(generate_stats())
                 except KeyboardInterrupt:
                     break
     else:

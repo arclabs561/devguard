@@ -211,6 +211,14 @@ class Settings(BaseSettings):
         return []
 
 
-def get_settings() -> Settings:
-    """Get application settings."""
-    return Settings()
+def get_settings(env_file: str | None = None) -> Settings:
+    """Get application settings.
+
+    Args:
+        env_file: Optional path to an env file to load (e.g. "../.env" when
+            running Guardian from inside an infra repo). When not provided,
+            the Settings `model_config.env_file` default is used.
+    """
+    if env_file:
+        return Settings(_env_file=env_file)  # type: ignore[call-arg]
+    return Settings()  # type: ignore[call-arg]

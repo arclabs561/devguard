@@ -53,8 +53,14 @@ class SecretChecker(BaseChecker):
             "engine": "trufflehog" if self.trufflehog_path else "regex-fallback",
         }
 
-        # Scan configured repos
+        # Scan configured repos.
+        #
+        # Important: when TruffleHog is missing, the regex fallback is both limited
+        # in quality and potentially very slow on large repos. In that mode we only
+        # scan explicitly configured paths to avoid accidental multi-repo sweeps.
         repos_to_scan = self._get_repos_to_scan()
+        if not self.trufflehog_path and not self.settings.secret_scan_paths:
+            repos_to_scan = []
 
         for repo_path in repos_to_scan:
             try:
@@ -74,6 +80,10 @@ class SecretChecker(BaseChecker):
             errors.append(
                 "Warning: trufflehog not found. Using limited regex fallback. Install with `brew install trufflehog` for better security."
             )
+            if not self.settings.secret_scan_paths:
+                errors.append(
+                    "No secret_scan_paths configured; skipping regex fallback scan to avoid slow large-repo sweeps."
+                )
 
         metadata["total_findings"] = len(vulnerabilities)
 
@@ -116,7 +126,9 @@ class SecretChecker(BaseChecker):
         if not repos:
             # 1) If we are in a super-workspace, scan sibling repos if present.
             # We use the current repo's parent as the "workspace root" candidate.
-            this_repo = find_git_root(Path(__file__))
+            # When Guardian is installed (e.g., in CI), `__file__` will live under
+            # site-packages and won't have a `.git` ancestor. Prefer CWD first.
+            this_repo = find_git_root(Path.cwd()) or find_git_root(Path(__file__))
             workspace_root = this_repo.parent if this_repo else Path.cwd()
 
             for rel in [
