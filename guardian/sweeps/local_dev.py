@@ -71,7 +71,15 @@ def _utc_now_iso() -> str:
 
 def _matches_any(path: str, globs: list[str]) -> str | None:
     p = path.lstrip("/")
+    # Allow common "example" env files (these are typically safe to commit).
+    # We still flag the real `.env` and other patterns.
+    env_allow = {".env.example", ".env.template", ".env.sample", ".env.dist"}
+    if Path(p).name in env_allow:
+        # If the only match would be the broad `.env.*` pattern, treat as allowed.
+        pass
     for g in globs:
+        if Path(p).name in env_allow and (g.endswith("/.env.*") or g.endswith("**/.env.*")):
+            continue
         # fnmatch's "*" matches "/" too; keep both patterns for readability
         if fnmatch.fnmatch(p, g) or fnmatch.fnmatch(p, g.replace("**/", "")):
             return g
