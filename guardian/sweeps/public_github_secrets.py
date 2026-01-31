@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import logging
 import os
 import subprocess
 from dataclasses import dataclass
@@ -10,6 +11,8 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 def _utc_now() -> str:
@@ -381,55 +384,62 @@ def scan_public_github_repos(
         # Avoid passing tokens on argv (shows up in process lists).
         env = os.environ.copy()
         env["GITHUB_TOKEN"] = token
-        cmd = [
-            "trufflehog",
-            "github",
-            "--json",
-            "--no-update",
-            "--results",
-            "verified,unverified,unknown",
-            "--filter-unverified",
-            "--fail-on-scan-errors=false",
-        ]
+
+        # Run per-repo so one bad repo/rate-limit doesn't poison the entire scan.
+        # This is slower but far more reliable for “scan everything” automation.
+        per_repo_timeout = max(30, int(timeout_s // max(1, len(repos))))
+        per_repo_timeout = min(per_repo_timeout, 180)
+
         for r in repos:
-            cmd.extend(["--repo", f"https://github.com/{r}"])
+            cmd = [
+                "trufflehog",
+                "github",
+                "--json",
+                "--no-update",
+                "--results",
+                "verified,unverified,unknown",
+                "--filter-unverified",
+                "--fail-on-scan-errors=false",
+                "--repo",
+                f"https://github.com/{r}",
+            ]
+            try:
+                res = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=per_repo_timeout,
+                    env=env,
+                )
+            except Exception as e:
+                errors.append(f"trufflehog github failed for {r}: {e}")
+                continue
 
-        try:
-            res = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout_s,
-                env=env,
-            )
-        except Exception as e:
-            errors.append(f"trufflehog github failed: {e}")
-            res = None
+            if res.returncode not in (0, 183):
+                errors.append(
+                    f"trufflehog github scan error for {r}: exit={res.returncode} "
+                    f"stderr={res.stderr.strip()[:600]}"
+                )
 
-        if res is not None and res.returncode not in (0, 183):
-            # Trufflehog can return non-zero for scan errors. Record a truncated stderr
-            # but keep any findings we may have collected from stdout.
-            errors.append(
-                f"trufflehog github non-zero exit={res.returncode} stderr={res.stderr.strip()[:1200]}"
-            )
-
-        if res is not None and res.stdout:
-            for line in res.stdout.splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    obj = json.loads(line)
-                except Exception:
-                    continue
-                repo = obj.get("SourceMetadata", {}).get("Data", {}).get("Git", {}).get("repository", None)
-                repo = repo if isinstance(repo, str) and repo else None
-                # If trufflehog doesn't include repository, fall back to "unknown" bucket.
-                # (We still keep the scan scoped by passing explicit --repo values.)
-                repo_name = repo or "unknown"
-                f = _extract_finding(obj, repo=repo_name)
-                if f:
-                    findings.append(f)
+            if res.stdout:
+                for line in res.stdout.splitlines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        obj = json.loads(line)
+                    except Exception:
+                        continue
+                    repo_name = (
+                        obj.get("SourceMetadata", {})
+                        .get("Data", {})
+                        .get("Git", {})
+                        .get("repository", None)
+                    )
+                    repo_name = repo_name if isinstance(repo_name, str) and repo_name else r
+                    f = _extract_finding(obj, repo=repo_name)
+                    if f:
+                        findings.append(f)
 
     # Summaries
     verified = sum(1 for f in findings if f.verified is True)
