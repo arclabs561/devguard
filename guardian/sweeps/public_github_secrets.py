@@ -387,8 +387,9 @@ def scan_public_github_repos(
 
         # Run per-repo so one bad repo/rate-limit doesn't poison the entire scan.
         # This is slower but far more reliable for “scan everything” automation.
-        per_repo_timeout = max(30, int(timeout_s // max(1, len(repos))))
-        per_repo_timeout = min(per_repo_timeout, 180)
+        #
+        # Interpret `timeout_s` as a *per-repo* timeout upper bound (not total).
+        per_repo_timeout = max(30, min(int(timeout_s), 600))
 
         for r in repos:
             cmd = [
