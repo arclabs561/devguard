@@ -125,10 +125,12 @@ class TestSecretChecker:
         checker = SecretChecker(settings)
         repos = checker._get_repos_to_scan()
 
-        # Should find _infra monorepo or subprojects by default
+        # Should find either the surrounding workspace repos (when present)
+        # or fall back to scanning Guardian itself (so the tool can self-audit).
         repo_names = [r.name for r in repos]
-        # Either the monorepo (_infra) or legacy subprojects should exist
-        assert any(name in repo_names for name in ["_infra", "accounting", "dossier", "www"])
+        assert any(
+            name in repo_names for name in ["_infra", "accounting", "dossier", "www", "guardian"]
+        )
 
     def test_get_repos_to_scan_configured(self, settings, temp_git_repo):
         """Test configured repo paths."""
@@ -149,7 +151,7 @@ class TestSecretCheckerIntegration:
 
     @pytest.mark.asyncio
     async def test_full_check_on_infra_repos(self, settings):
-        """Test full check on _infra repos scans successfully."""
+        """Test full check scans at least one repo successfully."""
         checker = SecretChecker(settings)
 
         if not checker.trufflehog_path:
@@ -159,7 +161,6 @@ class TestSecretCheckerIntegration:
 
         # Verify scanning works (may find historical secrets that need cleanup)
         assert "repos_scanned" in result.metadata
-        # Should find either monorepo or subprojects
         scanned = result.metadata["repos_scanned"]
         assert len(scanned) > 0, "Should scan at least one repo (monorepo or subprojects)"
         # Note: Historical OpenWeather API key exists in git history (commit 378b468d)

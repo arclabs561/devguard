@@ -89,29 +89,51 @@ class SecretChecker(BaseChecker):
         """Get list of git repos to scan for secrets."""
         repos = []
 
+        def is_git_repo(p: Path) -> bool:
+            # Support both .git directories and gitfiles (worktrees/submodules)
+            return (p / ".git").is_dir() or (p / ".git").is_file()
+
+        def find_git_root(start: Path) -> Path | None:
+            cur = start.resolve()
+            for parent in [cur, *cur.parents]:
+                if is_git_repo(parent):
+                    return parent
+            return None
+
         # Check configured secret scan paths
         if self.settings.secret_scan_paths:
             for path_str in self.settings.secret_scan_paths:
                 path = Path(path_str).expanduser()
-                if path.exists() and (path / ".git").is_dir():
+                if path.exists() and is_git_repo(path):
                     repos.append(path)
                 elif path.is_dir():
                     # Look for .git in subdirectories
                     for git_dir in path.glob("*/.git"):
                         repos.append(git_dir.parent)
 
-        # Default: scan _infra monorepo (subprojects no longer have own .git)
+        # Default: try to find "nearby" repos (works both when Guardian lives inside
+        # a larger super-workspace and when it's a standalone repo).
         if not repos:
-            infra_root = Path(__file__).parent.parent.parent.parent
-            # Check if _infra itself is a git repo
-            if (infra_root / ".git").is_dir():
-                repos.append(infra_root)
-            else:
-                # Legacy: check for subproject .git dirs
-                for subproject in ["accounting", "dossier", "www", "guardian", "ops"]:
-                    subpath = infra_root / subproject
-                    if (subpath / ".git").is_dir():
-                        repos.append(subpath)
+            # 1) If we are in a super-workspace, scan sibling repos if present.
+            # We use the current repo's parent as the "workspace root" candidate.
+            this_repo = find_git_root(Path(__file__))
+            workspace_root = this_repo.parent if this_repo else Path.cwd()
+
+            for rel in [
+                "_infra",  # umbrella dir (may itself be a git repo in some setups)
+                "_infra/infra",  # common layout: infra repo inside _infra
+                "accounting",
+                "dossier",
+                "www",
+                "ops",
+            ]:
+                p = (workspace_root / rel).resolve()
+                if p.exists() and is_git_repo(p):
+                    repos.append(p)
+
+            # 2) Always fall back to scanning Guardian itself (first application on itself).
+            if not repos and this_repo and is_git_repo(this_repo):
+                repos.append(this_repo)
 
         return repos
 

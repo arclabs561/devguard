@@ -36,12 +36,17 @@ class Guardian:
         self.settings = settings
         self.checkers: list[BaseChecker] = []
 
+        # For settings objects used in tests (MagicMock), treat feature flags as enabled
+        # only when they are explicitly `True`, not merely truthy.
+        def enabled(attr: str) -> bool:
+            return getattr(settings, attr, False) is True
+
         # Initialize checkers based on configuration
         if settings.npm_packages_to_monitor or settings.snyk_token:
             self.checkers.append(NpmChecker(settings))
 
         # Deep npm security analysis (separate from basic vulnerability checking)
-        if settings.npm_security_enabled and settings.npm_packages_to_monitor:
+        if enabled("npm_security_enabled") and settings.npm_packages_to_monitor:
             self.checkers.append(NpmSecurityChecker(settings))
 
         if settings.github_token:
@@ -60,43 +65,43 @@ class Guardian:
             self.checkers.append(TavilyChecker(settings))
 
         # Secret scanning (uses trufflehog - runs locally, no API needed)
-        if settings.secret_scan_enabled:
+        if enabled("secret_scan_enabled"):
             self.checkers.append(SecretChecker(settings))
 
         # Container/Dockerfile security checks
-        if settings.container_check_enabled:
+        if enabled("container_check_enabled"):
             self.checkers.append(ContainerChecker(settings))
 
         # AWS IAM security checks for satellite nodes
-        if settings.aws_iam_check_enabled:
+        if enabled("aws_iam_check_enabled"):
             self.checkers.append(AWSIAMChecker(settings))
 
         # AWS Cost monitoring
-        if settings.aws_cost_check_enabled:
+        if enabled("aws_cost_check_enabled"):
             self.checkers.append(AWSCostChecker(settings))
 
         # Tailscale network health
-        if settings.tailscale_check_enabled:
+        if enabled("tailscale_check_enabled"):
             self.checkers.append(TailscaleChecker(settings))
 
         # Tailsnitch ACL security audit
-        if settings.tailsnitch_check_enabled:
+        if enabled("tailsnitch_check_enabled"):
             self.checkers.append(TailsnitchChecker(settings))
 
         # Domain and SSL monitoring
-        if settings.domain_check_enabled:
+        if enabled("domain_check_enabled"):
             self.checkers.append(DomainChecker(settings))
 
         # Docker Swarm health
-        if settings.swarm_check_enabled:
+        if enabled("swarm_check_enabled"):
             self.checkers.append(SwarmChecker(settings))
 
         # API usage/credits monitoring
-        if settings.api_usage_check_enabled:
+        if enabled("api_usage_check_enabled"):
             self.checkers.append(APIUsageChecker(settings))
 
         # Red team testing (runs after deployment checks to test endpoints)
-        if settings.redteam_enabled and (settings.vercel_token or settings.fly_api_token):
+        if enabled("redteam_enabled") and (settings.vercel_token or settings.fly_api_token):
             self.checkers.append(RedTeamChecker(settings))
 
     def validate_configuration(self) -> list[str]:
