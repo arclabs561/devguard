@@ -389,6 +389,7 @@ def scan_public_github_repos(
             "--results",
             "verified,unverified,unknown",
             "--filter-unverified",
+            "--fail-on-scan-errors=false",
         ]
         for r in repos:
             cmd.extend(["--repo", f"https://github.com/{r}"])
@@ -406,10 +407,10 @@ def scan_public_github_repos(
             res = None
 
         if res is not None and res.returncode not in (0, 183):
-            # Trufflehog uses 183 when findings exist (with --fail),
-            # but we don't use --fail; treat non-zero as scan error.
+            # Trufflehog can return non-zero for scan errors. Record a truncated stderr
+            # but keep any findings we may have collected from stdout.
             errors.append(
-                f"trufflehog github non-zero exit={res.returncode} stderr={res.stderr.strip()[:400]}"
+                f"trufflehog github non-zero exit={res.returncode} stderr={res.stderr.strip()[:1200]}"
             )
 
         if res is not None and res.stdout:
