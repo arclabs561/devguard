@@ -399,7 +399,7 @@ def scan_public_github_repos(
                 "--results",
                 "verified,unverified,unknown",
                 "--filter-unverified",
-                "--fail-on-scan-errors=false",
+                "--no-fail-on-scan-errors",
                 "--repo",
                 f"https://github.com/{r}",
             ]
