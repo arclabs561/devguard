@@ -50,11 +50,42 @@ class LocalDevSweepSpec(BaseModel):
     )
 
 
+class PublicGitHubSecretsSweepSpec(BaseModel):
+    """Spec for scanning public GitHub repos for leaked secrets (redacted output)."""
+
+    enabled: bool = Field(True, description="Whether this sweep is enabled")
+
+    owners: list[str] = Field(
+        default_factory=list,
+        description="GitHub owners (user/org) whose public repos should be scanned.",
+    )
+    max_repos: int = Field(200, description="Maximum number of repos to scan (bounded).")
+    include_repos: list[str] = Field(
+        default_factory=list,
+        description="Optional glob patterns for repo full names to include (owner/name).",
+    )
+    exclude_repos: list[str] = Field(
+        default_factory=list,
+        description="Optional glob patterns for repo full names to exclude (owner/name).",
+    )
+    include_forks: bool = Field(False, description="Whether to include forks.")
+
+    output: str = Field(
+        "public_github_secret_scan.json",
+        description="Where to write the redacted JSON report (path).",
+    )
+
+
 class SweepSpec(BaseModel):
     """Spec for all sweeps (policy checks)."""
 
     local_dev: LocalDevSweepSpec = Field(
-        default_factory=LocalDevSweepSpec, description="Local dev workspace sweep"
+        default_factory=lambda: LocalDevSweepSpec(),
+        description="Local dev workspace sweep",
+    )
+    public_github_secrets: PublicGitHubSecretsSweepSpec = Field(
+        default_factory=lambda: PublicGitHubSecretsSweepSpec(),
+        description="Scan public GitHub repos for leaked secrets (redacted)",
     )
 
 
@@ -82,7 +113,7 @@ class MonitorSpec(BaseModel):
 
 def load_spec(spec_path: Path) -> MonitorSpec:
     """Load a monitoring spec from a file."""
-    import yaml
+    import yaml  # type: ignore[import-not-found]
 
     with open(spec_path) as f:
         data = yaml.safe_load(f) or {}
@@ -106,7 +137,7 @@ def get_default_spec() -> MonitorSpec:
         name="default",
         description="Default Guardian monitoring spec",
         discovery_rules=[
-            DiscoveryRule(
+            DiscoveryRule(  # type: ignore[call-arg]
                 name="npm_list",
                 type="npm",
                 method="cli",
@@ -115,7 +146,7 @@ def get_default_spec() -> MonitorSpec:
                 extract_path="dependencies.keys()",
                 timeout=10,
             ),
-            DiscoveryRule(
+            DiscoveryRule(  # type: ignore[call-arg]
                 name="npm_package_json",
                 type="npm",
                 method="file_scan",
@@ -124,7 +155,7 @@ def get_default_spec() -> MonitorSpec:
                 extract_path="name",
                 timeout=30,
             ),
-            DiscoveryRule(
+            DiscoveryRule(  # type: ignore[call-arg]
                 name="github_repos",
                 type="github",
                 method="cli",
@@ -133,7 +164,7 @@ def get_default_spec() -> MonitorSpec:
                 extract_path="[].nameWithOwner",
                 timeout=10,
             ),
-            DiscoveryRule(
+            DiscoveryRule(  # type: ignore[call-arg]
                 name="fly_apps",
                 type="fly",
                 method="cli",
@@ -142,7 +173,7 @@ def get_default_spec() -> MonitorSpec:
                 extract_path="[].Name",
                 timeout=10,
             ),
-            DiscoveryRule(
+            DiscoveryRule(  # type: ignore[call-arg]
                 name="vercel_projects",
                 type="vercel",
                 method="file_scan",
@@ -151,7 +182,7 @@ def get_default_spec() -> MonitorSpec:
                 extract_path="name",
                 timeout=30,
             ),
-            DiscoveryRule(
+            DiscoveryRule(  # type: ignore[call-arg]
                 name="domains",
                 type="domain",
                 method="file_scan",
@@ -160,7 +191,7 @@ def get_default_spec() -> MonitorSpec:
                 extract_path=r"https?://([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})",
                 timeout=30,
             ),
-            DiscoveryRule(
+            DiscoveryRule(  # type: ignore[call-arg]
                 name="github_commits",
                 type="github_commits",
                 method="cli",
@@ -168,7 +199,7 @@ def get_default_spec() -> MonitorSpec:
                 command_parser="json_lines",
                 timeout=10,
             ),
-            DiscoveryRule(
+            DiscoveryRule(  # type: ignore[call-arg]
                 name="github_mentions",
                 type="github_mentions",
                 method="cli",
@@ -176,7 +207,7 @@ def get_default_spec() -> MonitorSpec:
                 command_parser="json_lines",
                 timeout=10,
             ),
-            DiscoveryRule(
+            DiscoveryRule(  # type: ignore[call-arg]
                 name="ssh_keys",
                 type="ssh_key",
                 method="file_scan",
@@ -184,7 +215,7 @@ def get_default_spec() -> MonitorSpec:
                 file_extractor="raw",
                 timeout=5,
             ),
-            DiscoveryRule(
+            DiscoveryRule(  # type: ignore[call-arg]
                 name="github_username",
                 type="username",
                 method="cli",

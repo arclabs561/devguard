@@ -733,18 +733,19 @@ def sweep(
         "--dev-root",
         help="Dev workspace root (default: $DEV_DIR or ~/Documents/dev).",
     ),
+    only: list[str] = typer.Option(
+        None,
+        "--only",
+        help="Run only these sweeps (repeatable). Known: local_dev, public_github_secrets",
+    ),
 ) -> None:
     """Run spec-driven sweeps (policy checks).
 
     Today this runs the local dev repo sweep (and will expand over time).
     """
     from guardian.spec import load_spec
-    from guardian.sweeps.local_dev import (
-        DEFAULT_DENY_GLOBS,
-        default_dev_root,
-        sweep_dev_repos,
-        write_report,
-    )
+    from guardian.sweeps.local_dev import DEFAULT_DENY_GLOBS, default_dev_root, sweep_dev_repos
+    from guardian.sweeps.public_github_secrets import scan_public_github_repos, write_report as write_json
 
     spec_path = Path(spec_file)
     if not spec_path.exists():
@@ -753,9 +754,11 @@ def sweep(
 
     spec = load_spec(spec_path)
 
+    wanted = {w.strip() for w in (only or []) if w and w.strip()}
+
     # local-dev sweep
     local = spec.sweeps.local_dev
-    if local.enabled:
+    if local.enabled and (not wanted or "local_dev" in wanted):
         root = Path(dev_root).expanduser() if dev_root else default_dev_root()
         deny = list(DEFAULT_DENY_GLOBS) + list(local.deny_globs or [])
         hits, meta = sweep_dev_repos(
@@ -765,13 +768,36 @@ def sweep(
             max_depth=local.max_depth,
         )
         out_path = Path(local.output).expanduser()
+        from guardian.sweeps.local_dev import write_report
+
         write_report(out_path, hits, meta)
         console.print(f"[bold]local_dev report:[/bold] {out_path}")
         console.print(f"[bold]Repos scanned:[/bold] {meta['repos_scanned']}")
         console.print(f"[bold]Findings:[/bold] {len(hits)}")
         if hits:
             raise typer.Exit(code=2)
-    else:
+
+    # public-github-secrets sweep
+    pub = spec.sweeps.public_github_secrets
+    if pub.enabled and (not wanted or "public_github_secrets" in wanted):
+        report, errors = scan_public_github_repos(
+            owners=pub.owners,
+            include_repos=pub.include_repos,
+            exclude_repos=pub.exclude_repos,
+            include_forks=pub.include_forks,
+            max_repos=pub.max_repos,
+        )
+        out_path = Path(pub.output).expanduser()
+        write_json(out_path, report)
+        console.print(f"[bold]public_github_secrets report:[/bold] {out_path}")
+        console.print(f"[bold]Repos scanned:[/bold] {report['scope']['repos_scanned_count']}")
+        console.print(f"[bold]Findings:[/bold] {report['summary']['findings_total']}")
+        if errors:
+            console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+        if report["summary"]["findings_total"] > 0:
+            raise typer.Exit(code=2)
+
+    if not wanted and not local.enabled and not pub.enabled:
         console.print("[yellow]No sweeps enabled in spec.[/yellow]")
 
 
