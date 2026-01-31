@@ -85,7 +85,18 @@ def load_spec(spec_path: Path) -> MonitorSpec:
     import yaml
 
     with open(spec_path) as f:
-        data = yaml.safe_load(f)
+        data = yaml.safe_load(f) or {}
+
+    # Be tolerant of YAML keys that are present but null (common when a section is
+    # left empty with only comments).
+    if data.get("discovery_rules") is None:
+        data["discovery_rules"] = []
+    if data.get("manual_resources") is None:
+        data["manual_resources"] = {}
+    if data.get("filters") is None:
+        data["filters"] = {}
+    if data.get("sweeps") is None:
+        data["sweeps"] = {}
     return MonitorSpec(**data)
 
 
