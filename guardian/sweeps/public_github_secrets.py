@@ -176,6 +176,86 @@ def _get_github_token() -> tuple[str | None, list[str]]:
     return None, errors
 
 
+def _github_api_get_json(url: str, token: str | None) -> tuple[Any | None, str | None]:
+    headers = {"Accept": "application/vnd.github+json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        with httpx.Client(timeout=20.0, headers=headers) as client:
+            r = client.get(url)
+            r.raise_for_status()
+            return r.json(), None
+    except Exception as e:
+        return None, str(e)
+
+
+def _expand_owners(owners: list[str], token: str | None) -> tuple[list[str], list[str]]:
+    """Expand sentinel owners into real owners.
+
+    Supported sentinels:
+    - "@me": current authenticated user
+    - "@orgs": all orgs for current user
+    - "@all": @me + @orgs
+    """
+    errs: list[str] = []
+
+    requested = [o.strip() for o in owners if o and o.strip()]
+    if not requested:
+        requested = ["@me"]
+
+    want_me = "@all" in requested or "@me" in requested
+    want_orgs = "@all" in requested or "@orgs" in requested
+
+    # Keep explicit owners too (anything not a sentinel).
+    expanded: list[str] = [o for o in requested if not o.startswith("@")]
+
+    me_login: str | None = None
+    if want_me or want_orgs:
+        user_obj, err = _github_api_get_json("https://api.github.com/user", token)
+        if isinstance(user_obj, dict) and isinstance(user_obj.get("login"), str):
+            me_login = user_obj["login"]
+        else:
+            if err:
+                errs.append(f"failed to resolve @me via GitHub API: {err}")
+
+    if want_me and me_login:
+        expanded.append(me_login)
+
+    if want_orgs and me_login:
+        # /user/orgs returns orgs for the authenticated user.
+        orgs = []
+        page = 1
+        with httpx.Client(
+            timeout=20.0,
+            headers={
+                "Accept": "application/vnd.github+json",
+                **({"Authorization": f"Bearer {token}"} if token else {}),
+            },
+        ) as client:
+            while True:
+                try:
+                    r = client.get("https://api.github.com/user/orgs", params={"per_page": 100, "page": page})
+                    r.raise_for_status()
+                    data = r.json()
+                    if not isinstance(data, list) or not data:
+                        break
+                    for o in data:
+                        if isinstance(o, dict) and isinstance(o.get("login"), str):
+                            orgs.append(o["login"])
+                    if len(data) < 100:
+                        break
+                    page += 1
+                except Exception as e:
+                    errs.append(f"failed to resolve @orgs via GitHub API: {e}")
+                    break
+
+        expanded.extend(orgs)
+
+    # Dedup, preserve readability.
+    expanded = sorted(set(expanded))
+    return expanded, errs
+
+
 @dataclass
 class RedactedFinding:
     repo: str
@@ -257,7 +337,7 @@ def scan_public_github_repos(
     """Scan public repos for the given owners and return a redacted report."""
     errors: list[str] = []
 
-    # 1) Discover repos.
+    # 0) Token + owner expansion.
     repos: list[str] = []
     discovery_errors: list[str] = []
     discovery_method = "gh"
@@ -265,7 +345,11 @@ def scan_public_github_repos(
     token, token_errors = _get_github_token()
     errors.extend(token_errors)
 
-    for owner in owners:
+    expanded_owners, owner_errs = _expand_owners(owners, token)
+    discovery_errors.extend(owner_errs)
+
+    # 1) Discover repos.
+    for owner in expanded_owners:
         # Prefer `gh` if available because it respects local auth and avoids rate limits,
         # but fall back to token-only GitHub API when `gh` isn't usable.
         rs, es = _list_public_repos(owner, include_forks=include_forks)
@@ -355,6 +439,7 @@ def scan_public_github_repos(
         "generated_at": _utc_now(),
         "scope": {
             "owners": owners,
+            "owners_expanded": expanded_owners,
             "repos_scanned": repos,
             "repos_scanned_count": len(repos),
             "max_repos": max_repos,
