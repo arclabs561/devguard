@@ -416,11 +416,51 @@ def scan_public_github_repos(
                 errors.append(f"trufflehog github failed for {r}: {e}")
                 continue
 
+            # Some orgs enforce SAML SSO on tokens, which can block even public repo API
+            # access. For public repos, retry once without auth (best-effort).
             if res.returncode not in (0, 183):
-                errors.append(
-                    f"trufflehog github scan error for {r}: exit={res.returncode} "
-                    f"stderr={res.stderr.strip()[:600]}"
-                )
+                stderr = (res.stderr or "").strip()
+                if "Resource protected by organization SAML" in stderr:
+                    env_no_token = os.environ.copy()
+                    env_no_token.pop("GITHUB_TOKEN", None)
+                    retry_cmd = [
+                        "trufflehog",
+                        "github",
+                        "--json",
+                        "--no-update",
+                        "--results",
+                        "verified,unverified,unknown",
+                        "--filter-unverified",
+                        "--no-fail-on-scan-errors",
+                        "--no-verification",
+                        "--repo",
+                        f"https://github.com/{r}",
+                    ]
+                    try:
+                        retry = subprocess.run(
+                            retry_cmd,
+                            capture_output=True,
+                            text=True,
+                            timeout=per_repo_timeout,
+                            env=env_no_token,
+                        )
+                        if retry.returncode in (0, 183):
+                            res = retry
+                        else:
+                            errors.append(
+                                f"trufflehog github scan error for {r}: exit={res.returncode} "
+                                f"stderr={stderr[:600]}"
+                            )
+                    except Exception:
+                        errors.append(
+                            f"trufflehog github scan error for {r}: exit={res.returncode} "
+                            f"stderr={stderr[:600]}"
+                        )
+                else:
+                    errors.append(
+                        f"trufflehog github scan error for {r}: exit={res.returncode} "
+                        f"stderr={stderr[:600]}"
+                    )
 
             if res.stdout:
                 for line in res.stdout.splitlines():
