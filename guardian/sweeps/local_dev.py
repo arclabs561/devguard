@@ -120,7 +120,11 @@ def _discover_git_repos(dev_root: Path, max_depth: int = 2) -> list[Path]:
             if not child.is_dir():
                 continue
             name = child.name
-            # Avoid obvious heavy dirs
+            # Avoid obvious heavy dirs.
+            #
+            # Important: the workspace root under ~/Documents/dev often contains
+            # very large scratch/backup directories. Scanning into them can take
+            # minutes and isn't useful for "repo blunder" detection.
             if name in {
                 ".git",
                 ".venv",
@@ -132,6 +136,12 @@ def _discover_git_repos(dev_root: Path, max_depth: int = 2) -> list[Path]:
                 ".ruff_cache",
             }:
                 continue
+            if depth == 0:
+                # Skip top-level junk roots unless explicitly allowed.
+                if (name.startswith("_") or name.startswith(".")) and name not in {"_infra"}:
+                    continue
+                if name in {"evals", "integration_test_tmp"}:
+                    continue
             if (child / ".git").exists():
                 repos.append(child)
                 # Don't recurse into a repo unless user explicitly sets higher max_depth.
