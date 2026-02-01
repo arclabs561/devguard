@@ -786,6 +786,8 @@ def sweep(
             exclude_repos=pub.exclude_repos,
             include_forks=pub.include_forks,
             max_repos=pub.max_repos,
+            timeout_s=pub.timeout_s,
+            max_concurrency=pub.max_concurrency,
         )
         out_path = Path(pub.output).expanduser()
         write_json(out_path, report)
@@ -794,6 +796,9 @@ def sweep(
         console.print(f"[bold]Findings:[/bold] {report['summary']['findings_total']}")
         if errors:
             console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+            if pub.fail_on_errors:
+                console.print("[bold red]Action:[/bold red] Fix scan errors (missed coverage) and rerun.")
+                raise typer.Exit(code=3)
         if report["summary"]["findings_total"] > 0:
             raise typer.Exit(code=2)
 

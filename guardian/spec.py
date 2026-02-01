@@ -70,6 +70,19 @@ class PublicGitHubSecretsSweepSpec(BaseModel):
     )
     include_forks: bool = Field(False, description="Whether to include forks.")
 
+    timeout_s: int = Field(
+        900,
+        description="Per-repo timeout upper bound in seconds (bounded internally).",
+    )
+    max_concurrency: int = Field(
+        4,
+        description="Maximum concurrent repo scans (bounded parallelism for speed).",
+    )
+    fail_on_errors: bool = Field(
+        False,
+        description="If true, treat scan errors (missed repos) as a CI failure.",
+    )
+
     output: str = Field(
         "public_github_secret_scan.json",
         description="Where to write the redacted JSON report (path).",

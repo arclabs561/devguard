@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -336,6 +337,7 @@ def scan_public_github_repos(
     include_forks: bool,
     max_repos: int,
     timeout_s: int = 900,
+    max_concurrency: int = 4,
 ) -> tuple[dict[str, Any], list[str]]:
     """Scan public repos for the given owners and return a redacted report."""
     errors: list[str] = []
@@ -372,6 +374,13 @@ def scan_public_github_repos(
     if max_repos and len(repos) > max_repos:
         repos = repos[:max_repos]
 
+    # Clamp concurrency to a safe range.
+    try:
+        max_concurrency = int(max_concurrency)
+    except Exception:
+        max_concurrency = 4
+    max_concurrency = max(1, min(max_concurrency, 12))
+
     # 2) Run TruffleHog github scan for explicit repos.
     if not token:
         errors.append(
@@ -385,13 +394,14 @@ def scan_public_github_repos(
         env = os.environ.copy()
         env["GITHUB_TOKEN"] = token
 
-        # Run per-repo so one bad repo/rate-limit doesn't poison the entire scan.
-        # This is slower but far more reliable for “scan everything” automation.
-        #
-        # Interpret `timeout_s` as a *per-repo* timeout upper bound (not total).
+        # Interpret `timeout_s` as a *per-repo* timeout upper bound (not total),
+        # but clamp it so CI doesn't get stuck.
         per_repo_timeout = max(30, min(int(timeout_s), 600))
 
-        for r in repos:
+        def _scan_one_repo(repo_full: str) -> tuple[str, list[RedactedFinding], list[str]]:
+            repo_errors: list[str] = []
+            repo_findings: list[RedactedFinding] = []
+
             cmd = [
                 "trufflehog",
                 "github",
@@ -402,7 +412,7 @@ def scan_public_github_repos(
                 "--filter-unverified",
                 "--no-fail-on-scan-errors",
                 "--repo",
-                f"https://github.com/{r}",
+                f"https://github.com/{repo_full}",
             ]
             try:
                 res = subprocess.run(
@@ -413,8 +423,7 @@ def scan_public_github_repos(
                     env=env,
                 )
             except Exception as e:
-                errors.append(f"trufflehog github failed for {r}: {e}")
-                continue
+                return repo_full, [], [f"trufflehog github failed for {repo_full}: {e}"]
 
             # Some orgs enforce SAML SSO on tokens, which can block even public repo API
             # access. For public repos, retry once without auth (best-effort).
@@ -434,7 +443,7 @@ def scan_public_github_repos(
                         "--no-fail-on-scan-errors",
                         "--no-verification",
                         "--repo",
-                        f"https://github.com/{r}",
+                        f"https://github.com/{repo_full}",
                     ]
                     try:
                         retry = subprocess.run(
@@ -447,18 +456,18 @@ def scan_public_github_repos(
                         if retry.returncode in (0, 183):
                             res = retry
                         else:
-                            errors.append(
-                                f"trufflehog github scan error for {r}: exit={res.returncode} "
+                            repo_errors.append(
+                                f"trufflehog github scan error for {repo_full}: exit={res.returncode} "
                                 f"stderr={stderr[:600]}"
                             )
                     except Exception:
-                        errors.append(
-                            f"trufflehog github scan error for {r}: exit={res.returncode} "
+                        repo_errors.append(
+                            f"trufflehog github scan error for {repo_full}: exit={res.returncode} "
                             f"stderr={stderr[:600]}"
                         )
                 else:
-                    errors.append(
-                        f"trufflehog github scan error for {r}: exit={res.returncode} "
+                    repo_errors.append(
+                        f"trufflehog github scan error for {repo_full}: exit={res.returncode} "
                         f"stderr={stderr[:600]}"
                     )
 
@@ -477,10 +486,22 @@ def scan_public_github_repos(
                         .get("Git", {})
                         .get("repository", None)
                     )
-                    repo_name = repo_name if isinstance(repo_name, str) and repo_name else r
+                    repo_name = repo_name if isinstance(repo_name, str) and repo_name else repo_full
                     f = _extract_finding(obj, repo=repo_name)
                     if f:
-                        findings.append(f)
+                        repo_findings.append(f)
+
+            return repo_full, repo_findings, repo_errors
+
+        # Run per-repo but in bounded parallelism for speed; keep results robust.
+        with ThreadPoolExecutor(max_workers=max_concurrency) as ex:
+            futures = [ex.submit(_scan_one_repo, r) for r in repos]
+            for fut in as_completed(futures):
+                _repo_full, repo_findings, repo_errors = fut.result()
+                if repo_errors:
+                    errors.extend(repo_errors)
+                if repo_findings:
+                    findings.extend(repo_findings)
 
     # Summaries
     verified = sum(1 for f in findings if f.verified is True)
@@ -507,6 +528,8 @@ def scan_public_github_repos(
             "name": "trufflehog",
             "mode": "github",
             "results": "verified,unverified,unknown",
+            "max_concurrency": max_concurrency,
+            "per_repo_timeout_s": per_repo_timeout if repos and token else None,
         },
         # Redacted: no secret values/snippets included.
         "findings": [f.to_dict() for f in findings[:500]],
