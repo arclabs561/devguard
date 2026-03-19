@@ -194,6 +194,15 @@ sweeps:
     timeout_s: 120
     output: ".state/guardian/dependency-audit.json"
 
+  # AI editor config audit: Claude, Cursor, Copilot, MCP validity and consistency.
+  ai_editor_config_audit:
+    enabled: true
+    dev_root: null
+    max_depth: 2
+    exclude_repo_globs: ["*/_trash/*", "*/_scratch/*", "*/_external/*", "*/_archive/*", "*/_forks/*"]
+    only_with_configs: true
+    output: ".state/guardian/ai-editor-config-audit.json"
+
   # Cargo publish pipeline audit: tag triggers, OIDC, dry-run, version/tag consistency.
   cargo_publish_audit:
     enabled: true

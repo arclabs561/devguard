@@ -329,6 +329,39 @@ class PublicGitHubSecretsSweepSpec(BaseModel):
     )
 
 
+class AIEditorConfigAuditSweepSpec(BaseModel):
+    """Audit AI editor configs (Claude, Cursor, Copilot, MCP) across repos.
+
+    Checks CLAUDE.md presence/validity, .claude/ structure, Cursor .mdc frontmatter,
+    MCP JSON validity, hardcoded secrets, cross-tool rule consistency, and gitignore coverage.
+    """
+
+    enabled: bool = Field(False, description="Whether this sweep is enabled")
+    dev_root: str | None = Field(
+        None,
+        description="Workspace root. Default: $DEV_DIR or ~/Documents/dev when unset.",
+    )
+    max_depth: int = Field(2, description="How deep under dev_root to look for git repos.")
+    exclude_repo_globs: list[str] = Field(
+        default_factory=lambda: [
+            "*/_trash/*",
+            "*/_scratch/*",
+            "*/_external/*",
+            "*/_archive/*",
+            "*/_forks/*",
+        ],
+        description="Glob patterns to exclude repos from the audit.",
+    )
+    only_with_configs: bool = Field(
+        True,
+        description="Only report repos that have at least one AI editor config.",
+    )
+    output: str = Field(
+        ".state/guardian/ai-editor-config-audit.json",
+        description="Where to write the JSON report.",
+    )
+
+
 class CargoPublishAuditSweepSpec(BaseModel):
     """Audit Rust repos for correct cargo publish CI pipelines.
 
@@ -401,6 +434,10 @@ class SweepSpec(BaseModel):
     cargo_publish_audit: CargoPublishAuditSweepSpec = Field(
         default_factory=lambda: CargoPublishAuditSweepSpec(),
         description="Audit Rust repos for correct cargo publish CI pipelines",
+    )
+    ai_editor_config_audit: AIEditorConfigAuditSweepSpec = Field(
+        default_factory=lambda: AIEditorConfigAuditSweepSpec(),
+        description="Audit AI editor configs (Claude, Cursor, Copilot, MCP) across repos",
     )
 
 

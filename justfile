@@ -122,6 +122,10 @@ sweep-gitignore:
 sweep-deps:
     @uv run python -m guardian sweep --spec guardian.spec.yaml --only dependency_audit
 
+# Audit AI editor configs (Claude, Cursor, Copilot, MCP) across repos
+sweep-ai-editor:
+    @uv run python -m guardian sweep --spec guardian.spec.yaml --only ai_editor_config_audit
+
 # Audit cargo publish pipelines (tags, OIDC, dry-run, version consistency)
 sweep-cargo-publish:
     @uv run python -m guardian sweep --spec guardian.spec.yaml --only cargo_publish_audit
