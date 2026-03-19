@@ -738,7 +738,7 @@ def sweep(
     only: list[str] = typer.Option(
         None,
         "--only",
-        help="Run only these sweeps (repeatable). Known: local_dev, public_github_secrets, local_dirty_worktree_secrets, project_flaudit, gitignore_audit, dependency_audit, ssh_key_audit, cargo_publish_audit",
+        help="Run only these sweeps (repeatable). Known: local_dev, public_github_secrets, local_dirty_worktree_secrets, project_flaudit, gitignore_audit, dependency_audit, ssh_key_audit, cargo_publish_audit, ai_editor_config_audit",
     ),
 ) -> None:
     """Run spec-driven sweeps (policy checks).
@@ -1001,6 +1001,38 @@ def sweep(
         if report["summary"]["total_errors"] > 0:
             exit_code = max(exit_code, 2)
 
+    # ai editor config audit sweep
+    aicfg = spec.sweeps.ai_editor_config_audit
+    if aicfg.enabled and (not wanted or "ai_editor_config_audit" in wanted):
+        from guardian.sweeps.ai_editor_config_audit import audit_ai_editor_configs
+        from guardian.sweeps.ai_editor_config_audit import write_report as write_aicfg
+
+        root = Path(aicfg.dev_root).expanduser() if aicfg.dev_root else default_dev_root()
+        report, errors = audit_ai_editor_configs(
+            dev_root=root,
+            max_depth=aicfg.max_depth,
+            exclude_repo_globs=aicfg.exclude_repo_globs,
+            only_with_configs=aicfg.only_with_configs,
+        )
+        out_path = Path(aicfg.output).expanduser()
+        write_aicfg(out_path, report)
+        console.print(f"[bold]ai_editor_config_audit report:[/bold] {out_path}")
+        console.print(
+            f"[bold]Repos with AI configs:[/bold] {report['scope']['repos_with_ai_configs']}"
+        )
+        console.print(f"[bold]Repos with errors:[/bold] {report['summary']['repos_with_errors']}")
+        console.print(
+            f"[bold]Repos with warnings:[/bold] {report['summary']['repos_with_warnings']}"
+        )
+        console.print(f"[bold]Total findings:[/bold] {report['summary']['total_findings']}")
+        if report["summary"].get("tool_adoption"):
+            tools = ", ".join(f"{t}={c}" for t, c in report["summary"]["tool_adoption"])
+            console.print(f"[bold]Tool adoption:[/bold] {tools}")
+        if errors:
+            console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+        if report["summary"]["total_errors"] > 0:
+            exit_code = max(exit_code, 2)
+
     any_enabled = (
         local.enabled
         or pub.enabled
@@ -1010,6 +1042,7 @@ def sweep(
         or spec.sweeps.dependency_audit.enabled
         or spec.sweeps.ssh_key_audit.enabled
         or spec.sweeps.cargo_publish_audit.enabled
+        or spec.sweeps.ai_editor_config_audit.enabled
     )
     if not wanted and not any_enabled:
         console.print("[yellow]No sweeps enabled in spec.[/yellow]")
