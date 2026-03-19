@@ -7,7 +7,7 @@ import os
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -16,8 +16,15 @@ import httpx
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
+_LOCK_FILE_BASENAMES: frozenset[str] = frozenset({
+    "uv.lock", "Cargo.lock", "package-lock.json", "pnpm-lock.yaml",
+    "yarn.lock", "poetry.lock", "Gemfile.lock", "composer.lock",
+    "Pipfile.lock", "requirements.lock",
+})
+
+
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _run(cmd: list[str], timeout_s: int) -> subprocess.CompletedProcess[str]:
@@ -213,6 +220,12 @@ def _expand_owners(owners: list[str], token: str | None) -> tuple[list[str], lis
     # Keep explicit owners too (anything not a sentinel).
     expanded: list[str] = [o for o in requested if not o.startswith("@")]
 
+    # If a token isn't available, don't even try to resolve @me/@orgs via API.
+    # This avoids noisy 401s and makes the failure mode clearer.
+    if (want_me or want_orgs) and not token:
+        errs.append("cannot expand @me/@orgs without a GitHub token (set GITHUB_TOKEN or GH_TOKEN)")
+        return sorted(set(expanded)), errs
+
     me_login: str | None = None
     if want_me or want_orgs:
         user_obj, err = _github_api_get_json("https://api.github.com/user", token)
@@ -336,6 +349,7 @@ def scan_public_github_repos(
     exclude_repos: list[str],
     include_forks: bool,
     max_repos: int,
+    engines: list[str] | None = None,
     timeout_s: int = 900,
     max_concurrency: int = 4,
 ) -> tuple[dict[str, Any], list[str]]:
@@ -374,6 +388,18 @@ def scan_public_github_repos(
     if max_repos and len(repos) > max_repos:
         repos = repos[:max_repos]
 
+    requested_engines = [e.strip().lower() for e in (engines or ["trufflehog"]) if e and e.strip()]
+    # Dedup while preserving order.
+    seen: set[str] = set()
+    requested_engines = [e for e in requested_engines if not (e in seen or seen.add(e))]
+    supported = {"trufflehog", "kingfisher"}
+    unknown = [e for e in requested_engines if e not in supported]
+    if unknown:
+        errors.append(f"Unknown engines: {unknown}. Supported: {sorted(supported)}")
+        requested_engines = [e for e in requested_engines if e in supported]
+    if not requested_engines:
+        requested_engines = ["trufflehog"]
+
     # Clamp concurrency to a safe range.
     try:
         max_concurrency = int(max_concurrency)
@@ -381,24 +407,27 @@ def scan_public_github_repos(
         max_concurrency = 4
     max_concurrency = max(1, min(max_concurrency, 12))
 
-    # 2) Run TruffleHog github scan for explicit repos.
-    if not token:
+    # 2) Run scan engines per repo.
+    if not token and any(e in ("trufflehog", "kingfisher") for e in requested_engines):
         errors.append(
-            "Missing GitHub token for trufflehog github scan. "
+            "Missing GitHub token for public GitHub scans. "
             "Set GITHUB_TOKEN/GH_TOKEN or run `gh auth login` then rerun."
         )
 
     findings: list[RedactedFinding] = []
+    engine_summaries: dict[str, Any] = {}
+
     if repos and token:
         # Avoid passing tokens on argv (shows up in process lists).
         env = os.environ.copy()
         env["GITHUB_TOKEN"] = token
+        env["KF_GITHUB_TOKEN"] = token
 
         # Interpret `timeout_s` as a *per-repo* timeout upper bound (not total),
         # but clamp it so CI doesn't get stuck.
         per_repo_timeout = max(30, min(int(timeout_s), 600))
 
-        def _scan_one_repo(repo_full: str) -> tuple[str, list[RedactedFinding], list[str]]:
+        def _scan_one_repo_trufflehog(repo_full: str) -> tuple[str, list[RedactedFinding], list[str]]:
             repo_errors: list[str] = []
             repo_findings: list[RedactedFinding] = []
 
@@ -489,19 +518,121 @@ def scan_public_github_repos(
                     repo_name = repo_name if isinstance(repo_name, str) and repo_name else repo_full
                     f = _extract_finding(obj, repo=repo_name)
                     if f:
+                        # Skip lock file false positives (dependency hashes).
+                        if f.file and Path(f.file).name in _LOCK_FILE_BASENAMES:
+                            continue
+                        # Encode engine in the type for now to keep output schema stable.
+                        f.type = f"trufflehog:{f.type}"
                         repo_findings.append(f)
 
             return repo_full, repo_findings, repo_errors
 
-        # Run per-repo but in bounded parallelism for speed; keep results robust.
-        with ThreadPoolExecutor(max_workers=max_concurrency) as ex:
-            futures = [ex.submit(_scan_one_repo, r) for r in repos]
-            for fut in as_completed(futures):
-                _repo_full, repo_findings, repo_errors = fut.result()
-                if repo_errors:
-                    errors.extend(repo_errors)
-                if repo_findings:
-                    findings.extend(repo_findings)
+        def _scan_one_repo_kingfisher(repo_full: str) -> tuple[str, list[RedactedFinding], list[str]]:
+            repo_errors: list[str] = []
+            repo_findings: list[RedactedFinding] = []
+
+            # Use --git-url so we can keep our own repo enumeration/filtering.
+            # Use --redact so output never includes plaintext secrets.
+            cmd = [
+                "kingfisher",
+                "scan",
+                "--git-url",
+                f"https://github.com/{repo_full}.git",
+                "--format",
+                "jsonl",
+                "--redact",
+                "--no-update-check",
+                "--no-validate",
+            ]
+            try:
+                res = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=per_repo_timeout,
+                    env=env,
+                )
+            except Exception as e:
+                return repo_full, [], [f"kingfisher failed for {repo_full}: {e}"]
+
+            # Kingfisher writes logs + JSONL to stdout. Parse JSON objects from lines.
+            summary_obj: dict[str, Any] | None = None
+            for line in (res.stdout or "").splitlines():
+                s = line.strip()
+                if not s.startswith("{"):
+                    continue
+                try:
+                    obj = json.loads(s)
+                except Exception:
+                    continue
+                if isinstance(obj, dict) and "scan_date" in obj and "findings" in obj:
+                    summary_obj = obj
+                    continue
+                if not isinstance(obj, dict):
+                    continue
+                rule = obj.get("rule") or obj.get("rule_id") or obj.get("id")
+                path = obj.get("path") or obj.get("file") or obj.get("Path") or obj.get("File")
+                # Require at least a rule or path to distinguish findings from log lines.
+                if not rule and not path:
+                    continue
+                rule = rule or "kingfisher"
+                line_val = obj.get("line") or obj.get("line_num") or obj.get("line_number")
+                commit = obj.get("commit") or obj.get("Commit")
+                try:
+                    line_i = int(line_val) if line_val is not None else None
+                except Exception:
+                    line_i = None
+                if isinstance(commit, str) and len(commit) > 8:
+                    commit = commit[:8]
+                file_str = str(path) if path is not None else None
+                # Skip lock file false positives.
+                if file_str and Path(file_str).name in _LOCK_FILE_BASENAMES:
+                    continue
+                repo_findings.append(
+                    RedactedFinding(
+                        repo=repo_full,
+                        type=f"kingfisher:{rule}",
+                        verified=None,
+                        file=file_str,
+                        commit=str(commit) if commit is not None else None,
+                        line=line_i,
+                    )
+                )
+
+            # If we couldn't parse anything, surface stderr to make it debuggable.
+            if summary_obj is None and not repo_findings:
+                stderr = (res.stderr or "").strip()
+                repo_errors.append(
+                    f"kingfisher produced no parseable JSON for {repo_full}: exit={res.returncode} stderr={stderr[:600]}"
+                )
+
+            return repo_full, repo_findings, repo_errors
+
+        def _run_engine(
+            engine: str,
+            scan_one_repo,
+        ) -> None:
+            per_engine_findings: list[RedactedFinding] = []
+            per_engine_errors: list[str] = []
+            with ThreadPoolExecutor(max_workers=max_concurrency) as ex:
+                futures = [ex.submit(scan_one_repo, r) for r in repos]
+                for fut in as_completed(futures):
+                    _repo_full, repo_findings, repo_errors = fut.result()
+                    if repo_errors:
+                        per_engine_errors.extend(repo_errors)
+                    if repo_findings:
+                        per_engine_findings.extend(repo_findings)
+            findings.extend(per_engine_findings)
+            errors.extend(per_engine_errors)
+            engine_summaries[engine] = {
+                "findings_total": len(per_engine_findings),
+                "errors_total": len(per_engine_errors),
+            }
+
+        if "trufflehog" in requested_engines:
+            _run_engine("trufflehog", _scan_one_repo_trufflehog)
+        if "kingfisher" in requested_engines:
+            _run_engine("kingfisher", _scan_one_repo_kingfisher)
 
     # Summaries
     verified = sum(1 for f in findings if f.verified is True)
@@ -525,11 +656,10 @@ def scan_public_github_repos(
             "errors": discovery_errors,
         },
         "engine": {
-            "name": "trufflehog",
-            "mode": "github",
-            "results": "verified,unverified,unknown",
+            "requested_engines": requested_engines,
             "max_concurrency": max_concurrency,
             "per_repo_timeout_s": per_repo_timeout if repos and token else None,
+            "summaries": engine_summaries,
         },
         # Redacted: no secret values/snippets included.
         "findings": [f.to_dict() for f in findings[:500]],

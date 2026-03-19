@@ -19,10 +19,9 @@ import json
 import os
 import subprocess
 import time
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable
-
 
 DEFAULT_DENY_GLOBS: list[str] = [
     "**/.env",
@@ -39,15 +38,30 @@ DEFAULT_DENY_GLOBS: list[str] = [
     "**/*.pkcs12",
     "**/id_rsa",
     "**/id_rsa.*",
+    "**/id_ecdsa",
+    "**/id_ecdsa.*",
+    "**/id_ed25519",
+    "**/id_ed25519.*",
     "**/.npmrc",
+    "**/.pypirc",
+    "**/.netrc",
+    "**/.htpasswd",
     "**/.aws/credentials",
     "**/.ssh/**",
     "**/.gnupg/**",
+    "**/*.asc",
     "**/*.sqlite",
     "**/*.sqlite3",
     "**/*.db",
     "**/*.db-wal",
     "**/*.db-shm",
+    # Terraform state/vars (often contain secrets)
+    "**/*.tfstate",
+    "**/*.tfstate.backup",
+    "**/*.tfvars",
+    # GCP / OAuth tokens
+    "**/credentials.json",
+    "**/token.json",
     # Known Guardian "oops outputs"
     "**/.guardian-email-history.json",
     "**/.guardian-email-thread",
