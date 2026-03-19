@@ -59,7 +59,10 @@ discovery_rules:
   - name: github_commits
     type: github_commits
     method: cli
-    command: gh api user/events --jq '[.[] | select(.type == "PushEvent") | {repo: .repo.name, message: .payload.commits[0].message, date: .created_at}]' --limit 20
+    command: >-
+      gh api user/events
+      --jq '[.[] | select(.type == "PushEvent") | {repo: .repo.name, message: .payload.commits[0].message, date: .created_at}]'
+      --limit 20
     command_parser: json
     timeout: 10
     enabled: true
@@ -67,7 +70,11 @@ discovery_rules:
   - name: github_mentions
     type: github_mentions
     method: cli
-    command: gh api search/issues -f 'q=mentions:{username}' --jq '.items[] | {title: .title, url: .html_url, state: .state, created_at: .created_at}' --limit 20
+    command: >-
+      gh api search/issues
+      -f 'q=mentions:{username}'
+      --jq '.items[] | {title: .title, url: .html_url, state: .state, created_at: .created_at}'
+      --limit 20
     command_parser: json_lines
     timeout: 10
     enabled: true
@@ -100,3 +107,108 @@ filters:
   # exclude_patterns: [".*test.*", ".*example.*"]
   # include_patterns: []
 
+# Policy sweeps (dogfood Guardian locally).
+# - Outputs go to `.state/` (ignored by git)
+# - `public_github_secrets` is the primary exposure-surface check (public repos)
+sweeps:
+  local_dev:
+    enabled: true
+    max_depth: 2
+    max_blob_mb: 5
+    output: ".state/guardian/local-dev-sweep.json"
+    deny_globs: []
+  public_github_secrets:
+    enabled: true
+    # Scan only *your* public repos (exclude orgs like diffeo)
+    owners: ["@me"]
+    include_forks: false
+    # Run both engines for broader coverage
+    engines: ["trufflehog", "kingfisher"]
+    max_repos: 200
+    include_repos: []
+    exclude_repos: []
+    # Faster scans via bounded parallelism
+    max_concurrency: 6
+    # Per-repo timeout upper bound (clamped internally)
+    timeout_s: 180
+    # Treat “missed coverage” (scan errors) as failure when dogfooding locally
+    fail_on_errors: true
+    output: ".state/guardian/public-github-leak-scan.json"
+  # Local-only, high-signal: scan only repos with uncommitted/untracked changes.
+  local_dirty_worktree_secrets:
+    enabled: true
+    dev_root: null
+    max_depth: 2
+    only_dirty: true
+    # Default: skip junk roots; include them explicitly if you want.
+    exclude_repo_globs: ["*/_trash/*", "*/_scratch/*", "*/_external/*", "*/_archive/*", "*/_forks/*"]
+    # Bound runtime per repo when many files are dirty.
+    max_paths_per_repo: 50
+    # Respect gitignore by default (scan ignored files only if you explicitly opt in).
+    include_ignored_files: false
+    # Default: compute ahead/behind vs upstream without fetching (fast, but may be stale).
+    check_upstream: true
+    fetch_remotes: false
+    max_concurrency: 4
+    timeout_s: 180
+    output: ".state/guardian/local-dirty-worktree-secrets.json"
+
+  # Files-to-prompt + OpenRouter/Gemini flaw analysis (README vs impl vs tests, rules violations).
+  # Requires OPENROUTER_API_KEY. Use google/gemini-2.0-flash-exp or google/gemini-2.5-flash-preview.
+  # When public_repo_names is set, only those repos are analyzed with a stricter "public crate" prompt.
+  project_flaudit:
+    enabled: true
+    k_recent: 5
+    max_depth: 2
+    model_id: "google/gemini-2.5-flash"
+    include_rules: true
+    workspace_rules_path: ".cursor/rules"
+    workspace_rules_include: []
+    max_workspace_rules_chars: 15000
+    severity_guidance: null
+    exclude_repo_globs: ["*/_trash/*", "*/_scratch/*", "*/_external/*", "*/_archive/*", "*/_forks/*"]
+    depth_0_skip_prefixes: ["_", "."]
+    depth_0_allow_names: ["_infra"]
+    max_prompt_chars: 120000
+    # Focus on public crates: only analyze these (by dir name); uses stricter_public_prompt.
+    public_repo_names: [infogeom, fingerprints, logp, pkgrank, clump, flowmatch, cnk, vicinity]
+    stricter_public_prompt: true
+    output: ".state/guardian/project-flaudit.json"
+
+  # .gitignore hygiene: flag repos (especially public) missing common patterns.
+  gitignore_audit:
+    enabled: true
+    dev_root: null
+    max_depth: 2
+    exclude_repo_globs: ["*/_trash/*", "*/_scratch/*", "*/_external/*", "*/_archive/*", "*/_forks/*"]
+    output: ".state/guardian/gitignore-audit.json"
+
+  # Dependency vulnerability audit: cargo-audit, npm audit, pip-audit.
+  dependency_audit:
+    enabled: true
+    dev_root: null
+    max_depth: 2
+    exclude_repo_globs: ["*/_trash/*", "*/_scratch/*", "*/_external/*", "*/_archive/*", "*/_forks/*"]
+    engines: ["cargo-audit", "npm-audit", "pip-audit"]
+    max_concurrency: 4
+    timeout_s: 120
+    output: ".state/guardian/dependency-audit.json"
+
+  # Cargo publish pipeline audit: tag triggers, OIDC, dry-run, version/tag consistency.
+  cargo_publish_audit:
+    enabled: true
+    dev_root: null
+    max_depth: 2
+    exclude_repo_globs: ["*/_trash/*", "*/_scratch/*", "*/_external/*", "*/_archive/*", "*/_forks/*"]
+    only_public: false
+    repo_names: [infogeom, fingerprints, logp, pkgrank, clump, flowmatch, cnk, vicinity]
+    output: ".state/guardian/cargo-publish-audit.json"
+
+  # SSH key hygiene: weak algorithms, missing passphrases, stale GitHub keys.
+  ssh_key_audit:
+    enabled: true
+    ssh_dir: "~/.ssh"
+    check_github: true
+    min_rsa_bits: 3072
+    flag_ecdsa: false
+    output: ".state/guardian/ssh-key-audit.json"

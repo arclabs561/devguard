@@ -92,3 +92,40 @@ install:
 install-dev:
     @uv pip install -e ".[dev]"
 
+# =============================================================================
+# Dogfood (local) sweeps
+# =============================================================================
+
+# Run all enabled sweeps from a spec (bounded; non-destructive)
+sweep spec='guardian.spec.yaml' dev-root='':
+    @uv run python -m guardian sweep --spec {{spec}} --dev-root {{dev-root}}
+
+# Scan *your* public GitHub repos for leaks (redacted JSON output)
+sweep-public spec='guardian.spec.yaml':
+    @uv run python -m guardian sweep --spec {{spec}} --only public_github_secrets
+    @python3 -c 'import json; from pathlib import Path; p=Path(".state/guardian/public-github-leak-scan.json"); j=json.loads(p.read_text()); print("owners_expanded", j.get("scope",{}).get("owners_expanded")); print("repos_scanned_count", j.get("scope",{}).get("repos_scanned_count")); print("findings_total", j.get("summary",{}).get("findings_total")); print("errors_count", len(j.get("errors",[]))); print("engine", {k:j.get("engine",{}).get(k) for k in ["max_concurrency","per_repo_timeout_s"]})'
+
+# Faster smoke run (scan fewer repos)
+sweep-public-fast:
+    @uv run python -m guardian sweep --spec guardian.spec.fast.yaml --only public_github_secrets
+    @python3 -c 'import json; from pathlib import Path; p=Path(".state/guardian/public-github-leak-scan.fast.json"); j=json.loads(p.read_text()); print("owners_expanded", j.get("scope",{}).get("owners_expanded")); print("repos_scanned_count", j.get("scope",{}).get("repos_scanned_count")); print("findings_total", j.get("summary",{}).get("findings_total")); print("errors_count", len(j.get("errors",[]))); print("engine", {k:j.get("engine",{}).get(k) for k in ["max_concurrency","per_repo_timeout_s"]})'
+
+# Scan *dirty* local worktrees (untracked/modified), redacted output
+sweep-dirty:
+    @uv run python -m guardian sweep --spec guardian.spec.yaml --only local_dirty_worktree_secrets
+
+# Audit .gitignore files across dev repos for missing patterns
+sweep-gitignore:
+    @uv run python -m guardian sweep --spec guardian.spec.yaml --only gitignore_audit
+
+# Audit dependencies for known vulnerabilities
+sweep-deps:
+    @uv run python -m guardian sweep --spec guardian.spec.yaml --only dependency_audit
+
+# Audit cargo publish pipelines (tags, OIDC, dry-run, version consistency)
+sweep-cargo-publish:
+    @uv run python -m guardian sweep --spec guardian.spec.yaml --only cargo_publish_audit
+
+# Audit SSH keys for weak algorithms, missing passphrases, stale registrations
+sweep-ssh:
+    @uv run python -m guardian sweep --spec guardian.spec.yaml --only ssh_key_audit

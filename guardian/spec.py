@@ -50,6 +50,241 @@ class LocalDevSweepSpec(BaseModel):
     )
 
 
+class LocalDirtyWorktreeSecretsSweepSpec(BaseModel):
+    """Scan only *dirty* local git worktrees for secrets (redacted output).
+
+    This targets:
+    - untracked files
+    - modified but uncommitted changes
+    - local-only repos not pushed yet
+    """
+
+    enabled: bool = Field(False, description="Whether this sweep is enabled")
+    dev_root: str | None = Field(
+        None,
+        description="Workspace root to discover git repos under (default: $DEV_DIR or ~/Documents/dev).",
+    )
+    max_depth: int = Field(
+        2, description="How deep under dev_root to look for git repos (bounded)."
+    )
+    only_dirty: bool = Field(
+        True, description="Only scan repos with uncommitted/untracked changes."
+    )
+    exclude_repo_globs: list[str] = Field(
+        default_factory=lambda: [
+            "*/_trash/*",
+            "*/_scratch/*",
+            "*/_external/*",
+            "*/_archive/*",
+            "*/_forks/*",
+        ],
+        description="Glob patterns (matched against repo paths) to exclude from scanning.",
+    )
+    max_paths_per_repo: int = Field(
+        50,
+        description="Maximum number of dirty file paths to scan per repo (bounds runtime).",
+    )
+    include_ignored_files: bool = Field(
+        False,
+        description="If true, also scan untracked files that are ignored by gitignore (noisy).",
+    )
+    check_upstream: bool = Field(
+        True,
+        description="If true, compute ahead/behind vs upstream (may be stale if you haven't fetched).",
+    )
+    fetch_remotes: bool = Field(
+        False,
+        description="If true, run a fast `git fetch` before ahead/behind (slower; network).",
+    )
+    max_concurrency: int = Field(4, description="Maximum concurrent repo scans.")
+    timeout_s: int = Field(180, description="Per-repo timeout upper bound in seconds.")
+    output: str = Field(
+        ".state/guardian/local-dirty-worktree-secrets.json",
+        description="Where to write the redacted JSON report (path).",
+    )
+
+
+class ProjectFlauditSweepSpec(BaseModel):
+    """Files-to-prompt per project + OpenRouter/Gemini flaw analysis.
+
+    For each project (or k most recently edited), aggregates README, impl, tests,
+    and optional rules into a prompt, then uses OpenRouter + Gemini to find:
+    readme/impl drift, readme/tests mismatch, rules violations.
+
+    All paths and patterns are configurable; defaults suit a typical super-workspace
+    but work for any layout.
+    """
+
+    enabled: bool = Field(False, description="Whether this sweep is enabled")
+    dev_root: str | None = Field(
+        None,
+        description="Workspace root. Default: $DEV_DIR or ~/Documents/dev when unset.",
+    )
+    k_recent: int = Field(
+        5,
+        description="Number of most recently edited projects to analyze.",
+    )
+    max_depth: int = Field(2, description="How deep under dev_root to look for git repos.")
+    model_id: str = Field(
+        "google/gemini-2.5-flash",
+        description="OpenRouter model ID (e.g. google/gemini-2.5-flash, google/gemini-3.1-pro-preview).",
+    )
+    include_rules: bool = Field(
+        True,
+        description="Include per-repo .cursor/rules in the prompt.",
+    )
+    workspace_rules_path: str | None = Field(
+        None,
+        description="Optional path to workspace-level rules (e.g. parent .cursor/rules). "
+        "When set, rules from this dir are included for rules-violation checks. "
+        "Use when repos live under a super-workspace with shared rules.",
+    )
+    workspace_rules_include: list[str] = Field(
+        default_factory=list,
+        description="Rule filenames to include from workspace_rules_path (e.g. user-core.mdc). "
+        "If empty and workspace_rules_path is set, a default set is used.",
+    )
+    max_workspace_rules_chars: int = Field(
+        15_000,
+        description="Max chars for workspace rules in the prompt.",
+    )
+    severity_guidance: str | None = Field(
+        None,
+        description="Optional custom severity guidance for the LLM. If unset, a default calibration is used.",
+    )
+    exclude_repo_globs: list[str] = Field(
+        default_factory=lambda: [
+            "*/_trash/*",
+            "*/_scratch/*",
+            "*/_external/*",
+            "*/_archive/*",
+            "*/_forks/*",
+        ],
+        description="Glob patterns to exclude repos from analysis.",
+    )
+    depth_0_skip_prefixes: list[str] = Field(
+        default_factory=lambda: ["_", "."],
+        description="At depth 0, skip dirs whose names start with these. Use [] to disable.",
+    )
+    depth_0_allow_names: list[str] = Field(
+        default_factory=lambda: ["_infra"],
+        description="Depth-0 dir names to allow despite depth_0_skip_prefixes.",
+    )
+    max_prompt_chars: int = Field(
+        120_000,
+        description="Max prompt size before truncation.",
+    )
+    scope_recent_commits: int | None = Field(
+        None,
+        description="When set, only include files changed in last N commits (plus manifests + README). "
+        "Reduces prompt size and focuses on recent changes. None = full repo.",
+    )
+    public_repo_names: list[str] = Field(
+        default_factory=list,
+        description="When non-empty, only analyze these repos (by directory name under dev_root). "
+        "Used to focus on public crates; ignores k_recent and runs on all matching repos (up to cap).",
+    )
+    stricter_public_prompt: bool = Field(
+        True,
+        description="When public_repo_names is set, use a stricter system prompt aimed at public crate quality.",
+    )
+    output: str = Field(
+        ".state/guardian/project-flaudit.json",
+        description="Where to write the JSON report.",
+    )
+
+
+class SSHKeyAuditSweepSpec(BaseModel):
+    """Audit SSH keys for weak algorithms, missing passphrases, and stale registrations."""
+
+    enabled: bool = Field(False, description="Whether this sweep is enabled")
+    ssh_dir: str = Field(
+        "~/.ssh",
+        description="Path to SSH directory to scan.",
+    )
+    check_github: bool = Field(
+        True,
+        description="Cross-reference local keys with GitHub via `gh ssh-key list`.",
+    )
+    min_rsa_bits: int = Field(
+        3072,
+        description="Minimum RSA key size in bits; keys below this are flagged.",
+    )
+    flag_ecdsa: bool = Field(
+        False,
+        description="Flag ECDSA keys (some consider NIST curves weak).",
+    )
+    output: str = Field(
+        ".state/guardian/ssh-key-audit.json",
+        description="Where to write the JSON report.",
+    )
+
+
+class GitignoreAuditSweepSpec(BaseModel):
+    """Audit .gitignore files across local repos for missing hygiene patterns.
+
+    Checks for common patterns (.env, .state/, *.log, etc.) and flags repos --
+    especially public ones -- that are missing them.
+    """
+
+    enabled: bool = Field(False, description="Whether this sweep is enabled")
+    dev_root: str | None = Field(
+        None,
+        description="Workspace root. Default: $DEV_DIR or ~/Documents/dev when unset.",
+    )
+    max_depth: int = Field(2, description="How deep under dev_root to look for git repos.")
+    exclude_repo_globs: list[str] = Field(
+        default_factory=lambda: [
+            "*/_trash/*",
+            "*/_scratch/*",
+            "*/_external/*",
+            "*/_archive/*",
+            "*/_forks/*",
+        ],
+        description="Glob patterns to exclude repos from the audit.",
+    )
+    output: str = Field(
+        ".state/guardian/gitignore-audit.json",
+        description="Where to write the JSON report.",
+    )
+
+
+class DependencyAuditSweepSpec(BaseModel):
+    """Audit dependencies across local repos for known vulnerabilities.
+
+    Detects language by manifest/lock files and runs the appropriate audit tool
+    (cargo-audit, npm audit, pip-audit). Produces a unified report with
+    per-repo findings bucketed by severity.
+    """
+
+    enabled: bool = Field(False, description="Whether this sweep is enabled")
+    dev_root: str | None = Field(
+        None,
+        description="Workspace root. Default: $DEV_DIR or ~/Documents/dev when unset.",
+    )
+    max_depth: int = Field(2, description="How deep under dev_root to look for git repos.")
+    exclude_repo_globs: list[str] = Field(
+        default_factory=lambda: [
+            "*/_trash/*",
+            "*/_scratch/*",
+            "*/_external/*",
+            "*/_archive/*",
+            "*/_forks/*",
+        ],
+        description="Glob patterns to exclude repos from the audit.",
+    )
+    max_concurrency: int = Field(4, description="Maximum concurrent repo scans.")
+    timeout_s: int = Field(120, description="Per-repo timeout upper bound in seconds.")
+    engines: list[str] = Field(
+        default_factory=lambda: ["cargo-audit", "npm-audit", "pip-audit"],
+        description="Audit engines to run. Supported: cargo-audit, npm-audit, pip-audit.",
+    )
+    output: str = Field(
+        ".state/guardian/dependency-audit.json",
+        description="Where to write the JSON report.",
+    )
+
+
 class PublicGitHubSecretsSweepSpec(BaseModel):
     """Spec for scanning public GitHub repos for leaked secrets (redacted output)."""
 
@@ -70,6 +305,11 @@ class PublicGitHubSecretsSweepSpec(BaseModel):
     )
     include_forks: bool = Field(False, description="Whether to include forks.")
 
+    engines: list[str] = Field(
+        default_factory=lambda: ["trufflehog"],
+        description="Secret scanning engines to run. Supported: trufflehog, kingfisher",
+    )
+
     timeout_s: int = Field(
         900,
         description="Per-repo timeout upper bound in seconds (bounded internally).",
@@ -89,6 +329,44 @@ class PublicGitHubSecretsSweepSpec(BaseModel):
     )
 
 
+class CargoPublishAuditSweepSpec(BaseModel):
+    """Audit Rust repos for correct cargo publish CI pipelines.
+
+    Checks the full e2e: tag triggers, OIDC trusted publishing, dry-run on PRs,
+    version/tag consistency, workflow completeness, and token hygiene.
+    """
+
+    enabled: bool = Field(False, description="Whether this sweep is enabled")
+    dev_root: str | None = Field(
+        None,
+        description="Workspace root. Default: $DEV_DIR or ~/Documents/dev when unset.",
+    )
+    max_depth: int = Field(2, description="How deep under dev_root to look for git repos.")
+    exclude_repo_globs: list[str] = Field(
+        default_factory=lambda: [
+            "*/_trash/*",
+            "*/_scratch/*",
+            "*/_external/*",
+            "*/_archive/*",
+            "*/_forks/*",
+        ],
+        description="Glob patterns to exclude repos from the audit.",
+    )
+    only_public: bool = Field(
+        False,
+        description="Only audit repos that appear public (have a LICENSE file).",
+    )
+    repo_names: list[str] = Field(
+        default_factory=list,
+        description="When non-empty, only audit these repos (by directory name). "
+        "Useful to focus on published crates.",
+    )
+    output: str = Field(
+        ".state/guardian/cargo-publish-audit.json",
+        description="Where to write the JSON report.",
+    )
+
+
 class SweepSpec(BaseModel):
     """Spec for all sweeps (policy checks)."""
 
@@ -99,6 +377,30 @@ class SweepSpec(BaseModel):
     public_github_secrets: PublicGitHubSecretsSweepSpec = Field(
         default_factory=lambda: PublicGitHubSecretsSweepSpec(),
         description="Scan public GitHub repos for leaked secrets (redacted)",
+    )
+    local_dirty_worktree_secrets: LocalDirtyWorktreeSecretsSweepSpec = Field(
+        default_factory=lambda: LocalDirtyWorktreeSecretsSweepSpec(),
+        description="Scan dirty local git worktrees for secrets (redacted)",
+    )
+    project_flaudit: ProjectFlauditSweepSpec = Field(
+        default_factory=lambda: ProjectFlauditSweepSpec(),
+        description="Files-to-prompt + OpenRouter/Gemini flaw analysis per project",
+    )
+    gitignore_audit: GitignoreAuditSweepSpec = Field(
+        default_factory=lambda: GitignoreAuditSweepSpec(),
+        description="Audit .gitignore files for missing hygiene patterns",
+    )
+    dependency_audit: DependencyAuditSweepSpec = Field(
+        default_factory=lambda: DependencyAuditSweepSpec(),
+        description="Audit dependencies for known vulnerabilities",
+    )
+    ssh_key_audit: SSHKeyAuditSweepSpec = Field(
+        default_factory=lambda: SSHKeyAuditSweepSpec(),
+        description="Audit SSH keys for weak algorithms, missing passphrases, stale registrations",
+    )
+    cargo_publish_audit: CargoPublishAuditSweepSpec = Field(
+        default_factory=lambda: CargoPublishAuditSweepSpec(),
+        description="Audit Rust repos for correct cargo publish CI pipelines",
     )
 
 
