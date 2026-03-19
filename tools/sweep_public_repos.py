@@ -19,7 +19,6 @@ from typing import Any
 
 import httpx
 
-
 DEFAULT_DENY_GLOBS = [
     "**/.env",
     "**/.env.*",
