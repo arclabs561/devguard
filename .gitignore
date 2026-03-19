@@ -62,3 +62,6 @@ private_repos.txt
 repo_review_results.json
 npm_security_report.json
 npm_security_report.md
+
+# Guardian dogfooding outputs (spec-driven sweeps)
+.state/

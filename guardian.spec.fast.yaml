@@ -1,0 +1,25 @@
+name: fast
+description: Fast local Guardian sweep spec (smoke test)
+
+discovery_rules: []
+manual_resources: {}
+filters: {}
+
+sweeps:
+  # Keep local-dev enabled for dogfooding, but the fast path is the public sweep.
+  local_dev:
+    enabled: false
+
+  public_github_secrets:
+    enabled: true
+    owners: ["@me"]
+    include_forks: false
+    engines: ["trufflehog", "kingfisher"]
+    # Smoke-test subset
+    max_repos: 25
+    include_repos: []
+    exclude_repos: []
+    max_concurrency: 8
+    timeout_s: 120
+    fail_on_errors: true
+    output: ".state/guardian/public-github-leak-scan.fast.json"
