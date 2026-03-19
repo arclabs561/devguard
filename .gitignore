@@ -65,3 +65,7 @@ npm_security_report.md
 
 # Guardian dogfooding outputs (spec-driven sweeps)
 .state/
+
+# Personal spec files (copy guardian.spec.example.yaml to get started)
+guardian.spec.yaml
+guardian.spec.fast.yaml

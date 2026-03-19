@@ -100,7 +100,7 @@ manual_resources:
   # npm: [package1, package2]
   # github: [owner/repo1, owner/repo2]
   # vercel: [project1, project2]
-  fly: [bop-wispy-voice-3017]
+  # fly: [my-app-name]
 
 filters:
   # Filters to apply to discovered resources
@@ -119,50 +119,38 @@ sweeps:
     deny_globs: []
   public_github_secrets:
     enabled: true
-    # Scan only *your* public repos (exclude orgs like diffeo)
-    owners: ["@me"]
+    owners: [“@me”]
     include_forks: false
-    # Run both engines for broader coverage
-    engines: ["trufflehog", "kingfisher"]
+    engines: [“trufflehog”]
     max_repos: 200
     include_repos: []
     exclude_repos: []
-    # Faster scans via bounded parallelism
-    max_concurrency: 6
-    # Per-repo timeout upper bound (clamped internally)
+    max_concurrency: 4
     timeout_s: 180
-    # Treat “missed coverage” (scan errors) as failure when dogfooding locally
-    fail_on_errors: true
+    fail_on_errors: false
     output: ".state/guardian/public-github-leak-scan.json"
-  # Local-only, high-signal: scan only repos with uncommitted/untracked changes.
   local_dirty_worktree_secrets:
-    enabled: true
+    enabled: false
     dev_root: null
     max_depth: 2
     only_dirty: true
-    # Default: skip junk roots; include them explicitly if you want.
     exclude_repo_globs: ["*/_trash/*", "*/_scratch/*", "*/_external/*", "*/_archive/*", "*/_forks/*"]
-    # Bound runtime per repo when many files are dirty.
     max_paths_per_repo: 50
-    # Respect gitignore by default (scan ignored files only if you explicitly opt in).
     include_ignored_files: false
-    # Default: compute ahead/behind vs upstream without fetching (fast, but may be stale).
     check_upstream: true
     fetch_remotes: false
     max_concurrency: 4
     timeout_s: 180
     output: ".state/guardian/local-dirty-worktree-secrets.json"
 
-  # Files-to-prompt + OpenRouter/Gemini flaw analysis (README vs impl vs tests, rules violations).
-  # Requires OPENROUTER_API_KEY. Use google/gemini-2.0-flash-exp or google/gemini-2.5-flash-preview.
-  # When public_repo_names is set, only those repos are analyzed with a stricter "public crate" prompt.
+  # LLM-driven flaw analysis. Requires OPENROUTER_API_KEY.
   project_flaudit:
-    enabled: true
+    enabled: false
     k_recent: 5
     max_depth: 2
     model_id: "google/gemini-2.5-flash"
     include_rules: true
-    workspace_rules_path: ".cursor/rules"
+    workspace_rules_path: null
     workspace_rules_include: []
     max_workspace_rules_chars: 15000
     severity_guidance: null
@@ -170,12 +158,11 @@ sweeps:
     depth_0_skip_prefixes: ["_", "."]
     depth_0_allow_names: ["_infra"]
     max_prompt_chars: 120000
-    # Focus on public crates: only analyze these (by dir name); uses stricter_public_prompt.
-    public_repo_names: [infogeom, fingerprints, logp, pkgrank, clump, flowmatch, cnk, vicinity]
+    public_repo_names: []
     stricter_public_prompt: true
     output: ".state/guardian/project-flaudit.json"
 
-  # .gitignore hygiene: flag repos (especially public) missing common patterns.
+  gitignore_audit:
   gitignore_audit:
     enabled: true
     dev_root: null
@@ -203,14 +190,13 @@ sweeps:
     only_with_configs: true
     output: ".state/guardian/ai-editor-config-audit.json"
 
-  # Cargo publish pipeline audit: tag triggers, OIDC, dry-run, version/tag consistency.
   cargo_publish_audit:
-    enabled: true
+    enabled: false
     dev_root: null
     max_depth: 2
     exclude_repo_globs: ["*/_trash/*", "*/_scratch/*", "*/_external/*", "*/_archive/*", "*/_forks/*"]
     only_public: false
-    repo_names: [infogeom, fingerprints, logp, pkgrank, clump, flowmatch, cnk, vicinity]
+    repo_names: []
     output: ".state/guardian/cargo-publish-audit.json"
 
   # SSH key hygiene: weak algorithms, missing passphrases, stale GitHub keys.
