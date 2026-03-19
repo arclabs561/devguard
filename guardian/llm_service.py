@@ -316,7 +316,165 @@ Respond with ONLY the summary text, no markdown or formatting."""
         else:
             return "All systems are operating normally with no critical security issues detected."
 
+    async def analyze_project_flaudit(
+        self,
+        prompt: str,
+        model_id: str = "google/gemini-2.5-flash",
+        severity_guidance: str | None = None,
+        public_repo_mode: bool = False,
+    ) -> str:
+        """Analyze project files (README/impl/tests) for flaws via OpenRouter + Gemini.
 
+        Prefers OpenRouter when model_id is a Google model (google/*) and
+        openrouter_api_key is set. Falls back to Anthropic/OpenAI otherwise.
+
+        severity_guidance: optional custom guidance; if unset, a default calibration is used.
+        public_repo_mode: use a stricter prompt for public crates (higher bar for docs/API/quality).
+
+        Returns raw LLM response text (JSON expected).
+        """
+        default_severity = (
+            "Severity calibration: Reserve **critical** for security issues with a clear "
+            "exploit path (e.g. command injection with **external** user-controlled input). "
+            "Use **high** for correctness bugs or major doc/impl drift. Use **medium** for "
+            "doc gaps, test coverage, refactor suggestions. Use **low** for style, minor "
+            "duplication, or unverified concerns. Do NOT use critical for: internal scripts, "
+            "trusted inputs, or theoretical risks without an exploit path."
+        )
+        severity_block = severity_guidance if severity_guidance else default_severity
+
+        if public_repo_mode:
+            system_prompt = f"""You are a **critical** code quality auditor for **public** open-source crates. Your job is to be as strict as possible so maintainers can improve public-facing quality. Assume a first-time user will rely on the README and published API; any drift or missing step is a real failure.
+
+Find flaws in these categories:
+1. **readme_impl_drift**: README claims, quickstart steps, or API descriptions that do not match the implementation. Flag if the README example would not compile/run as written, or if documented functions/signatures are wrong or missing.
+2. **readme_tests_mismatch**: Tests cover behavior not documented in README, or README describes behavior not tested. Public API surface should be both documented and tested.
+3. **rules_violation**: Code or README disobeys project/workspace rules (e.g. no emojis, no marketing tone, truth boundary). Set **rule_ref** to the rule filename (e.g. user-core.mdc).
+4. **other**: Missing or vague doc comments on public items, Cargo.toml/crate metadata inconsistent with README, security or safety considerations not mentioned, unclear error handling contract, or anything that would confuse or mislead a public user.
+
+Be **critical**: prefer flagging a possible issue (medium/low) over missing a real one. If the README quickstart is incomplete (e.g. missing use statement or wrong path), that is at least **high**. If public API has no doc comment, that is at least **medium**. Do not be lenient because the crate is small.
+
+{severity_block}
+
+Respond with JSON only:
+{{
+  "findings": [
+    {{
+      "severity": "critical|high|medium|low",
+      "category": "readme_impl_drift|readme_tests_mismatch|rules_violation|other",
+      "description": "concise description of the flaw",
+      "file_ref": "path or section reference if applicable",
+      "suggestion": "optional fix suggestion",
+      "rule_ref": "for rules_violation only: rule filename e.g. user-core.mdc"
+    }}
+  ]
+}}
+
+If no flaws found, return {{"findings": []}}.
+Return at most 16 findings, prioritized by severity (critical > high > medium > low). Keep each description to one sentence. Be concrete: cite file paths and line references."""
+        else:
+            system_prompt = f"""You are a code quality auditor. Analyze the provided project files (README, implementation, tests, and optional rules).
+
+Find flaws in these categories:
+1. **readme_impl_drift**: README claims or describes behavior that does not match the implementation.
+2. **readme_tests_mismatch**: Tests cover behavior not documented in README, or README describes behavior not tested.
+3. **rules_violation**: Code or README disobeys project/workspace rules (e.g. invariants: no emojis, no marketing tone, truth boundary, etc.). When citing a rules_violation, set **rule_ref** to the rule filename (e.g. user-core.mdc).
+4. **other**: Other quality issues (missing tests, unclear docs, etc.).
+
+{severity_block}
+
+Respond with JSON only:
+{{
+  "findings": [
+    {{
+      "severity": "critical|high|medium|low",
+      "category": "readme_impl_drift|readme_tests_mismatch|rules_violation|other",
+      "description": "concise description of the flaw",
+      "file_ref": "path or section reference if applicable",
+      "suggestion": "optional fix suggestion",
+      "rule_ref": "for rules_violation only: rule filename e.g. user-core.mdc"
+    }}
+  ]
+}}
+
+If no flaws found, return {{"findings": []}}.
+Return at most 12 findings, prioritized by severity (critical > high > medium > low). Keep each description to one sentence.
+Be concrete: cite specific file paths and line references when possible."""
+
+        # Prefer OpenRouter for Google models when key is available
+        use_openrouter = (
+            model_id.startswith("google/")
+            and self.settings.openrouter_api_key is not None
+        )
+        if use_openrouter:
+            try:
+                import openai
+                client = openai.OpenAI(
+                    api_key=str(self.settings.openrouter_api_key.get_secret_value()),
+                    base_url="https://openrouter.ai/api/v1",
+                )
+                kwargs = {
+                    "model": model_id,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "max_tokens": 8000,
+                }
+                # Try JSON mode first; fallback if model doesn't support it
+                try:
+                    response = client.chat.completions.create(
+                        **kwargs,
+                        response_format={"type": "json_object"},
+                    )
+                except Exception:
+                    response = client.chat.completions.create(**kwargs)
+                return response.choices[0].message.content or "{}"
+            except Exception as e:
+                logger.warning(f"OpenRouter flaudit call failed: {e}")
+                return json.dumps({"findings": [], "error": str(e)})
+
+        client_info = self._get_client()
+        if not client_info:
+            return json.dumps({"findings": [], "error": "No LLM API key configured"})
+
+        provider, client = client_info
+        try:
+            if provider == "openrouter":
+                response = client.chat.completions.create(
+                    model=model_id,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt},
+                    ],
+                    max_tokens=8000,
+                    response_format={"type": "json_object"},
+                )
+                return response.choices[0].message.content or "{}"
+            elif provider == "anthropic":
+                response = client.messages.create(
+                    model="claude-3-5-sonnet-20241022",
+                    max_tokens=4000,
+                    messages=[
+                        {"role": "user", "content": f"{system_prompt}\n\n---\n\n{prompt}"},
+                    ],
+                )
+                return response.content[0].text if response.content else "{}"
+            elif provider == "openai":
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt},
+                    ],
+                    max_tokens=4000,
+                )
+                return response.choices[0].message.content or "{}"
+            else:
+                return json.dumps({"findings": [], "error": f"Unknown provider: {provider}"})
+        except Exception as e:
+            logger.warning(f"Project flaudit LLM call failed: {e}")
+            return json.dumps({"findings": [], "error": str(e)})
 
 
 
