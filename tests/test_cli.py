@@ -86,6 +86,10 @@ def test_check_command_basic(
 
         assert result.exit_code == 0
         mock_asyncio_run.assert_called_once()
+        # asyncio.run() would normally await the coroutine; our mock doesn't, so close it to
+        # avoid "coroutine was never awaited" warnings during pytest.
+        coro = mock_asyncio_run.call_args.args[0]
+        coro.close()
 
 
 @patch("guardian.cli.get_settings")
@@ -117,6 +121,10 @@ def test_check_command_json_output(
 
         assert result.exit_code == 0
         mock_asyncio_run.assert_called_once()
+        # asyncio.run() would normally await the coroutine; our mock doesn't, so close it to
+        # avoid "coroutine was never awaited" warnings during pytest.
+        coro = mock_asyncio_run.call_args.args[0]
+        coro.close()
 
 
 @patch("guardian.cli.get_settings")

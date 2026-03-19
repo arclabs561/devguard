@@ -122,7 +122,25 @@ Guardian can perform deep security analysis of your published npm packages, chec
 - Git history
 - Missing .npmignore
 
-### 6. AWS IAM Security Checks
+### 6. Project Flaudit (Files-to-Prompt + LLM)
+
+For each project (or the k most recently edited), Guardian aggregates README, implementation, tests, and optional rules into a prompt and uses OpenRouter + Gemini to find flaws:
+- README vs implementation drift
+- README vs tests mismatch
+- Disobedience of project/workspace rules (e.g. `.cursor/rules` invariants)
+
+Enable in `guardian.spec.yaml` under `sweeps.project_flaudit`, set `OPENROUTER_API_KEY`, and run `guardian sweep --only project_flaudit`. Model defaults to `google/gemini-2.5-flash`; use `google/gemini-3.1-pro-preview` for harder reasoning.
+
+**Public-repo quality mode:** Set `public_repo_names` to a list of directory names (e.g. `[infogeom, fingerprints, logp, pkgrank, clump, flowmatch, cnk, vicinity]`) to run flaudit **only** on those repos with a **stricter** system prompt: higher bar for README/quickstart accuracy, public API documentation, and first-time-user experience. Use this to double down on quality for public crates. When `public_repo_names` is non-empty, `k_recent` is ignored and all matching repos are analyzed (up to 30).
+
+**Configurable (not machine-specific):**
+- `dev_root`: workspace root (default: $DEV_DIR or ~/Documents/dev)
+- `workspace_rules_path`: path to workspace rules (relative to dev_root or absolute); e.g. `.cursor/rules` to include shared rules
+- `workspace_rules_include`: rule filenames to include; empty = default set (user-core, user-output-structure, hygiene, docs)
+- `exclude_repo_globs`, `depth_0_skip_prefixes`, `depth_0_allow_names`: control which repos are scanned
+- `severity_guidance`: optional custom severity calibration for the LLM
+
+### 7. AWS IAM Security Checks
 
 For infrastructure with AWS satellite nodes (EC2 instances with IAM roles), Guardian can verify:
 - No overly broad policies (AdministratorAccess, S3FullAccess, etc.)
