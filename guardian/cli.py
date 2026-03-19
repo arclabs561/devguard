@@ -716,7 +716,9 @@ def sweep_dev(
     console.print(f"[bold]Findings:[/bold] {len(hits)}")
 
     if hits:
-        console.print("[bold yellow]Action:[/bold yellow] Review report and clean up flagged files.")
+        console.print(
+            "[bold yellow]Action:[/bold yellow] Review report and clean up flagged files."
+        )
         raise typer.Exit(code=2)
 
 
@@ -736,7 +738,7 @@ def sweep(
     only: list[str] = typer.Option(
         None,
         "--only",
-        help="Run only these sweeps (repeatable). Known: local_dev, public_github_secrets",
+        help="Run only these sweeps (repeatable). Known: local_dev, public_github_secrets, local_dirty_worktree_secrets, project_flaudit, gitignore_audit, dependency_audit, ssh_key_audit, cargo_publish_audit",
     ),
 ) -> None:
     """Run spec-driven sweeps (policy checks).
@@ -745,7 +747,14 @@ def sweep(
     """
     from guardian.spec import load_spec
     from guardian.sweeps.local_dev import DEFAULT_DENY_GLOBS, default_dev_root, sweep_dev_repos
-    from guardian.sweeps.public_github_secrets import scan_public_github_repos, write_report as write_json
+    from guardian.sweeps.local_dirty_worktree_secrets import (
+        scan_dirty_worktrees,
+    )
+    from guardian.sweeps.local_dirty_worktree_secrets import (
+        write_report as write_dirty_json,
+    )
+    from guardian.sweeps.public_github_secrets import scan_public_github_repos
+    from guardian.sweeps.public_github_secrets import write_report as write_json
 
     spec_path = Path(spec_file)
     if not spec_path.exists():
@@ -755,6 +764,8 @@ def sweep(
     spec = load_spec(spec_path)
 
     wanted = {w.strip() for w in (only or []) if w and w.strip()}
+
+    exit_code = 0
 
     # local-dev sweep
     local = spec.sweeps.local_dev
@@ -775,7 +786,7 @@ def sweep(
         console.print(f"[bold]Repos scanned:[/bold] {meta['repos_scanned']}")
         console.print(f"[bold]Findings:[/bold] {len(hits)}")
         if hits:
-            raise typer.Exit(code=2)
+            exit_code = max(exit_code, 2)
 
     # public-github-secrets sweep
     pub = spec.sweeps.public_github_secrets
@@ -786,6 +797,7 @@ def sweep(
             exclude_repos=pub.exclude_repos,
             include_forks=pub.include_forks,
             max_repos=pub.max_repos,
+            engines=getattr(pub, "engines", None),
             timeout_s=pub.timeout_s,
             max_concurrency=pub.max_concurrency,
         )
@@ -797,13 +809,213 @@ def sweep(
         if errors:
             console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
             if pub.fail_on_errors:
-                console.print("[bold red]Action:[/bold red] Fix scan errors (missed coverage) and rerun.")
-                raise typer.Exit(code=3)
+                console.print(
+                    "[bold red]Action:[/bold red] Fix scan errors (missed coverage) and rerun."
+                )
+                exit_code = max(exit_code, 3)
         if report["summary"]["findings_total"] > 0:
-            raise typer.Exit(code=2)
+            exit_code = max(exit_code, 2)
 
-    if not wanted and not local.enabled and not pub.enabled:
+    # local dirty worktree secret sweep
+    dirty = spec.sweeps.local_dirty_worktree_secrets
+    if dirty.enabled and (not wanted or "local_dirty_worktree_secrets" in wanted):
+        root = Path(dirty.dev_root).expanduser() if dirty.dev_root else default_dev_root()
+        report, errors = scan_dirty_worktrees(
+            dev_root=root,
+            max_depth=dirty.max_depth,
+            only_dirty=dirty.only_dirty,
+            exclude_repo_globs=dirty.exclude_repo_globs,
+            check_upstream=dirty.check_upstream,
+            fetch_remotes=dirty.fetch_remotes,
+            max_paths_per_repo=getattr(dirty, "max_paths_per_repo", 50),
+            include_ignored_files=getattr(dirty, "include_ignored_files", False),
+            max_concurrency=dirty.max_concurrency,
+            timeout_s=dirty.timeout_s,
+        )
+        out_path = Path(dirty.output).expanduser()
+        write_dirty_json(out_path, report)
+        console.print(f"[bold]local_dirty_worktree_secrets report:[/bold] {out_path}")
+        console.print(f"[bold]Repos scanned:[/bold] {report['scope']['repos_scanned_count']}")
+        console.print(f"[bold]Findings:[/bold] {report['summary']['findings_total']}")
+        if errors:
+            console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+        if report["summary"]["findings_total"] > 0:
+            exit_code = max(exit_code, 2)
+
+    # project_flaudit sweep (files-to-prompt + OpenRouter/Gemini)
+    flaudit = spec.sweeps.project_flaudit
+    if flaudit.enabled and (not wanted or "project_flaudit" in wanted):
+        from guardian.sweeps.local_dev import default_dev_root
+        from guardian.sweeps.project_flaudit import scan_project_flaudit
+        from guardian.sweeps.project_flaudit import write_report as write_flaudit
+
+        root = Path(flaudit.dev_root).expanduser() if flaudit.dev_root else default_dev_root()
+        settings = get_settings()
+        wr_path = None
+        if flaudit.workspace_rules_path:
+            p = Path(flaudit.workspace_rules_path).expanduser()
+            if not p.is_absolute():
+                p = root / p
+            wr_path = str(p.resolve()) if p.resolve().is_dir() else None
+        results, meta = scan_project_flaudit(
+            dev_root=root,
+            k_recent=flaudit.k_recent,
+            max_depth=flaudit.max_depth,
+            model_id=flaudit.model_id,
+            settings=settings,
+            max_prompt_chars=flaudit.max_prompt_chars,
+            include_rules=flaudit.include_rules,
+            exclude_repo_globs=flaudit.exclude_repo_globs,
+            workspace_rules_path=wr_path,
+            workspace_rules_include=flaudit.workspace_rules_include or None,
+            max_workspace_rules_chars=flaudit.max_workspace_rules_chars,
+            severity_guidance=flaudit.severity_guidance,
+            depth_0_skip_prefixes=flaudit.depth_0_skip_prefixes,
+            depth_0_allow_names=flaudit.depth_0_allow_names,
+            scope_recent_commits=flaudit.scope_recent_commits,
+            public_repo_names=flaudit.public_repo_names or None,
+            stricter_public_prompt=flaudit.stricter_public_prompt,
+        )
+        out_path = Path(flaudit.output).expanduser()
+        write_flaudit(out_path, results, meta)
+        console.print(f"[bold]project_flaudit report:[/bold] {out_path}")
+        console.print(f"[bold]Projects analyzed:[/bold] {meta['repos_scanned']}")
+        total_findings = sum(len(r.findings) for r in results)
+        total_errors = sum(1 for r in results if r.error)
+        console.print(f"[bold]Findings:[/bold] {total_findings}")
+        if total_errors:
+            console.print(f"[bold]Errors:[/bold] {total_errors}", style="yellow")
+        if total_findings > 0:
+            exit_code = max(exit_code, 2)
+
+    # gitignore audit sweep
+    gi = spec.sweeps.gitignore_audit
+    if gi.enabled and (not wanted or "gitignore_audit" in wanted):
+        from guardian.sweeps.gitignore_audit import audit_gitignores
+        from guardian.sweeps.gitignore_audit import write_report as write_gi
+
+        root = Path(gi.dev_root).expanduser() if gi.dev_root else default_dev_root()
+        report, errors = audit_gitignores(
+            dev_root=root,
+            max_depth=gi.max_depth,
+            exclude_repo_globs=gi.exclude_repo_globs,
+        )
+        out_path = Path(gi.output).expanduser()
+        write_gi(out_path, report)
+        console.print(f"[bold]gitignore_audit report:[/bold] {out_path}")
+        console.print(f"[bold]Repos scanned:[/bold] {report['scope']['repos_scanned']}")
+        console.print(
+            f"[bold]Repos without .gitignore:[/bold] {report['summary']['repos_without_gitignore']}"
+        )
+        console.print(
+            f"[bold]Public repos with gaps:[/bold] {report['summary']['public_repos_with_gaps']}"
+        )
+        console.print(f"[bold]Total gaps:[/bold] {report['summary']['total_gaps']}")
+        if errors:
+            console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+        if report["summary"]["public_repos_with_gaps"] > 0:
+            exit_code = max(exit_code, 2)
+
+    # dependency audit sweep
+    depaudit = spec.sweeps.dependency_audit
+    if depaudit.enabled and (not wanted or "dependency_audit" in wanted):
+        from guardian.sweeps.dependency_audit import audit_dependencies
+        from guardian.sweeps.dependency_audit import write_report as write_depaudit
+
+        root = Path(depaudit.dev_root).expanduser() if depaudit.dev_root else default_dev_root()
+        report, errors = audit_dependencies(
+            dev_root=root,
+            max_depth=depaudit.max_depth,
+            exclude_repo_globs=depaudit.exclude_repo_globs,
+            engines=depaudit.engines,
+            max_concurrency=depaudit.max_concurrency,
+            timeout_s=depaudit.timeout_s,
+        )
+        out_path = Path(depaudit.output).expanduser()
+        write_depaudit(out_path, report)
+        console.print(f"[bold]dependency_audit report:[/bold] {out_path}")
+        console.print(f"[bold]Repos scanned:[/bold] {report['scope']['repos_scanned']}")
+        console.print(f"[bold]Repos with vulns:[/bold] {report['summary']['repos_with_vulns']}")
+        console.print(f"[bold]Total vulns:[/bold] {report['summary']['total_vulns']}")
+        sev = report["summary"]["severity_counts"]
+        console.print(
+            f"[bold]Severity:[/bold] critical={sev.get('critical', 0)} high={sev.get('high', 0)} medium={sev.get('medium', 0)} low={sev.get('low', 0)}"
+        )
+        if errors:
+            console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+        if report["summary"]["total_vulns"] > 0:
+            exit_code = max(exit_code, 2)
+
+    # ssh key audit sweep
+    sshk = spec.sweeps.ssh_key_audit
+    if sshk.enabled and (not wanted or "ssh_key_audit" in wanted):
+        from guardian.sweeps.ssh_key_audit import audit_ssh_keys
+        from guardian.sweeps.ssh_key_audit import write_report as write_sshk
+
+        ssh_path = Path(sshk.ssh_dir).expanduser()
+        report, errors = audit_ssh_keys(
+            ssh_dir=ssh_path,
+            check_github=sshk.check_github,
+            min_rsa_bits=sshk.min_rsa_bits,
+            flag_ecdsa=sshk.flag_ecdsa,
+        )
+        out_path = Path(sshk.output).expanduser()
+        write_sshk(out_path, report)
+        console.print(f"[bold]ssh_key_audit report:[/bold] {out_path}")
+        console.print(f"[bold]Keys scanned:[/bold] {report['summary']['keys_scanned']}")
+        console.print(f"[bold]Issues:[/bold] {report['summary']['issues_total']}")
+        if errors:
+            console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+        if report["summary"]["issues_total"] > 0:
+            exit_code = max(exit_code, 2)
+
+    # cargo publish audit sweep
+    cpub = spec.sweeps.cargo_publish_audit
+    if cpub.enabled and (not wanted or "cargo_publish_audit" in wanted):
+        from guardian.sweeps.cargo_publish_audit import audit_cargo_publish
+        from guardian.sweeps.cargo_publish_audit import write_report as write_cpub
+
+        root = Path(cpub.dev_root).expanduser() if cpub.dev_root else default_dev_root()
+        report, errors = audit_cargo_publish(
+            dev_root=root,
+            max_depth=cpub.max_depth,
+            exclude_repo_globs=cpub.exclude_repo_globs,
+            only_public=cpub.only_public,
+            repo_names=cpub.repo_names or None,
+        )
+        out_path = Path(cpub.output).expanduser()
+        write_cpub(out_path, report)
+        console.print(f"[bold]cargo_publish_audit report:[/bold] {out_path}")
+        console.print(f"[bold]Rust repos found:[/bold] {report['scope']['rust_repos_found']}")
+        console.print(f"[bold]Repos with errors:[/bold] {report['summary']['repos_with_errors']}")
+        console.print(
+            f"[bold]Repos with warnings:[/bold] {report['summary']['repos_with_warnings']}"
+        )
+        console.print(f"[bold]Total findings:[/bold] {report['summary']['total_findings']}")
+        if report["summary"]["repos_with_errors_list"]:
+            console.print(
+                f"[red]Error repos:[/red] {', '.join(report['summary']['repos_with_errors_list'])}"
+            )
+        if errors:
+            console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+        if report["summary"]["total_errors"] > 0:
+            exit_code = max(exit_code, 2)
+
+    any_enabled = (
+        local.enabled
+        or pub.enabled
+        or spec.sweeps.local_dirty_worktree_secrets.enabled
+        or spec.sweeps.project_flaudit.enabled
+        or spec.sweeps.gitignore_audit.enabled
+        or spec.sweeps.dependency_audit.enabled
+        or spec.sweeps.ssh_key_audit.enabled
+        or spec.sweeps.cargo_publish_audit.enabled
+    )
+    if not wanted and not any_enabled:
         console.print("[yellow]No sweeps enabled in spec.[/yellow]")
+
+    if exit_code > 0:
+        raise typer.Exit(code=exit_code)
 
 
 def _update_env_var(env_content: str, var_name: str, value: str) -> str:
