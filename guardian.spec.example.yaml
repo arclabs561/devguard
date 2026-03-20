@@ -163,7 +163,6 @@ sweeps:
     output: ".state/guardian/project-flaudit.json"
 
   gitignore_audit:
-  gitignore_audit:
     enabled: true
     dev_root: null
     max_depth: 2
