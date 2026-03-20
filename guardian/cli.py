@@ -1015,9 +1015,12 @@ def sweep(
     machine_output = format in ("json", "sarif")
     sweep_reports: list[tuple[str, dict]] = []
 
+    stderr_console = Console(stderr=True)
     spec_path = Path(spec_file)
     if not spec_path.exists():
-        console.print("No spec file found; using defaults. Create guardian.spec.yaml to customize.")
+        stderr_console.print(
+            "No spec file found; using defaults. Create guardian.spec.yaml to customize."
+        )
         spec = MonitorSpec(
             name="default",
             discovery_rules=[],
