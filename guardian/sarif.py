@@ -174,7 +174,7 @@ def _extract_local_dev(report: dict) -> list[tuple[str, str, str, str | None]]:
 
 def _extract_project_flaudit(report: dict) -> list[tuple[str, str, str, str | None]]:
     results: list[tuple[str, str, str, str | None]] = []
-    for repo in report.get("repos", []):
+    for repo in report.get("repos", report.get("results", [])):
         repo_path = repo.get("repo_path") or repo.get("repo_name", "")
         for f in repo.get("findings", []):
             # project_flaudit findings may have check/severity/message or
