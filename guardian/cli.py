@@ -1077,6 +1077,68 @@ def _update_env_var(env_content: str, var_name: str, value: str) -> str:
     return "\n".join(new_lines) + "\n"
 
 
+@app.command()
+def doctor() -> None:
+    """Check external tool prerequisites for sweeps."""
+    import shutil
+
+    tools = [
+        (
+            "trufflehog",
+            "public_github_secrets, local_dirty_worktree_secrets",
+            "brew install trufflehog",
+        ),
+        (
+            "cargo-audit",
+            "dependency_audit (Rust repos)",
+            "cargo install cargo-audit",
+        ),
+        (
+            "npm",
+            "dependency_audit (JS repos)",
+            "install Node.js from https://nodejs.org",
+        ),
+        (
+            "pip-audit",
+            "dependency_audit (Python repos)",
+            "pip install pip-audit",
+        ),
+        (
+            "gh",
+            "public_github_secrets, ssh_key_audit (GitHub cross-ref)",
+            "brew install gh",
+        ),
+        (
+            "git",
+            "most sweeps",
+            "brew install git",
+        ),
+    ]
+
+    found = 0
+    total = len(tools)
+
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Tool")
+    table.add_column("Status")
+    table.add_column("Used by")
+    table.add_column("Install hint")
+
+    for tool_name, used_by, hint in tools:
+        path = shutil.which(tool_name)
+        if path:
+            found += 1
+            table.add_row(tool_name, "[green]found[/green]", used_by, "")
+        else:
+            table.add_row(tool_name, "[red]missing[/red]", used_by, hint)
+
+    console.print(table)
+    console.print()
+    console.print(
+        f"{found}/{total} tools found. Missing tools will cause some sweeps to skip or fail."
+    )
+
+
 def main() -> None:
     """Entry point for CLI."""
     app()
