@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from guardian.core import Guardian
-from guardian.models import CheckResult, CheckStatus, DeploymentStatus, Severity, Vulnerability
+from devguard.core import Guardian
+from devguard.models import CheckResult, CheckStatus, DeploymentStatus, Severity, Vulnerability
 
 
 @pytest.fixture

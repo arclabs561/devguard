@@ -9,7 +9,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from guardian.models import (
+from devguard.models import (
     APIUsage,
     CheckResult,
     CheckStatus,

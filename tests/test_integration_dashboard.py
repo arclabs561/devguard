@@ -5,8 +5,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from guardian.config import Settings
-from guardian.dashboard import app
+from devguard.config import Settings
+from devguard.dashboard import app
 
 
 @pytest.fixture
@@ -52,7 +52,7 @@ def test_dashboard_config_requires_auth(client):
 
 def test_dashboard_login_with_valid_key(client):
     """Test that dashboard login works with valid API key."""
-    with patch("guardian.config.get_settings") as mock_get_settings:
+    with patch("devguard.config.get_settings") as mock_get_settings:
         mock_settings = MagicMock()
         mock_settings.dashboard_api_key = MagicMock()
         mock_settings.dashboard_api_key.get_secret_value.return_value = "test-key"
@@ -66,7 +66,7 @@ def test_dashboard_login_with_valid_key(client):
 
 def test_dashboard_login_with_invalid_key(client):
     """Test that dashboard login fails with invalid API key."""
-    with patch("guardian.config.get_settings") as mock_get_settings:
+    with patch("devguard.config.get_settings") as mock_get_settings:
         mock_settings = MagicMock()
         mock_settings.dashboard_api_key = MagicMock()
         mock_settings.dashboard_api_key.get_secret_value.return_value = "correct-key"
