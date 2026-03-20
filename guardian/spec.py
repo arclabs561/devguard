@@ -33,7 +33,7 @@ class DiscoveryRule(BaseModel):
 class LocalDevSweepSpec(BaseModel):
     """Policy-based sweep over local dev repos (git working trees)."""
 
-    enabled: bool = Field(True, description="Whether this sweep is enabled")
+    enabled: bool = Field(True, description="Whether this sweep is enabled (on by default)")
     max_depth: int = Field(
         2,
         description="How deep under dev_root to look for git repos (bounded).",
@@ -197,7 +197,7 @@ class ProjectFlauditSweepSpec(BaseModel):
 class SSHKeyAuditSweepSpec(BaseModel):
     """Audit SSH keys for weak algorithms, missing passphrases, and stale registrations."""
 
-    enabled: bool = Field(False, description="Whether this sweep is enabled")
+    enabled: bool = Field(True, description="Whether this sweep is enabled (on by default)")
     ssh_dir: str = Field(
         "~/.ssh",
         description="Path to SSH directory to scan.",
@@ -227,7 +227,7 @@ class GitignoreAuditSweepSpec(BaseModel):
     especially public ones -- that are missing them.
     """
 
-    enabled: bool = Field(False, description="Whether this sweep is enabled")
+    enabled: bool = Field(True, description="Whether this sweep is enabled (on by default)")
     dev_root: str | None = Field(
         None,
         description="Workspace root. Default: $DEV_DIR or ~/Documents/dev when unset.",
@@ -257,7 +257,7 @@ class DependencyAuditSweepSpec(BaseModel):
     per-repo findings bucketed by severity.
     """
 
-    enabled: bool = Field(False, description="Whether this sweep is enabled")
+    enabled: bool = Field(True, description="Whether this sweep is enabled (on by default)")
     dev_root: str | None = Field(
         None,
         description="Workspace root. Default: $DEV_DIR or ~/Documents/dev when unset.",
@@ -336,7 +336,7 @@ class AIEditorConfigAuditSweepSpec(BaseModel):
     MCP JSON validity, hardcoded secrets, cross-tool rule consistency, and gitignore coverage.
     """
 
-    enabled: bool = Field(False, description="Whether this sweep is enabled")
+    enabled: bool = Field(True, description="Whether this sweep is enabled (on by default)")
     dev_root: str | None = Field(
         None,
         description="Workspace root. Default: $DEV_DIR or ~/Documents/dev when unset.",

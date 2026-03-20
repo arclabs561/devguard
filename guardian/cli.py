@@ -8,6 +8,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 from rich.prompt import Prompt
+from rich.table import Table
 
 from guardian.config import get_settings
 from guardian.core import Guardian
@@ -745,7 +746,7 @@ def sweep(
 
     Today this runs the local dev repo sweep (and will expand over time).
     """
-    from guardian.spec import load_spec
+    from guardian.spec import MonitorSpec, SweepSpec, load_spec
     from guardian.sweeps.local_dev import DEFAULT_DENY_GLOBS, default_dev_root, sweep_dev_repos
     from guardian.sweeps.local_dirty_worktree_secrets import (
         scan_dirty_worktrees,
@@ -758,10 +759,16 @@ def sweep(
 
     spec_path = Path(spec_file)
     if not spec_path.exists():
-        console.print(f"[bold red]Spec file not found:[/bold red] {spec_path}")
-        raise typer.Exit(code=1)
-
-    spec = load_spec(spec_path)
+        console.print("No spec file found; using defaults. Create guardian.spec.yaml to customize.")
+        spec = MonitorSpec(
+            name="default",
+            discovery_rules=[],
+            manual_resources={},
+            filters={},
+            sweeps=SweepSpec(),
+        )
+    else:
+        spec = load_spec(spec_path)
 
     wanted = {w.strip() for w in (only or []) if w and w.strip()}
 
