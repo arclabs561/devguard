@@ -1,0 +1,2802 @@
+[
+  {
+    "timestamp": "2026-01-31T20:02:38.661319+00:00",
+    "message_id": "<guardian-725f60f18018@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-e9abf3ea5106@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-01-31T20:21:29.629122+00:00",
+    "message_id": "<guardian-6329ae5bc0bd@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-725f60f18018@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-01-31T20:21:29.632814+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-01-31T20:21:29.637956+00:00",
+    "message_id": "<guardian-e990508a0c1c@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-6329ae5bc0bd@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-01-31T20:38:13.733528+00:00",
+    "message_id": "<guardian-3ab551492d3b@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-e990508a0c1c@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-01-31T20:38:13.738069+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-01-31T20:38:13.743640+00:00",
+    "message_id": "<guardian-638a40a8ceb9@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-3ab551492d3b@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-01-31T20:56:38.350395+00:00",
+    "message_id": "<guardian-7cb1795a1efc@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-638a40a8ceb9@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-01-31T20:56:38.354261+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-01-31T20:56:38.374253+00:00",
+    "message_id": "<guardian-a617bd5d742b@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-7cb1795a1efc@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-01-31T21:00:17.678298+00:00",
+    "message_id": "<guardian-6f018b8ab1d1@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-a617bd5d742b@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-01-31T21:00:17.684017+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-01-31T21:00:17.689337+00:00",
+    "message_id": "<guardian-2baca38819ea@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-6f018b8ab1d1@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-01-31T21:01:47.986066+00:00",
+    "message_id": "<guardian-ace92ffb44a0@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-2baca38819ea@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-01-31T21:01:47.989765+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-01-31T21:01:47.995006+00:00",
+    "message_id": "<guardian-93fd9ad06b4c@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-ace92ffb44a0@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-01-31T21:03:32.870910+00:00",
+    "message_id": "<guardian-32610a2c55c7@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-93fd9ad06b4c@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-01-31T21:03:32.874640+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-01-31T21:03:32.882133+00:00",
+    "message_id": "<guardian-497ab758bce5@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-32610a2c55c7@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-01-31T21:09:00.098726+00:00",
+    "message_id": "<guardian-6c300e2f3db2@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-497ab758bce5@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-01-31T21:09:00.102514+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-01-31T21:09:00.109226+00:00",
+    "message_id": "<guardian-6a687024ace9@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-6c300e2f3db2@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-01-31T21:15:31.478335+00:00",
+    "message_id": "<guardian-ae0afdbf841f@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-6a687024ace9@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-01-31T21:15:31.482573+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-01-31T21:15:31.487889+00:00",
+    "message_id": "<guardian-d8ef936a1633@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-ae0afdbf841f@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-02-01T21:17:22.582125+00:00",
+    "message_id": "<guardian-967a9c650443@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-d8ef936a1633@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-02-01T21:17:22.586637+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-02-01T21:17:22.602367+00:00",
+    "message_id": "<guardian-2f4207019d37@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-967a9c650443@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-02-01T21:18:43.875607+00:00",
+    "message_id": "<guardian-d184962dde12@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-2f4207019d37@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-02-01T21:18:43.879793+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-02-01T21:18:43.925639+00:00",
+    "message_id": "<guardian-124051b06e42@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-d184962dde12@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-02-01T21:20:21.244754+00:00",
+    "message_id": "<guardian-e1fa418de98c@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-124051b06e42@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-02-01T21:20:21.249155+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-02-01T21:20:21.255452+00:00",
+    "message_id": "<guardian-aa0de600d599@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-e1fa418de98c@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-02-24T13:31:45.098238+00:00",
+    "message_id": "<guardian-6a71a421685a@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-aa0de600d599@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-02-24T13:31:45.102756+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-02-24T13:31:45.111444+00:00",
+    "message_id": "<guardian-1f6a53623209@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-6a71a421685a@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-02-24T14:26:41.708131+00:00",
+    "message_id": "<guardian-f8d25db63648@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-1f6a53623209@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-02-24T14:26:41.712788+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-02-24T14:26:41.719547+00:00",
+    "message_id": "<guardian-441254dd15a7@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-f8d25db63648@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-11T21:47:06.974097+00:00",
+    "message_id": "<guardian-fe84354c3984@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-441254dd15a7@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-11T21:47:06.978348+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-11T21:47:06.985662+00:00",
+    "message_id": "<guardian-19191cc76d5c@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-fe84354c3984@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-11T22:16:01.677858+00:00",
+    "message_id": "<guardian-6e960d25f4d0@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-19191cc76d5c@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-11T22:16:01.681812+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-11T22:16:01.686702+00:00",
+    "message_id": "<guardian-bdb7c3530a24@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-6e960d25f4d0@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-11T22:24:57.776368+00:00",
+    "message_id": "<guardian-0df543964b3f@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-bdb7c3530a24@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-11T22:24:57.780069+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-11T22:24:57.785017+00:00",
+    "message_id": "<guardian-bf1933e599d6@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-0df543964b3f@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T02:54:54.472652+00:00",
+    "message_id": "<guardian-8a7601faa2b7@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-bf1933e599d6@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T02:54:54.476837+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T02:54:54.483249+00:00",
+    "message_id": "<guardian-3b450786c03a@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-8a7601faa2b7@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T02:56:38.125509+00:00",
+    "message_id": "<guardian-73b8da366620@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-3b450786c03a@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T02:56:38.130085+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T02:56:38.136226+00:00",
+    "message_id": "<guardian-02932c091ef8@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-73b8da366620@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T03:02:07.502854+00:00",
+    "message_id": "<guardian-a5e29c3301e0@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-02932c091ef8@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T03:02:07.507197+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T03:02:07.513054+00:00",
+    "message_id": "<guardian-b99d501ba665@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-a5e29c3301e0@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T03:03:09.823297+00:00",
+    "message_id": "<guardian-719b354da288@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-b99d501ba665@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T03:03:09.827831+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T03:03:09.833735+00:00",
+    "message_id": "<guardian-17b0d3ac395e@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-719b354da288@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T03:04:01.651721+00:00",
+    "message_id": "<guardian-5bc9319ea4c9@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-17b0d3ac395e@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T03:04:01.655831+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T03:04:01.661960+00:00",
+    "message_id": "<guardian-109d156435c6@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-5bc9319ea4c9@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T03:12:06.817764+00:00",
+    "message_id": "<guardian-72a937f9b909@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-109d156435c6@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T03:12:06.822068+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T03:12:06.828011+00:00",
+    "message_id": "<guardian-1c1039dbd796@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-72a937f9b909@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T03:14:53.669144+00:00",
+    "message_id": "<guardian-b779c33e0b45@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-1c1039dbd796@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T03:14:53.673529+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T03:14:53.678917+00:00",
+    "message_id": "<guardian-830d51c61f98@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-b779c33e0b45@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T03:27:36.613311+00:00",
+    "message_id": "<guardian-de019cae1d68@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-830d51c61f98@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T03:27:36.617350+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T03:27:36.622733+00:00",
+    "message_id": "<guardian-90a8bbf0e67e@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-de019cae1d68@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T03:52:01.132891+00:00",
+    "message_id": "<guardian-88e9f747c96f@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-90a8bbf0e67e@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T03:52:01.136872+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T03:52:01.142631+00:00",
+    "message_id": "<guardian-231550f8374a@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-88e9f747c96f@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T03:53:26.266328+00:00",
+    "message_id": "<guardian-ffadb108ba1f@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-231550f8374a@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T03:53:26.271171+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-12T03:53:26.277205+00:00",
+    "message_id": "<guardian-8a1379dacd07@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-ffadb108ba1f@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-19T21:40:18.799767+00:00",
+    "message_id": "<guardian-af57321ff2ba@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-8a1379dacd07@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-19T21:40:18.804042+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-19T21:40:18.812131+00:00",
+    "message_id": "<guardian-88fe9ff6c65c@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-af57321ff2ba@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-19T21:46:26.615415+00:00",
+    "message_id": "<guardian-0f50cf07b635@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-88fe9ff6c65c@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-19T21:46:26.619377+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-19T21:46:26.625254+00:00",
+    "message_id": "<guardian-49b075208ea2@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-0f50cf07b635@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-19T22:09:57.607445+00:00",
+    "message_id": "<guardian-2797d481ab21@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-49b075208ea2@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-19T22:09:57.612284+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-19T22:09:57.618422+00:00",
+    "message_id": "<guardian-945c08da71c3@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-2797d481ab21@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-20T00:45:48.568368+00:00",
+    "message_id": "<guardian-670023a8d1ac@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-945c08da71c3@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-20T00:45:48.573748+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-20T00:45:48.580795+00:00",
+    "message_id": "<guardian-e98fc53ee9e3@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-670023a8d1ac@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-20T00:56:32.474361+00:00",
+    "message_id": "<guardian-66a1c40400d6@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-e98fc53ee9e3@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-20T00:56:32.487685+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-20T00:56:32.495123+00:00",
+    "message_id": "<guardian-1f003c128ebf@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-66a1c40400d6@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-20T01:10:21.290558+00:00",
+    "message_id": "<guardian-c9ebbc79d167@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-1f003c128ebf@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-20T01:10:21.296344+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-20T01:10:21.302834+00:00",
+    "message_id": "<guardian-63c23a29f99c@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-c9ebbc79d167@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-20T01:14:14.366477+00:00",
+    "message_id": "<guardian-68f6e005e56e@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-63c23a29f99c@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-20T01:14:14.370758+00:00",
+    "message_id": null,
+    "subject": "URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": null,
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  },
+  {
+    "timestamp": "2026-03-20T01:14:14.376429+00:00",
+    "message_id": "<guardian-5fe0ee1dc36e@example.com>",
+    "subject": "Guardian Security Report - URGENT: 1 critical | 1 failed checks",
+    "in_reply_to": "<guardian-68f6e005e56e@example.com>",
+    "summary": {
+      "critical_vulnerabilities": 1,
+      "high_findings": 0,
+      "critical_findings": 0,
+      "unhealthy_deployments": 0,
+      "total_vulnerabilities": 1,
+      "failed_checks": 1,
+      "total_checks": 1
+    },
+    "issues": {
+      "critical_vulns": [
+        {
+          "package": "vuln-pkg@1.0.0",
+          "severity": "critical",
+          "cve": null
+        }
+      ],
+      "critical_findings": [],
+      "high_findings": [],
+      "unhealthy_deployments": []
+    },
+    "actionable": true
+  }
+]

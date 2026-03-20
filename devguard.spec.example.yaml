@@ -115,7 +115,7 @@ sweeps:
     enabled: true
     max_depth: 2
     max_blob_mb: 5
-    output: ".state/guardian/local-dev-sweep.json"
+    output: ".state/devguard/local-dev-sweep.json"
     deny_globs: []
   public_github_secrets:
     enabled: true
@@ -128,7 +128,7 @@ sweeps:
     max_concurrency: 4
     timeout_s: 180
     fail_on_errors: false
-    output: ".state/guardian/public-github-leak-scan.json"
+    output: ".state/devguard/public-github-leak-scan.json"
   local_dirty_worktree_secrets:
     enabled: false
     dev_root: null
@@ -141,7 +141,7 @@ sweeps:
     fetch_remotes: false
     max_concurrency: 4
     timeout_s: 180
-    output: ".state/guardian/local-dirty-worktree-secrets.json"
+    output: ".state/devguard/local-dirty-worktree-secrets.json"
 
   # LLM-driven flaw analysis. Requires OPENROUTER_API_KEY.
   project_flaudit:
@@ -160,14 +160,14 @@ sweeps:
     max_prompt_chars: 120000
     public_repo_names: []
     stricter_public_prompt: true
-    output: ".state/guardian/project-flaudit.json"
+    output: ".state/devguard/project-flaudit.json"
 
   gitignore_audit:
     enabled: true
     dev_root: null
     max_depth: 2
     exclude_repo_globs: ["*/_trash/*", "*/_scratch/*", "*/_external/*", "*/_archive/*", "*/_forks/*"]
-    output: ".state/guardian/gitignore-audit.json"
+    output: ".state/devguard/gitignore-audit.json"
 
   # Dependency vulnerability audit: cargo-audit, npm audit, pip-audit.
   dependency_audit:
@@ -178,7 +178,7 @@ sweeps:
     engines: ["cargo-audit", "npm-audit", "pip-audit"]
     max_concurrency: 4
     timeout_s: 120
-    output: ".state/guardian/dependency-audit.json"
+    output: ".state/devguard/dependency-audit.json"
 
   # AI editor config audit: Claude, Cursor, Copilot, MCP validity and consistency.
   ai_editor_config_audit:
@@ -187,7 +187,7 @@ sweeps:
     max_depth: 2
     exclude_repo_globs: ["*/_trash/*", "*/_scratch/*", "*/_external/*", "*/_archive/*", "*/_forks/*"]
     only_with_configs: true
-    output: ".state/guardian/ai-editor-config-audit.json"
+    output: ".state/devguard/ai-editor-config-audit.json"
 
   cargo_publish_audit:
     enabled: false
@@ -196,7 +196,7 @@ sweeps:
     exclude_repo_globs: ["*/_trash/*", "*/_scratch/*", "*/_external/*", "*/_archive/*", "*/_forks/*"]
     only_public: false
     repo_names: []
-    output: ".state/guardian/cargo-publish-audit.json"
+    output: ".state/devguard/cargo-publish-audit.json"
 
   # SSH key hygiene: weak algorithms, missing passphrases, stale GitHub keys.
   ssh_key_audit:
@@ -205,4 +205,4 @@ sweeps:
     check_github: true
     min_rsa_bits: 3072
     flag_ecdsa: false
-    output: ".state/guardian/ssh-key-audit.json"
+    output: ".state/devguard/ssh-key-audit.json"

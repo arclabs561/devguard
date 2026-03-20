@@ -54,7 +54,7 @@ class Hit:
 def _gh_headers(token: str | None) -> dict[str, str]:
     h = {
         "Accept": "application/vnd.github+json",
-        "User-Agent": "guardian-sweeper",
+        "User-Agent": "devguard-sweeper",
     }
     if token:
         h["Authorization"] = f"Bearer {token}"
@@ -145,11 +145,25 @@ def sweep_repo(
 
         g = matches(deny_globs, path)
         if g:
-            hits.append(Hit(repo=f"{owner}/{repo}", path=path, size=size if isinstance(size, int) else None, reason=f"deny_glob:{g}"))
+            hits.append(
+                Hit(
+                    repo=f"{owner}/{repo}",
+                    path=path,
+                    size=size if isinstance(size, int) else None,
+                    reason=f"deny_glob:{g}",
+                )
+            )
             continue
 
         if isinstance(size, int) and size > max_blob_bytes:
-            hits.append(Hit(repo=f"{owner}/{repo}", path=path, size=size, reason=f"blob_too_large>{max_blob_bytes}"))
+            hits.append(
+                Hit(
+                    repo=f"{owner}/{repo}",
+                    path=path,
+                    size=size,
+                    reason=f"blob_too_large>{max_blob_bytes}",
+                )
+            )
 
     return hits
 
@@ -182,7 +196,9 @@ def main() -> int:
                 hits = sweep_repo(client, args.owner, name, deny_globs, args.max_blob_bytes)
                 all_hits.extend(hits)
             except Exception as e:
-                all_hits.append(Hit(repo=f"{args.owner}/{name}", path="", size=None, reason=f"error:{e}"))
+                all_hits.append(
+                    Hit(repo=f"{args.owner}/{name}", path="", size=None, reason=f"error:{e}")
+                )
 
     report["hits"] = [h.__dict__ for h in all_hits]
 

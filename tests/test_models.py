@@ -1,6 +1,6 @@
 """Tests for data models."""
 
-from guardian.models import (
+from devguard.models import (
     CheckResult,
     CheckStatus,
     DeploymentStatus,

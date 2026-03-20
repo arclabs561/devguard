@@ -7,15 +7,15 @@ Guardian uses a declarative YAML specification to define what resources to monit
 ### Create a spec interactively
 
 ```bash
-guardian spec --init
+devguard spec --init
 ```
 
-This will ask you what to discover and create a `guardian.spec.yaml` file.
+This will ask you what to discover and create a `devguard.spec.yaml` file.
 
 ### Generate spec from current .env
 
 ```bash
-guardian spec --from-env
+devguard spec --from-env
 ```
 
 This reads your current `.env` configuration and generates a spec that matches it.
@@ -23,7 +23,7 @@ This reads your current `.env` configuration and generates a spec that matches i
 ### Edit your spec
 
 ```bash
-guardian spec --edit
+devguard spec --edit
 ```
 
 Opens the spec file in your `$EDITOR`.
@@ -95,7 +95,7 @@ Scans files matching a pattern:
 ### Discover resources
 
 ```bash
-guardian discover
+devguard discover
 ```
 
 Shows what was discovered without changing anything.
@@ -103,7 +103,7 @@ Shows what was discovered without changing anything.
 ### Discover and update .env
 
 ```bash
-guardian discover --update-env
+devguard discover --update-env
 ```
 
 Discovers resources and automatically updates your `.env` file.
@@ -111,7 +111,7 @@ Discovers resources and automatically updates your `.env` file.
 ### JSON output
 
 ```bash
-guardian discover --json
+devguard discover --json
 ```
 
 Outputs discovery results as JSON for scripting.
@@ -149,8 +149,8 @@ discovery_rules:
 
 ## Best Practices
 
-1. **Start simple**: Use `guardian spec --init` to get started
-2. **Test discovery**: Run `guardian discover` before `--update-env`
+1. **Start simple**: Use `devguard spec --init` to get started
+2. **Test discovery**: Run `devguard discover` before `--update-env`
 3. **Customize gradually**: Edit the spec file to add/remove rules
 4. **Use timeouts**: Set reasonable timeouts to avoid hanging on slow commands
 5. **Combine methods**: Use both CLI and file_scan for comprehensive discovery

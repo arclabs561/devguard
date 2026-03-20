@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from guardian.cli import app, main
+from devguard.cli import app, main
 
 
 @pytest.fixture
@@ -37,7 +37,7 @@ def mock_settings():
 @pytest.fixture
 def mock_guardian_report():
     """Mock guardian report."""
-    from guardian.models import CheckResult, GuardianReport
+    from devguard.models import CheckResult, GuardianReport
 
     return GuardianReport(
         checks=[
@@ -60,9 +60,9 @@ def mock_guardian_report():
     )
 
 
-@patch("guardian.cli.get_settings")
-@patch("guardian.cli.Guardian")
-@patch("guardian.cli.Reporter")
+@patch("devguard.cli.get_settings")
+@patch("devguard.cli.Guardian")
+@patch("devguard.cli.Reporter")
 def test_check_command_basic(
     mock_reporter_class,
     mock_guardian_class,
@@ -81,7 +81,7 @@ def test_check_command_basic(
     mock_reporter.report = AsyncMock()
     mock_reporter_class.return_value = mock_reporter
 
-    with patch("guardian.cli.asyncio.run") as mock_asyncio_run:
+    with patch("devguard.cli.asyncio.run") as mock_asyncio_run:
         result = runner.invoke(app, ["check"])
 
         assert result.exit_code == 0
@@ -92,9 +92,9 @@ def test_check_command_basic(
         coro.close()
 
 
-@patch("guardian.cli.get_settings")
-@patch("guardian.cli.Guardian")
-@patch("guardian.cli.Reporter")
+@patch("devguard.cli.get_settings")
+@patch("devguard.cli.Guardian")
+@patch("devguard.cli.Reporter")
 def test_check_command_json_output(
     mock_reporter_class,
     mock_guardian_class,
@@ -116,7 +116,7 @@ def test_check_command_json_output(
     }
     mock_reporter_class.return_value = mock_reporter
 
-    with patch("guardian.cli.asyncio.run") as mock_asyncio_run:
+    with patch("devguard.cli.asyncio.run") as mock_asyncio_run:
         result = runner.invoke(app, ["check", "--json"])
 
         assert result.exit_code == 0
@@ -127,7 +127,7 @@ def test_check_command_json_output(
         coro.close()
 
 
-@patch("guardian.cli.get_settings")
+@patch("devguard.cli.get_settings")
 def test_config_command(mock_get_settings, runner, mock_settings):
     """Test config command."""
     mock_get_settings.return_value = mock_settings
@@ -140,7 +140,7 @@ def test_config_command(mock_get_settings, runner, mock_settings):
     assert "Vercel" in result.stdout
 
 
-@patch("guardian.cli.get_settings")
+@patch("devguard.cli.get_settings")
 def test_config_command_shows_configured_items(mock_get_settings, runner):
     """Test config command shows configured items."""
     settings = MagicMock()
@@ -173,6 +173,6 @@ def test_config_command_shows_configured_items(mock_get_settings, runner):
 
 def test_main_function():
     """Test main entry point."""
-    with patch("guardian.cli.app") as mock_app:
+    with patch("devguard.cli.app") as mock_app:
         main()
         mock_app.assert_called_once()

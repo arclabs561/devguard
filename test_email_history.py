@@ -14,12 +14,12 @@ import os
 import sys
 from pathlib import Path
 
-# Add guardian to path
+# Add devguard to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from guardian.config import Settings
-from guardian.core import Guardian
-from guardian.reporting import Reporter
+from devguard.config import Settings
+from devguard.core import Guardian
+from devguard.reporting import Reporter
 
 
 async def test_email_history():
@@ -33,7 +33,10 @@ async def test_email_history():
     settings = Settings()
 
     # Check if smart_email is enabled
-    use_smart_email = getattr(settings, "use_smart_email", False) or os.getenv("USE_SMART_EMAIL", "").lower() == "true"
+    use_smart_email = (
+        getattr(settings, "use_smart_email", False)
+        or os.getenv("USE_SMART_EMAIL", "").lower() == "true"
+    )
 
     print("Configuration:")
     print(f"  USE_SMART_EMAIL: {use_smart_email}")
@@ -178,12 +181,16 @@ async def test_email_history():
                 """).fetchone()
 
                 if latest_row:
-                    topic, severity, subject, sent_at, author, message_preview, metadata_json = latest_row
+                    topic, severity, subject, sent_at, author, message_preview, metadata_json = (
+                        latest_row
+                    )
                     metadata = json.loads(metadata_json) if metadata_json else {}
                     print("   ✓ Latest Guardian alert:")
                     print(f"     - Topic: {topic}")
                     print(f"     - Subject: {subject[:60]}")
-                    print(f"     - Has LLM decision: {'llm_decision' in metadata or 'llm_reasoning' in metadata}")
+                    print(
+                        f"     - Has LLM decision: {'llm_decision' in metadata or 'llm_reasoning' in metadata}"
+                    )
                     print(f"     - Has report summary: {'report_summary' in metadata}")
                     print(f"     - Has full context: {'context' in metadata}")
 
@@ -200,17 +207,10 @@ async def test_email_history():
     print("=" * 60)
     print()
     print("To verify introspection via MCP:")
-    print("  from guardian.mcp_server import get_email_history, get_unified_alert_history")
+    print("  from devguard.mcp_server import get_email_history, get_unified_alert_history")
     print("  history = await get_email_history(limit=10)")
     print("  unified = await get_unified_alert_history(limit=20)")
 
 
 if __name__ == "__main__":
     asyncio.run(test_email_history())
-
-
-
-
-
-
-

@@ -56,16 +56,16 @@ Thumbs.db
 private_repos.txt
 
 
-# Guardian local artifacts / reports (do not commit)
-.guardian-email-history.json
-.guardian-email-thread
+# Devguard local artifacts / reports (do not commit)
+.devguard-email-history.json
+.devguard-email-thread
 repo_review_results.json
 npm_security_report.json
 npm_security_report.md
 
-# Guardian dogfooding outputs (spec-driven sweeps)
+# Devguard dogfooding outputs (spec-driven sweeps)
 .state/
 
-# Personal spec files (copy guardian.spec.example.yaml to get started)
-guardian.spec.yaml
-guardian.spec.fast.yaml
+# Personal spec files (copy devguard.spec.example.yaml to get started)
+devguard.spec.yaml
+devguard.spec.fast.yaml

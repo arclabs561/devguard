@@ -1,9 +1,9 @@
-# Guardian
+# devguard
 
-Guardian scans your developer workspace for security and hygiene issues. It runs a set of sweeps -- automated checks across local repos, SSH keys, dependencies, and more -- and reports findings in one pass.
+devguard scans your developer workspace for security and hygiene issues. It runs a set of sweeps -- automated checks across local repos, SSH keys, dependencies, and more -- and reports findings in one pass.
 
 ```
-$ guardian sweep
+$ devguard sweep
 local_dev:                    142 repos scanned, 0 findings
 public_github_secrets:        18 repos scanned, 0 findings
 local_dirty_worktree_secrets: 47 repos scanned, 0 findings
@@ -17,11 +17,11 @@ ai_editor_config_audit:       47 repos checked, 2 errors
 
 ```bash
 pip install -e .              # or: uv pip install -e .
-guardian doctor                # check prerequisites (trufflehog, cargo-audit, etc.)
-guardian sweep                 # run all enabled sweeps
+devguard doctor                # check prerequisites (trufflehog, cargo-audit, etc.)
+devguard sweep                 # run all enabled sweeps
 ```
 
-No spec file is required. Without one, Guardian uses built-in defaults. Create `guardian.spec.yaml` to customize which sweeps run and their parameters.
+No spec file is required. Without one, devguard uses built-in defaults. Create `devguard.spec.yaml` to customize which sweeps run and their parameters.
 
 ## Sweeps
 
@@ -56,7 +56,7 @@ No spec file is required. Without one, Guardian uses built-in defaults. Create `
 
 ## Configuration
 
-Copy `guardian.spec.example.yaml` to `guardian.spec.yaml` and edit to taste. The spec file controls which sweeps are enabled, their parameters, and output paths.
+Copy `devguard.spec.example.yaml` to `devguard.spec.yaml` and edit to taste. The spec file controls which sweeps are enabled, their parameters, and output paths.
 
 Most sweeps work with zero configuration. Sweeps that need external access:
 
@@ -69,14 +69,14 @@ Environment variables can be set in `.env` or exported in your shell.
 
 ## Pre-commit hooks
 
-Guardian ships `.pre-commit-hooks.yaml` with three hooks: `guardian-gitignore`, `guardian-ai-config`, and `guardian-secrets`. Add to your `.pre-commit-config.yaml`:
+devguard ships `.pre-commit-hooks.yaml` with three hooks: `devguard-gitignore`, `devguard-ai-config`, and `devguard-secrets`. Add to your `.pre-commit-config.yaml`:
 
 ```yaml
-- repo: https://github.com/yourorg/guardian
+- repo: https://github.com/yourorg/devguard
   rev: main
   hooks:
-    - id: guardian-gitignore
-    - id: guardian-secrets
+    - id: devguard-gitignore
+    - id: devguard-secrets
 ```
 
 ## Library usage
@@ -84,8 +84,8 @@ Guardian ships `.pre-commit-hooks.yaml` with three hooks: `guardian-gitignore`, 
 Sweep modules can be imported directly for scripting or integration:
 
 ```python
-from guardian.sweeps.ssh_key_audit import audit_ssh_keys
-from guardian.sweeps.dependency_audit import audit_dependencies
+from devguard.sweeps.ssh_key_audit import audit_ssh_keys
+from devguard.sweeps.dependency_audit import audit_dependencies
 ```
 
 ## Development
@@ -94,7 +94,7 @@ from guardian.sweeps.dependency_audit import audit_dependencies
 uv pip install -e ".[dev]"
 pytest
 ruff check .
-mypy guardian/
+mypy devguard/
 ```
 
 ## License
@@ -104,7 +104,7 @@ MIT
 <details>
 <summary>Legacy: Service monitoring (npm, Vercel, Fly.io, GitHub)</summary>
 
-Guardian originally provided unified monitoring for npm packages, GitHub repositories, and Fly.io/Vercel deployments. This functionality still exists but is secondary to the sweep system.
+devguard originally provided unified monitoring for npm packages, GitHub repositories, and Fly.io/Vercel deployments. This functionality still exists but is secondary to the sweep system.
 
 ### Monitored services
 
@@ -129,14 +129,14 @@ Guardian originally provided unified monitoring for npm packages, GitHub reposit
 ### Legacy commands
 
 ```bash
-guardian check           # run monitoring checks
-guardian check --watch   # continuous monitoring
-guardian mcp             # start MCP server
-guardian dashboard       # start web dashboard
-guardian discover        # auto-discover resources to monitor
-guardian config          # show current configuration
-guardian auth gh         # authenticate with GitHub
-guardian auth-status     # show auth status for all services
+devguard check           # run monitoring checks
+devguard check --watch   # continuous monitoring
+devguard mcp             # start MCP server
+devguard dashboard       # start web dashboard
+devguard discover        # auto-discover resources to monitor
+devguard config          # show current configuration
+devguard auth gh         # authenticate with GitHub
+devguard auth-status     # show auth status for all services
 ```
 
 ### Legacy configuration
