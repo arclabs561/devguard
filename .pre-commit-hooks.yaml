@@ -1,0 +1,33 @@
+# Pre-commit hooks for guardian.
+#
+# NOTE: These hooks require `uv` and `guardian` to be installed.
+# They use language: system, so the caller's environment must have both.
+#
+# The `guardian sweep` command currently requires a spec file
+# (guardian.spec.yaml).  If the consuming repo does not have one,
+# these hooks will exit non-zero.  A future zero-config mode in
+# cli.py (defaulting to SweepSpec()) would remove that requirement.
+
+- id: guardian-gitignore
+  name: Guardian gitignore audit
+  entry: uv run python -m guardian sweep --only gitignore_audit
+  language: system
+  pass_filenames: false
+  always_run: true
+  stages: [pre-commit]
+
+- id: guardian-ai-config
+  name: Guardian AI editor config audit
+  entry: uv run python -m guardian sweep --only ai_editor_config_audit
+  language: system
+  pass_filenames: false
+  always_run: true
+  stages: [pre-commit]
+
+- id: guardian-secrets
+  name: Guardian dirty worktree secrets
+  entry: uv run python -m guardian sweep --only local_dirty_worktree_secrets
+  language: system
+  pass_filenames: false
+  always_run: true
+  stages: [pre-commit]
