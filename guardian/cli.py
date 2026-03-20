@@ -20,6 +20,252 @@ app = typer.Typer(
 )
 console = Console()
 
+_MAX_TABLE_ROWS = 15
+
+
+def _sev_style(severity: str) -> str:
+    """Return a Rich style string for the given severity level."""
+    s = severity.lower()
+    if s in ("critical", "error", "high"):
+        return "red"
+    if s in ("warning", "medium"):
+        return "yellow"
+    return "dim"
+
+
+def _print_local_dev_table(hits: list) -> None:
+    if not hits:
+        return
+    table = Table(title="local_dev findings", title_style="bold")
+    table.add_column("repo_path", style="cyan", max_width=40)
+    table.add_column("finding_type", style="yellow")
+    table.add_column("file_path", max_width=50)
+    for h in hits[:_MAX_TABLE_ROWS]:
+        reason = h.reason if hasattr(h, "reason") else h.get("reason", "")
+        ftype = reason.split(":")[0] if ":" in reason else reason
+        repo = h.repo_path if hasattr(h, "repo_path") else h.get("repo_path", "")
+        fpath = h.file_path if hasattr(h, "file_path") else h.get("file_path", "")
+        repo_short = Path(repo).name if repo else ""
+        table.add_row(repo_short, ftype, fpath)
+    if len(hits) > _MAX_TABLE_ROWS:
+        table.add_row("...", f"+{len(hits) - _MAX_TABLE_ROWS} more", "", style="dim")
+    console.print(table)
+
+
+def _print_public_github_secrets_table(report: dict) -> None:
+    findings = report.get("findings", [])
+    if not findings:
+        return
+    from collections import Counter
+
+    repo_counts: Counter = Counter()
+    repo_engine: dict[str, set] = {}
+    for f in findings:
+        repo = f.get("repo", "?")
+        repo_counts[repo] += 1
+        engine = (f.get("type", "") or "").split(":")[0]
+        repo_engine.setdefault(repo, set()).add(engine)
+    table = Table(title="public_github_secrets findings", title_style="bold")
+    table.add_column("repo_name", style="cyan")
+    table.add_column("finding_count", justify="right", style="red")
+    table.add_column("engine")
+    for repo, count in repo_counts.most_common(_MAX_TABLE_ROWS):
+        engines = ", ".join(sorted(repo_engine.get(repo, set())))
+        table.add_row(repo, str(count), engines)
+    if len(repo_counts) > _MAX_TABLE_ROWS:
+        table.add_row("...", f"+{len(repo_counts) - _MAX_TABLE_ROWS} repos", "", style="dim")
+    console.print(table)
+
+
+def _print_local_dirty_worktree_table(report: dict) -> None:
+    findings = report.get("findings", [])
+    if not findings:
+        return
+    from collections import Counter
+
+    repo_counts: Counter = Counter()
+    for f in findings:
+        repo = f.get("repo_path", "?")
+        repo_counts[Path(repo).name] += 1
+    table = Table(title="local_dirty_worktree_secrets findings", title_style="bold")
+    table.add_column("repo_name", style="cyan")
+    table.add_column("finding_count", justify="right", style="red")
+    for repo, count in repo_counts.most_common(_MAX_TABLE_ROWS):
+        table.add_row(repo, str(count))
+    if len(repo_counts) > _MAX_TABLE_ROWS:
+        table.add_row("...", f"+{len(repo_counts) - _MAX_TABLE_ROWS} repos", style="dim")
+    console.print(table)
+
+
+def _print_project_flaudit_table(results: list) -> None:
+    rows = []
+    for r in results:
+        if not r.findings:
+            continue
+        repo_name = Path(r.repo_path).name
+        count = len(r.findings)
+        sevs = [f.severity for f in r.findings]
+        top_sev = "low"
+        for s in ("critical", "high", "medium"):
+            if s in sevs:
+                top_sev = s
+                break
+        rows.append((repo_name, count, top_sev))
+    if not rows:
+        return
+    rows.sort(key=lambda x: -x[1])
+    table = Table(title="project_flaudit findings", title_style="bold")
+    table.add_column("repo_name", style="cyan")
+    table.add_column("finding_count", justify="right")
+    table.add_column("top_severity")
+    for repo_name, count, top_sev in rows[:_MAX_TABLE_ROWS]:
+        table.add_row(repo_name, str(count), f"[{_sev_style(top_sev)}]{top_sev}[/]")
+    if len(rows) > _MAX_TABLE_ROWS:
+        table.add_row("...", f"+{len(rows) - _MAX_TABLE_ROWS} repos", "", style="dim")
+    console.print(table)
+
+
+def _print_gitignore_audit_table(report: dict) -> None:
+    repos = report.get("repos", [])
+    if not repos:
+        return
+    table = Table(title="gitignore_audit findings", title_style="bold")
+    table.add_column("repo_name", style="cyan")
+    table.add_column("is_public")
+    table.add_column("missing_patterns", max_width=60)
+    for r in repos[:_MAX_TABLE_ROWS]:
+        repo_name = Path(r["repo_path"]).name
+        is_pub = "[red]yes[/]" if r.get("is_public") else "no"
+        missing = ", ".join(r.get("missing_patterns", [])[:6])
+        if len(r.get("missing_patterns", [])) > 6:
+            missing += f" (+{len(r['missing_patterns']) - 6})"
+        table.add_row(repo_name, is_pub, missing)
+    if len(repos) > _MAX_TABLE_ROWS:
+        table.add_row("...", "", f"+{len(repos) - _MAX_TABLE_ROWS} repos", style="dim")
+    console.print(table)
+
+
+def _print_dependency_audit_table(report: dict) -> None:
+    repos = [r for r in report.get("repos", []) if r.get("vulns")]
+    if not repos:
+        return
+    table = Table(title="dependency_audit findings", title_style="bold")
+    table.add_column("repo_name", style="cyan")
+    table.add_column("severity")
+    table.add_column("vuln_count", justify="right")
+    for r in repos[:_MAX_TABLE_ROWS]:
+        repo_name = Path(r["repo_path"]).name
+        sev_counts = r.get("severity_counts", {})
+        top_sev = "low"
+        for s in ("critical", "high", "medium", "low"):
+            if sev_counts.get(s, 0) > 0:
+                top_sev = s
+                break
+        count = r.get("vuln_count", len(r.get("vulns", [])))
+        table.add_row(repo_name, f"[{_sev_style(top_sev)}]{top_sev}[/]", str(count))
+    if len(repos) > _MAX_TABLE_ROWS:
+        table.add_row("...", "", f"+{len(repos) - _MAX_TABLE_ROWS} repos", style="dim")
+    console.print(table)
+
+
+def _print_ssh_key_audit_table(report: dict) -> None:
+    keys_with_issues = [k for k in report.get("keys", []) if k.get("issues")]
+    if not keys_with_issues:
+        return
+    table = Table(title="ssh_key_audit findings", title_style="bold")
+    table.add_column("key_file", style="cyan", max_width=40)
+    table.add_column("issue_type", style="yellow")
+    table.add_column("detail", max_width=50)
+    row_count = 0
+    for k in keys_with_issues:
+        key_name = Path(k["key_path"]).name
+        for issue in k["issues"]:
+            if row_count >= _MAX_TABLE_ROWS:
+                break
+            if "passphrase" in issue:
+                itype = "no_passphrase"
+                style = "red"
+            elif "deprecated" in issue or "bit" in issue or "NIST" in issue:
+                itype = "weak_algorithm"
+                style = "red"
+            elif "permissions" in issue:
+                itype = "bad_permissions"
+                style = "yellow"
+            elif "GitHub" in issue:
+                itype = "not_on_github"
+                style = "yellow"
+            else:
+                itype = "other"
+                style = "dim"
+            table.add_row(f"[{style}]{key_name}[/]", itype, issue)
+            row_count += 1
+        if row_count >= _MAX_TABLE_ROWS:
+            break
+    total_issues = sum(len(k["issues"]) for k in keys_with_issues)
+    if total_issues > _MAX_TABLE_ROWS:
+        table.add_row("...", f"+{total_issues - _MAX_TABLE_ROWS} more", "", style="dim")
+    console.print(table)
+
+
+def _print_cargo_publish_audit_table(report: dict) -> None:
+    repos = [r for r in report.get("repos", []) if r.get("findings")]
+    if not repos:
+        return
+    table = Table(title="cargo_publish_audit findings", title_style="bold")
+    table.add_column("repo_name", style="cyan")
+    table.add_column("check")
+    table.add_column("severity")
+    table.add_column("message", max_width=50)
+    row_count = 0
+    for r in repos:
+        for f in r.get("findings", []):
+            if row_count >= _MAX_TABLE_ROWS:
+                break
+            sev = f.get("severity", "info")
+            table.add_row(
+                r["repo_name"],
+                f.get("check", ""),
+                f"[{_sev_style(sev)}]{sev}[/]",
+                f.get("message", ""),
+            )
+            row_count += 1
+        if row_count >= _MAX_TABLE_ROWS:
+            break
+    total = sum(len(r.get("findings", [])) for r in repos)
+    if total > _MAX_TABLE_ROWS:
+        table.add_row("...", "", "", f"+{total - _MAX_TABLE_ROWS} more", style="dim")
+    console.print(table)
+
+
+def _print_ai_editor_config_table(report: dict) -> None:
+    repos = [r for r in report.get("repos", []) if r.get("findings")]
+    if not repos:
+        return
+    table = Table(title="ai_editor_config_audit findings", title_style="bold")
+    table.add_column("repo_name", style="cyan")
+    table.add_column("check")
+    table.add_column("severity")
+    table.add_column("message", max_width=50)
+    row_count = 0
+    for r in repos:
+        for f in r.get("findings", []):
+            if row_count >= _MAX_TABLE_ROWS:
+                break
+            sev = f.get("severity", "info")
+            table.add_row(
+                r["repo_name"],
+                f.get("check", ""),
+                f"[{_sev_style(sev)}]{sev}[/]",
+                f.get("message", ""),
+            )
+            row_count += 1
+        if row_count >= _MAX_TABLE_ROWS:
+            break
+    total = sum(len(r.get("findings", [])) for r in repos)
+    if total > _MAX_TABLE_ROWS:
+        table.add_row("...", "", "", f"+{total - _MAX_TABLE_ROWS} more", style="dim")
+    console.print(table)
+
 
 def _configure_logging(json_output: bool = False) -> None:
     """Configure logging based on output mode.
@@ -715,6 +961,7 @@ def sweep_dev(
     console.print(f"[bold]Wrote report:[/bold] {report_path}")
     console.print(f"[bold]Repos scanned:[/bold] {meta['repos_scanned']}")
     console.print(f"[bold]Findings:[/bold] {len(hits)}")
+    _print_local_dev_table(hits)
 
     if hits:
         console.print(
@@ -741,11 +988,19 @@ def sweep(
         "--only",
         help="Run only these sweeps (repeatable). Known: local_dev, public_github_secrets, local_dirty_worktree_secrets, project_flaudit, gitignore_audit, dependency_audit, ssh_key_audit, cargo_publish_audit, ai_editor_config_audit",
     ),
+    format: str = typer.Option(
+        "text",
+        "--format",
+        "-f",
+        help="Output format: text, json, sarif",
+    ),
 ) -> None:
     """Run spec-driven sweeps (policy checks).
 
     Today this runs the local dev repo sweep (and will expand over time).
     """
+    import sys
+
     from guardian.spec import MonitorSpec, SweepSpec, load_spec
     from guardian.sweeps.local_dev import DEFAULT_DENY_GLOBS, default_dev_root, sweep_dev_repos
     from guardian.sweeps.local_dirty_worktree_secrets import (
@@ -756,6 +1011,9 @@ def sweep(
     )
     from guardian.sweeps.public_github_secrets import scan_public_github_repos
     from guardian.sweeps.public_github_secrets import write_report as write_json
+
+    machine_output = format in ("json", "sarif")
+    sweep_reports: list[tuple[str, dict]] = []
 
     spec_path = Path(spec_file)
     if not spec_path.exists():
@@ -792,6 +1050,7 @@ def sweep(
         console.print(f"[bold]local_dev report:[/bold] {out_path}")
         console.print(f"[bold]Repos scanned:[/bold] {meta['repos_scanned']}")
         console.print(f"[bold]Findings:[/bold] {len(hits)}")
+        _print_local_dev_table(hits)
         if hits:
             exit_code = max(exit_code, 2)
 
@@ -820,6 +1079,7 @@ def sweep(
                     "[bold red]Action:[/bold red] Fix scan errors (missed coverage) and rerun."
                 )
                 exit_code = max(exit_code, 3)
+        _print_public_github_secrets_table(report)
         if report["summary"]["findings_total"] > 0:
             exit_code = max(exit_code, 2)
 
@@ -846,6 +1106,7 @@ def sweep(
         console.print(f"[bold]Findings:[/bold] {report['summary']['findings_total']}")
         if errors:
             console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+        _print_local_dirty_worktree_table(report)
         if report["summary"]["findings_total"] > 0:
             exit_code = max(exit_code, 2)
 
@@ -892,6 +1153,7 @@ def sweep(
         console.print(f"[bold]Findings:[/bold] {total_findings}")
         if total_errors:
             console.print(f"[bold]Errors:[/bold] {total_errors}", style="yellow")
+        _print_project_flaudit_table(results)
         if total_findings > 0:
             exit_code = max(exit_code, 2)
 
@@ -920,6 +1182,7 @@ def sweep(
         console.print(f"[bold]Total gaps:[/bold] {report['summary']['total_gaps']}")
         if errors:
             console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+        _print_gitignore_audit_table(report)
         if report["summary"]["public_repos_with_gaps"] > 0:
             exit_code = max(exit_code, 2)
 
@@ -950,6 +1213,7 @@ def sweep(
         )
         if errors:
             console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+        _print_dependency_audit_table(report)
         if report["summary"]["total_vulns"] > 0:
             exit_code = max(exit_code, 2)
 
@@ -973,6 +1237,7 @@ def sweep(
         console.print(f"[bold]Issues:[/bold] {report['summary']['issues_total']}")
         if errors:
             console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+        _print_ssh_key_audit_table(report)
         if report["summary"]["issues_total"] > 0:
             exit_code = max(exit_code, 2)
 
@@ -1005,6 +1270,7 @@ def sweep(
             )
         if errors:
             console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+        _print_cargo_publish_audit_table(report)
         if report["summary"]["total_errors"] > 0:
             exit_code = max(exit_code, 2)
 
@@ -1037,6 +1303,7 @@ def sweep(
             console.print(f"[bold]Tool adoption:[/bold] {tools}")
         if errors:
             console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+        _print_ai_editor_config_table(report)
         if report["summary"]["total_errors"] > 0:
             exit_code = max(exit_code, 2)
 
