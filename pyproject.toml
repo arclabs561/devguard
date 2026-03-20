@@ -1,9 +1,24 @@
 [project]
-name = "guardian"
-version = "0.1.0"
-description = "Unified monitoring for npm packages, GitHub repos, and Fly.io/Vercel deployments"
+name = "devguard"
+version = "0.2.0"
+description = "Developer workstation security and hygiene sweeps -- secrets, deps, gitignore, SSH keys, AI editor configs, cargo publish CI, and more"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+authors = [{name = "arclabs561"}]
+keywords = ["security", "developer-tools", "secret-scanning", "dependency-audit", "devops"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = [
     "httpx>=0.27.0",
     "pydantic>=2.9.0",
@@ -11,20 +26,33 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "typer>=0.12.0",
     "rich>=13.7.0",
+    "pyyaml>=6.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/arclabs561/devguard"
+Repository = "https://github.com/arclabs561/devguard"
+Issues = "https://github.com/arclabs561/devguard/issues"
+
+[project.scripts]
+guardian = "guardian.cli:main"
+
+[project.optional-dependencies]
+monitoring = [
     "pygithub>=2.2.0",
     "fastapi>=0.109.0",
     "uvicorn>=0.27.0",
     "slowapi>=0.1.9",
     "aiosmtplib>=3.0.0",
     "prometheus-client>=0.20.0",
-    "pyyaml>=6.0.0",
     "mcp>=0.1.0",
+]
+flaudit = [
     "openai>=1.0.0",
 ]
-[project.scripts]
-guardian = "guardian.cli:main"
-
-[project.optional-dependencies]
+all = [
+    "devguard[monitoring,flaudit]",
+]
 dev = [
     "pytest>=8.3.0",
     "pytest-asyncio>=0.24.0",
@@ -37,6 +65,9 @@ dev = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["guardian"]
 
 [tool.ruff]
 line-length = 100
