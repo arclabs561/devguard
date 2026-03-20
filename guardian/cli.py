@@ -1047,10 +1047,20 @@ def sweep(
         from guardian.sweeps.local_dev import write_report
 
         write_report(out_path, hits, meta)
-        console.print(f"[bold]local_dev report:[/bold] {out_path}")
-        console.print(f"[bold]Repos scanned:[/bold] {meta['repos_scanned']}")
-        console.print(f"[bold]Findings:[/bold] {len(hits)}")
-        _print_local_dev_table(hits)
+        if machine_output:
+            from dataclasses import asdict
+
+            sweep_reports.append(
+                (
+                    "local_dev",
+                    {**meta, "hits": [asdict(h) for h in hits]},
+                )
+            )
+        else:
+            console.print(f"[bold]local_dev report:[/bold] {out_path}")
+            console.print(f"[bold]Repos scanned:[/bold] {meta['repos_scanned']}")
+            console.print(f"[bold]Findings:[/bold] {len(hits)}")
+            _print_local_dev_table(hits)
         if hits:
             exit_code = max(exit_code, 2)
 
@@ -1069,17 +1079,21 @@ def sweep(
         )
         out_path = Path(pub.output).expanduser()
         write_json(out_path, report)
-        console.print(f"[bold]public_github_secrets report:[/bold] {out_path}")
-        console.print(f"[bold]Repos scanned:[/bold] {report['scope']['repos_scanned_count']}")
-        console.print(f"[bold]Findings:[/bold] {report['summary']['findings_total']}")
-        if errors:
-            console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
-            if pub.fail_on_errors:
-                console.print(
-                    "[bold red]Action:[/bold red] Fix scan errors (missed coverage) and rerun."
-                )
-                exit_code = max(exit_code, 3)
-        _print_public_github_secrets_table(report)
+        if machine_output:
+            sweep_reports.append(("public_github_secrets", report))
+        else:
+            console.print(f"[bold]public_github_secrets report:[/bold] {out_path}")
+            console.print(f"[bold]Repos scanned:[/bold] {report['scope']['repos_scanned_count']}")
+            console.print(f"[bold]Findings:[/bold] {report['summary']['findings_total']}")
+            if errors:
+                console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+                if pub.fail_on_errors:
+                    console.print(
+                        "[bold red]Action:[/bold red] Fix scan errors (missed coverage) and rerun."
+                    )
+            _print_public_github_secrets_table(report)
+        if errors and pub.fail_on_errors:
+            exit_code = max(exit_code, 3)
         if report["summary"]["findings_total"] > 0:
             exit_code = max(exit_code, 2)
 
@@ -1101,12 +1115,15 @@ def sweep(
         )
         out_path = Path(dirty.output).expanduser()
         write_dirty_json(out_path, report)
-        console.print(f"[bold]local_dirty_worktree_secrets report:[/bold] {out_path}")
-        console.print(f"[bold]Repos scanned:[/bold] {report['scope']['repos_scanned_count']}")
-        console.print(f"[bold]Findings:[/bold] {report['summary']['findings_total']}")
-        if errors:
-            console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
-        _print_local_dirty_worktree_table(report)
+        if machine_output:
+            sweep_reports.append(("local_dirty_worktree_secrets", report))
+        else:
+            console.print(f"[bold]local_dirty_worktree_secrets report:[/bold] {out_path}")
+            console.print(f"[bold]Repos scanned:[/bold] {report['scope']['repos_scanned_count']}")
+            console.print(f"[bold]Findings:[/bold] {report['summary']['findings_total']}")
+            if errors:
+                console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+            _print_local_dirty_worktree_table(report)
         if report["summary"]["findings_total"] > 0:
             exit_code = max(exit_code, 2)
 
@@ -1146,14 +1163,22 @@ def sweep(
         )
         out_path = Path(flaudit.output).expanduser()
         write_flaudit(out_path, results, meta)
-        console.print(f"[bold]project_flaudit report:[/bold] {out_path}")
-        console.print(f"[bold]Projects analyzed:[/bold] {meta['repos_scanned']}")
         total_findings = sum(len(r.findings) for r in results)
         total_errors = sum(1 for r in results if r.error)
-        console.print(f"[bold]Findings:[/bold] {total_findings}")
-        if total_errors:
-            console.print(f"[bold]Errors:[/bold] {total_errors}", style="yellow")
-        _print_project_flaudit_table(results)
+        if machine_output:
+            sweep_reports.append(
+                (
+                    "project_flaudit",
+                    json.loads(out_path.read_text()),
+                )
+            )
+        else:
+            console.print(f"[bold]project_flaudit report:[/bold] {out_path}")
+            console.print(f"[bold]Projects analyzed:[/bold] {meta['repos_scanned']}")
+            console.print(f"[bold]Findings:[/bold] {total_findings}")
+            if total_errors:
+                console.print(f"[bold]Errors:[/bold] {total_errors}", style="yellow")
+            _print_project_flaudit_table(results)
         if total_findings > 0:
             exit_code = max(exit_code, 2)
 
@@ -1171,18 +1196,23 @@ def sweep(
         )
         out_path = Path(gi.output).expanduser()
         write_gi(out_path, report)
-        console.print(f"[bold]gitignore_audit report:[/bold] {out_path}")
-        console.print(f"[bold]Repos scanned:[/bold] {report['scope']['repos_scanned']}")
-        console.print(
-            f"[bold]Repos without .gitignore:[/bold] {report['summary']['repos_without_gitignore']}"
-        )
-        console.print(
-            f"[bold]Public repos with gaps:[/bold] {report['summary']['public_repos_with_gaps']}"
-        )
-        console.print(f"[bold]Total gaps:[/bold] {report['summary']['total_gaps']}")
-        if errors:
-            console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
-        _print_gitignore_audit_table(report)
+        if machine_output:
+            sweep_reports.append(("gitignore_audit", report))
+        else:
+            console.print(f"[bold]gitignore_audit report:[/bold] {out_path}")
+            console.print(f"[bold]Repos scanned:[/bold] {report['scope']['repos_scanned']}")
+            console.print(
+                f"[bold]Repos without .gitignore:[/bold]"
+                f" {report['summary']['repos_without_gitignore']}"
+            )
+            console.print(
+                f"[bold]Public repos with gaps:[/bold]"
+                f" {report['summary']['public_repos_with_gaps']}"
+            )
+            console.print(f"[bold]Total gaps:[/bold] {report['summary']['total_gaps']}")
+            if errors:
+                console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+            _print_gitignore_audit_table(report)
         if report["summary"]["public_repos_with_gaps"] > 0:
             exit_code = max(exit_code, 2)
 
@@ -1203,17 +1233,23 @@ def sweep(
         )
         out_path = Path(depaudit.output).expanduser()
         write_depaudit(out_path, report)
-        console.print(f"[bold]dependency_audit report:[/bold] {out_path}")
-        console.print(f"[bold]Repos scanned:[/bold] {report['scope']['repos_scanned']}")
-        console.print(f"[bold]Repos with vulns:[/bold] {report['summary']['repos_with_vulns']}")
-        console.print(f"[bold]Total vulns:[/bold] {report['summary']['total_vulns']}")
-        sev = report["summary"]["severity_counts"]
-        console.print(
-            f"[bold]Severity:[/bold] critical={sev.get('critical', 0)} high={sev.get('high', 0)} medium={sev.get('medium', 0)} low={sev.get('low', 0)}"
-        )
-        if errors:
-            console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
-        _print_dependency_audit_table(report)
+        if machine_output:
+            sweep_reports.append(("dependency_audit", report))
+        else:
+            console.print(f"[bold]dependency_audit report:[/bold] {out_path}")
+            console.print(f"[bold]Repos scanned:[/bold] {report['scope']['repos_scanned']}")
+            console.print(f"[bold]Repos with vulns:[/bold] {report['summary']['repos_with_vulns']}")
+            console.print(f"[bold]Total vulns:[/bold] {report['summary']['total_vulns']}")
+            sev = report["summary"]["severity_counts"]
+            console.print(
+                f"[bold]Severity:[/bold] critical={sev.get('critical', 0)}"
+                f" high={sev.get('high', 0)}"
+                f" medium={sev.get('medium', 0)}"
+                f" low={sev.get('low', 0)}"
+            )
+            if errors:
+                console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+            _print_dependency_audit_table(report)
         if report["summary"]["total_vulns"] > 0:
             exit_code = max(exit_code, 2)
 
@@ -1232,12 +1268,15 @@ def sweep(
         )
         out_path = Path(sshk.output).expanduser()
         write_sshk(out_path, report)
-        console.print(f"[bold]ssh_key_audit report:[/bold] {out_path}")
-        console.print(f"[bold]Keys scanned:[/bold] {report['summary']['keys_scanned']}")
-        console.print(f"[bold]Issues:[/bold] {report['summary']['issues_total']}")
-        if errors:
-            console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
-        _print_ssh_key_audit_table(report)
+        if machine_output:
+            sweep_reports.append(("ssh_key_audit", report))
+        else:
+            console.print(f"[bold]ssh_key_audit report:[/bold] {out_path}")
+            console.print(f"[bold]Keys scanned:[/bold] {report['summary']['keys_scanned']}")
+            console.print(f"[bold]Issues:[/bold] {report['summary']['issues_total']}")
+            if errors:
+                console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+            _print_ssh_key_audit_table(report)
         if report["summary"]["issues_total"] > 0:
             exit_code = max(exit_code, 2)
 
@@ -1257,20 +1296,26 @@ def sweep(
         )
         out_path = Path(cpub.output).expanduser()
         write_cpub(out_path, report)
-        console.print(f"[bold]cargo_publish_audit report:[/bold] {out_path}")
-        console.print(f"[bold]Rust repos found:[/bold] {report['scope']['rust_repos_found']}")
-        console.print(f"[bold]Repos with errors:[/bold] {report['summary']['repos_with_errors']}")
-        console.print(
-            f"[bold]Repos with warnings:[/bold] {report['summary']['repos_with_warnings']}"
-        )
-        console.print(f"[bold]Total findings:[/bold] {report['summary']['total_findings']}")
-        if report["summary"]["repos_with_errors_list"]:
+        if machine_output:
+            sweep_reports.append(("cargo_publish_audit", report))
+        else:
+            console.print(f"[bold]cargo_publish_audit report:[/bold] {out_path}")
+            console.print(f"[bold]Rust repos found:[/bold] {report['scope']['rust_repos_found']}")
             console.print(
-                f"[red]Error repos:[/red] {', '.join(report['summary']['repos_with_errors_list'])}"
+                f"[bold]Repos with errors:[/bold] {report['summary']['repos_with_errors']}"
             )
-        if errors:
-            console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
-        _print_cargo_publish_audit_table(report)
+            console.print(
+                f"[bold]Repos with warnings:[/bold] {report['summary']['repos_with_warnings']}"
+            )
+            console.print(f"[bold]Total findings:[/bold] {report['summary']['total_findings']}")
+            if report["summary"]["repos_with_errors_list"]:
+                console.print(
+                    f"[red]Error repos:[/red]"
+                    f" {', '.join(report['summary']['repos_with_errors_list'])}"
+                )
+            if errors:
+                console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+            _print_cargo_publish_audit_table(report)
         if report["summary"]["total_errors"] > 0:
             exit_code = max(exit_code, 2)
 
@@ -1289,21 +1334,26 @@ def sweep(
         )
         out_path = Path(aicfg.output).expanduser()
         write_aicfg(out_path, report)
-        console.print(f"[bold]ai_editor_config_audit report:[/bold] {out_path}")
-        console.print(
-            f"[bold]Repos with AI configs:[/bold] {report['scope']['repos_with_ai_configs']}"
-        )
-        console.print(f"[bold]Repos with errors:[/bold] {report['summary']['repos_with_errors']}")
-        console.print(
-            f"[bold]Repos with warnings:[/bold] {report['summary']['repos_with_warnings']}"
-        )
-        console.print(f"[bold]Total findings:[/bold] {report['summary']['total_findings']}")
-        if report["summary"].get("tool_adoption"):
-            tools = ", ".join(f"{t}={c}" for t, c in report["summary"]["tool_adoption"])
-            console.print(f"[bold]Tool adoption:[/bold] {tools}")
-        if errors:
-            console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
-        _print_ai_editor_config_table(report)
+        if machine_output:
+            sweep_reports.append(("ai_editor_config_audit", report))
+        else:
+            console.print(f"[bold]ai_editor_config_audit report:[/bold] {out_path}")
+            console.print(
+                f"[bold]Repos with AI configs:[/bold] {report['scope']['repos_with_ai_configs']}"
+            )
+            console.print(
+                f"[bold]Repos with errors:[/bold] {report['summary']['repos_with_errors']}"
+            )
+            console.print(
+                f"[bold]Repos with warnings:[/bold] {report['summary']['repos_with_warnings']}"
+            )
+            console.print(f"[bold]Total findings:[/bold] {report['summary']['total_findings']}")
+            if report["summary"].get("tool_adoption"):
+                tools = ", ".join(f"{t}={c}" for t, c in report["summary"]["tool_adoption"])
+                console.print(f"[bold]Tool adoption:[/bold] {tools}")
+            if errors:
+                console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+            _print_ai_editor_config_table(report)
         if report["summary"]["total_errors"] > 0:
             exit_code = max(exit_code, 2)
 
@@ -1319,7 +1369,19 @@ def sweep(
         or spec.sweeps.ai_editor_config_audit.enabled
     )
     if not wanted and not any_enabled:
-        console.print("[yellow]No sweeps enabled in spec.[/yellow]")
+        if not machine_output:
+            console.print("[yellow]No sweeps enabled in spec.[/yellow]")
+
+    # Emit machine-readable output to stdout
+    if machine_output and sweep_reports:
+        if format == "sarif":
+            from guardian.sarif import reports_to_sarif
+
+            sarif_doc = reports_to_sarif(sweep_reports)
+            sys.stdout.write(json.dumps(sarif_doc, indent=2) + "\n")
+        elif format == "json":
+            combined = {name: report for name, report in sweep_reports}
+            sys.stdout.write(json.dumps(combined, indent=2) + "\n")
 
     if exit_code > 0:
         raise typer.Exit(code=exit_code)
