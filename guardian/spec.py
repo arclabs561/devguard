@@ -400,6 +400,40 @@ class CargoPublishAuditSweepSpec(BaseModel):
     )
 
 
+class PublishAuditSweepSpec(BaseModel):
+    """Audit PyPI and npm repos for correct publish CI pipelines.
+
+    Checks OIDC trusted publishing, workflow correctness, version consistency,
+    license presence, and secret hygiene. Complements cargo_publish_audit for
+    non-Rust ecosystems.
+    """
+
+    enabled: bool = Field(False, description="Whether this sweep is enabled")
+    dev_root: str | None = Field(
+        None,
+        description="Workspace root. Default: $DEV_DIR or ~/Documents/dev when unset.",
+    )
+    max_depth: int = Field(2, description="How deep under dev_root to look for git repos.")
+    exclude_repo_globs: list[str] = Field(
+        default_factory=lambda: [
+            "*/_trash/*",
+            "*/_scratch/*",
+            "*/_external/*",
+            "*/_archive/*",
+            "*/_forks/*",
+        ],
+        description="Glob patterns to exclude repos from the audit.",
+    )
+    ecosystems: list[str] = Field(
+        default_factory=lambda: ["pypi", "npm"],
+        description="Ecosystems to audit. Supported: pypi, npm.",
+    )
+    output: str = Field(
+        ".state/guardian/publish-audit.json",
+        description="Where to write the JSON report.",
+    )
+
+
 class SweepSpec(BaseModel):
     """Spec for all sweeps (policy checks)."""
 
@@ -438,6 +472,10 @@ class SweepSpec(BaseModel):
     ai_editor_config_audit: AIEditorConfigAuditSweepSpec = Field(
         default_factory=lambda: AIEditorConfigAuditSweepSpec(),
         description="Audit AI editor configs (Claude, Cursor, Copilot, MCP) across repos",
+    )
+    publish_audit: PublishAuditSweepSpec = Field(
+        default_factory=lambda: PublishAuditSweepSpec(),
+        description="Audit PyPI and npm repos for correct publish CI pipelines",
     )
 
 
