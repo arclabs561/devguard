@@ -519,7 +519,7 @@ def spec(
 
     from guardian.spec import MonitorSpec, get_default_spec, load_spec
 
-    spec_file = Path("guardian.spec.yaml")
+    spec_file = Path("devguard.spec.yaml")
 
     if init:
         if spec_file.exists():
@@ -670,7 +670,7 @@ def spec(
 @app.command()
 def discover(
     spec_file: str = typer.Option(
-        "guardian.spec.yaml", "--spec", "-s", help="Path to monitoring spec file"
+        "devguard.spec.yaml", "--spec", "-s", help="Path to monitoring spec file"
     ),
     base_path: str = typer.Option(
         None, "--base-path", "-b", help="Base path for file scanning (default: ~/Documents/dev)"
@@ -973,7 +973,7 @@ def sweep_dev(
 @app.command()
 def sweep(
     spec_file: str = typer.Option(
-        "guardian.spec.yaml",
+        "devguard.spec.yaml",
         "--spec",
         "-s",
         help="Path to spec file (drives which sweeps run and their policy).",
@@ -1019,7 +1019,7 @@ def sweep(
     spec_path = Path(spec_file)
     if not spec_path.exists():
         stderr_console.print(
-            "No spec file found; using defaults. Create guardian.spec.yaml to customize."
+            "No spec file found; using defaults. Create devguard.spec.yaml to customize."
         )
         spec = MonitorSpec(
             name="default",
