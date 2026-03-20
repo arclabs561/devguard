@@ -1,49 +1,151 @@
 # Guardian
 
-Unified monitoring for npm packages, GitHub repositories, and Fly.io/Vercel deployments.
+Guardian scans your developer workspace for security and hygiene issues. It runs a set of sweeps -- automated checks across local repos, SSH keys, dependencies, and more -- and reports findings in one pass.
 
-## Overview
+```
+$ guardian sweep
+local_dev:                    142 repos scanned, 0 findings
+public_github_secrets:        18 repos scanned, 0 findings
+local_dirty_worktree_secrets: 47 repos scanned, 0 findings
+gitignore_audit:              3 repos with gaps (1 public)
+dependency_audit:             12 vulns across 5 repos (2 critical)
+ssh_key_audit:                1 weak key, 2 stale GitHub keys
+ai_editor_config_audit:       47 repos checked, 2 errors
+```
 
-Guardian provides a single tool to monitor:
+## Quick start
+
+```bash
+pip install -e .              # or: uv pip install -e .
+guardian sweep                # run all enabled sweeps
+guardian sweep --only ssh_key_audit --only dependency_audit  # run specific sweeps
+```
+
+No spec file is required. Without one, Guardian uses built-in defaults. Create `guardian.spec.yaml` to customize which sweeps run and their parameters.
+
+## Sweeps
+
+### Security
+
+| Sweep | Description |
+|-------|-------------|
+| `public_github_secrets` | Scan public GitHub repos for committed secrets (TruffleHog). |
+| `dependency_audit` | Check repos for known vulnerabilities in dependencies (npm audit, pip-audit, cargo-audit). |
+| `ssh_key_audit` | Audit local SSH keys for weak algorithms, short key lengths, and stale GitHub deploy keys. |
+| `local_dirty_worktree_secrets` | Scan uncommitted changes in local repos for secrets before they reach a commit. |
+
+### Hygiene
+
+| Sweep | Description |
+|-------|-------------|
+| `gitignore_audit` | Find repos missing `.gitignore` or lacking expected ignore patterns for their language. |
+| `ai_editor_config_audit` | Check AI editor configs (Cursor rules, Claude settings) for consistency across repos. |
+| `cargo_publish_audit` | Verify Rust crates have publish CI, correct metadata, and no publish blockers. |
+
+### Analysis
+
+| Sweep | Description |
+|-------|-------------|
+| `project_flaudit` | LLM-driven audit (OpenRouter/Gemini): README drift, test gaps, rule violations. |
+
+### Workspace
+
+| Sweep | Description |
+|-------|-------------|
+| `local_dev` | Scan local repos for accidentally committed large files, binaries, and dev artifacts. |
+
+## Configuration
+
+Copy `guardian.spec.example.yaml` to `guardian.spec.yaml` and edit to taste. The spec file controls which sweeps are enabled, their parameters, and output paths.
+
+Most sweeps work with zero configuration. Sweeps that need external access:
+
+- `public_github_secrets`: requires `GITHUB_TOKEN` (for GitHub API).
+- `project_flaudit`: requires `OPENROUTER_API_KEY`.
+- `ssh_key_audit` with `check_github: true`: requires `GITHUB_TOKEN`.
+- `dependency_audit`: requires audit tools installed (`npm`, `pip-audit`, `cargo-audit`).
+
+Environment variables can be set in `.env` or exported in your shell.
+
+## Pre-commit hooks
+
+Guardian ships `.pre-commit-hooks.yaml` with three hooks: `guardian-gitignore`, `guardian-ai-config`, and `guardian-secrets`. Add to your `.pre-commit-config.yaml`:
+
+```yaml
+- repo: https://github.com/yourorg/guardian
+  rev: main
+  hooks:
+    - id: guardian-gitignore
+    - id: guardian-secrets
+```
+
+## Library usage
+
+Sweep modules can be imported directly for scripting or integration:
+
+```python
+from guardian.sweeps.ssh_key_audit import audit_ssh_keys
+from guardian.sweeps.dependency_audit import audit_dependencies
+```
+
+## Development
+
+```bash
+uv pip install -e ".[dev]"
+pytest
+ruff check .
+mypy guardian/
+```
+
+## License
+
+MIT
+
+<details>
+<summary>Legacy: Service monitoring (npm, Vercel, Fly.io, GitHub)</summary>
+
+Guardian originally provided unified monitoring for npm packages, GitHub repositories, and Fly.io/Vercel deployments. This functionality still exists but is secondary to the sweep system.
+
+### Monitored services
+
 - **npm packages** for security vulnerabilities
 - **GitHub repositories** for Dependabot security alerts
 - **Fly.io deployments** for health status
 - **Vercel deployments** for deployment status
 - **Container/Dockerfile** security best practices
-- **Secret Scanning** (with TruffleHog integration or regex fallback)
+- **Secret scanning** (TruffleHog or regex fallback)
 - **AWS IAM** security posture for satellite nodes
 - **AWS Cost** monitoring with budget alerts
-- **Firecrawl API** for credit usage monitoring
-- **Tavily API** for usage tracking
-- **API Usage/Credits** for LLM providers (OpenRouter, Anthropic, OpenAI, Perplexity, Groq)
+- **API usage/credits** for LLM providers (OpenRouter, Anthropic, OpenAI, Perplexity, Groq)
+- **Firecrawl API** credit usage
+- **Tavily API** usage tracking
 - **Tailscale** mesh network health
-- **Domain/SSL** certificate expiry monitoring
-- **Docker Swarm** cluster health and placement constraint compliance
-- **Red Team Security Testing** for deployment endpoints (automated security scanning)
-- **Web Dashboard** for real-time monitoring visualization
-- **Model Context Protocol (MCP)** server for AI agent integration
+- **Domain/SSL** certificate expiry
+- **Docker Swarm** cluster health
+- **Red team security testing** for deployment endpoints
+- **Web dashboard** for real-time monitoring
+- **MCP server** for AI agent integration
 
-## Installation
+### Legacy commands
 
 ```bash
-# Using uv (recommended)
-uv pip install -e .
-
-# Or using pip
-pip install -e .
+guardian check           # run monitoring checks
+guardian check --watch   # continuous monitoring
+guardian mcp             # start MCP server
+guardian dashboard       # start web dashboard
+guardian discover        # auto-discover resources to monitor
+guardian config          # show current configuration
+guardian auth gh         # authenticate with GitHub
+guardian auth-status     # show auth status for all services
 ```
 
-## Configuration
+### Legacy configuration
 
-1. Copy `.env.example` to `.env` (if it exists, or create one)
-2. Set required environment variables:
+Set environment variables in `.env`:
 
 ```bash
-# Required
 GITHUB_TOKEN=your_github_token
 VERCEL_TOKEN=your_vercel_token
-
-# Optional
 FLY_API_TOKEN=your_fly_token
 SNYK_TOKEN=your_snyk_token
 GITHUB_ORG=your_org_name
@@ -51,194 +153,17 @@ NPM_PACKAGES_TO_MONITOR=package1,package2
 GITHUB_REPOS_TO_MONITOR=owner/repo1,owner/repo2
 FLY_APPS_TO_MONITOR=app1,app2
 VERCEL_PROJECTS_TO_MONITOR=project1,project2
-
-# Security Scanners
-SECRET_SCAN_ENABLED=true
-CONTAINER_CHECK_ENABLED=true
-NPM_SECURITY_ENABLED=true
-AWS_IAM_CHECK_ENABLED=false  # Enable for AWS satellite node IAM checks
-
-# Additional Service API Keys
-FIRECRAWL_API_KEY=your_firecrawl_key
-TAVILY_API_KEY=your_tavily_key
-
-# Dashboard Configuration
 DASHBOARD_ENABLED=false
 DASHBOARD_HOST=0.0.0.0
 DASHBOARD_PORT=8080
-DASHBOARD_API_KEY=your_secure_key  # Generate with: openssl rand -hex 32
-ALLOWED_ORIGINS=http://localhost:3000  # Optional, comma-separated
-
-# Rate Limiting
-RATE_LIMIT_PER_MINUTE=60
-RATE_LIMIT_PER_HOUR=1000
-
-# Environment
-ENVIRONMENT=development  # or "production"
+DASHBOARD_API_KEY=your_secure_key
 ```
 
-## Security Testing
+### Architecture (legacy)
 
-Guardian includes multiple layers of security testing:
+- **Guardian**: Main orchestrator managing checkers and reports
+- **BaseChecker**: Abstract base class for all checkers
+- **Reporter**: Output formatting, webhooks, email delivery
+- **Checkers**: NpmChecker, GitHubChecker, VercelChecker, FlyChecker, ContainerChecker, SecretChecker, AWSIAMChecker, RedTeamChecker
 
-### 1. Model Context Protocol (MCP) Server
-
-Guardian acts as an MCP server, allowing AI assistants (like Claude, Cursor) to directly perform security audits.
-
-```bash
-# Start the MCP server
-guardian mcp
-```
-
-### 2. Container & Dockerfile Security
-
-Automatically scans `Dockerfile`s for best practices:
-- Running as root
-- Using `latest` tag
-- Exposed secrets
-- Missing `HEALTHCHECK`
-- Usage of `sudo`
-
-### 3. Secret Scanning
-
-Scans git history and files for secrets.
-- Uses **TruffleHog** if installed (recommended for high accuracy).
-- Falls back to **Regex Scanning** if TruffleHog is missing (checks for common keys like AWS, GitHub, Stripe).
-
-### 4. Red Team Security Testing (Deployments)
-
-Automated red team security testing for your Fly.io and Vercel deployments. Checks for:
-- Missing security headers
-- Exposed admin endpoints
-- CORS misconfigurations
-- Information disclosure
-
-### 5. Deep npm Package Security Analysis
-
-Guardian can perform deep security analysis of your published npm packages, checking for:
-- Secrets and credentials
-- Obfuscated code
-- Sensitive files
-- Git history
-- Missing .npmignore
-
-### 6. Project Flaudit (Files-to-Prompt + LLM)
-
-For each project (or the k most recently edited), Guardian aggregates README, implementation, tests, and optional rules into a prompt and uses OpenRouter + Gemini to find flaws:
-- README vs implementation drift
-- README vs tests mismatch
-- Disobedience of project/workspace rules (e.g. `.cursor/rules` invariants)
-
-Enable in `guardian.spec.yaml` under `sweeps.project_flaudit`, set `OPENROUTER_API_KEY`, and run `guardian sweep --only project_flaudit`. Model defaults to `google/gemini-2.5-flash`; use `google/gemini-3.1-pro-preview` for harder reasoning.
-
-**Public-repo quality mode:** Set `public_repo_names` to a list of directory names (e.g. `[infogeom, fingerprints, logp, pkgrank, clump, flowmatch, cnk, vicinity]`) to run flaudit **only** on those repos with a **stricter** system prompt: higher bar for README/quickstart accuracy, public API documentation, and first-time-user experience. Use this to double down on quality for public crates. When `public_repo_names` is non-empty, `k_recent` is ignored and all matching repos are analyzed (up to 30).
-
-**Configurable (not machine-specific):**
-- `dev_root`: workspace root (default: $DEV_DIR or ~/Documents/dev)
-- `workspace_rules_path`: path to workspace rules (relative to dev_root or absolute); e.g. `.cursor/rules` to include shared rules
-- `workspace_rules_include`: rule filenames to include; empty = default set (user-core, user-output-structure, hygiene, docs)
-- `exclude_repo_globs`, `depth_0_skip_prefixes`, `depth_0_allow_names`: control which repos are scanned
-- `severity_guidance`: optional custom severity calibration for the LLM
-
-### 7. AWS IAM Security Checks
-
-For infrastructure with AWS satellite nodes (EC2 instances with IAM roles), Guardian can verify:
-- No overly broad policies (AdministratorAccess, S3FullAccess, etc.)
-- IAM role configuration matches expected posture
-- No credential files on EC2 instances (via SSM)
-
-Configuration is loaded from `ops/security/iam-posture.yaml` if present, otherwise uses defaults.
-
-Enable with: `AWS_IAM_CHECK_ENABLED=true`
-
-## Usage
-
-### Run checks once
-
-```bash
-guardian check
-```
-
-### Run checks in watch mode
-
-```bash
-guardian check --watch
-```
-
-### Start MCP Server
-
-```bash
-guardian mcp
-```
-
-### Web Dashboard
-
-```bash
-guardian dashboard
-```
-
-Starts a web dashboard server for real-time monitoring.
-
-### CI/CD Integration
-
-Guardian includes a GitHub Actions workflow example in `guardian/examples/github-workflow.yml`.
-
-To use it, copy the file to your `.github/workflows/` directory.
-
-## Architecture
-
-Guardian uses a modular checker architecture with the following components:
-
-### Core Components
-
-- **Guardian**: Main orchestrator that manages checkers and generates reports
-- **BaseChecker**: Abstract base class defining the interface for all checkers
-- **Reporter**: Handles output formatting, webhooks, and email delivery
-- **Settings**: Configuration management using Pydantic-Settings
-
-### Checkers
-
-- **NpmChecker**: Checks npm packages for vulnerabilities
-- **GitHubChecker**: Checks GitHub repos for alerts
-- **VercelChecker**: Checks Vercel deployment status
-- **FlyChecker**: Checks Fly.io deployment health
-- **ContainerChecker**: Checks Dockerfile security
-- **SecretChecker**: Checks for leaked secrets
-- **AWSIAMChecker**: Checks AWS IAM posture for satellite nodes
-- **RedTeamChecker**: Active security scanning of endpoints
-
-## API Tokens
-
-### GitHub Token
-
-Create a personal access token with:
-- `repo` scope (for private repos)
-- `security_events` scope (for Dependabot alerts)
-
-### Vercel Token
-
-Create a token at: https://vercel.com/account/tokens
-
-### Fly.io Token
-
-Create a token at: https://fly.io/user/personal_access_tokens
-
-## Development
-
-```bash
-# Install dev dependencies
-uv pip install -e ".[dev]"
-
-# Run tests
-pytest
-
-# Run linter
-ruff check .
-
-# Run type checker
-mypy guardian/
-```
-
-## License
-
-MIT
+</details>
