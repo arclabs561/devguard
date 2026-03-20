@@ -1360,6 +1360,35 @@ def sweep(
         if report["summary"]["total_errors"] > 0:
             exit_code = max(exit_code, 2)
 
+    # publish audit sweep (PyPI + npm)
+    puba = spec.sweeps.publish_audit
+    if puba.enabled and (not wanted or "publish_audit" in wanted):
+        from guardian.sweeps.publish_audit import audit_publish
+        from guardian.sweeps.publish_audit import write_report as write_puba
+
+        root = Path(puba.dev_root).expanduser() if puba.dev_root else default_dev_root()
+        report, errors = audit_publish(
+            dev_root=root,
+            max_depth=puba.max_depth,
+            exclude_repo_globs=puba.exclude_repo_globs,
+            ecosystems=puba.ecosystems or None,
+        )
+        out_path = Path(puba.output).expanduser()
+        write_puba(out_path, report)
+        if machine_output:
+            sweep_reports.append(("publish_audit", report))
+        else:
+            console.print(f"[bold]publish_audit report:[/bold] {out_path}")
+            console.print(f"[bold]Repos scanned:[/bold] {report['scope']['repos_scanned']}")
+            console.print(
+                f"[bold]Repos with errors:[/bold] {report['summary']['repos_with_errors']}"
+            )
+            console.print(f"[bold]Total findings:[/bold] {report['summary']['total_findings']}")
+            if errors:
+                console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+        if report["summary"]["total_errors"] > 0:
+            exit_code = max(exit_code, 2)
+
     any_enabled = (
         local.enabled
         or pub.enabled
@@ -1370,6 +1399,7 @@ def sweep(
         or spec.sweeps.ssh_key_audit.enabled
         or spec.sweeps.cargo_publish_audit.enabled
         or spec.sweeps.ai_editor_config_audit.enabled
+        or spec.sweeps.publish_audit.enabled
     )
     if not wanted and not any_enabled:
         if not machine_output:

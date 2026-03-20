@@ -172,6 +172,118 @@ class RepoAuditResult:
     findings: list[Finding] = field(default_factory=list)
 
 
+def _read_features(repo: Path) -> set[str]:
+    """Extract feature names from Cargo.toml [features] section."""
+    cargo_toml = repo / "Cargo.toml"
+    if not cargo_toml.is_file():
+        return set()
+    try:
+        text = cargo_toml.read_text(encoding="utf-8", errors="replace")
+        feat_section = re.search(r"^\[features\](.*?)(?=^\[|\Z)", text, re.MULTILINE | re.DOTALL)
+        if not feat_section:
+            return set()
+        features = set()
+        for m in re.finditer(r"^(\w[\w-]*)\s*=", feat_section.group(1), re.MULTILINE):
+            features.add(m.group(1))
+        return features
+    except Exception:
+        return set()
+
+
+def _check_feature_gated_tests(repo: Path, result: RepoAuditResult) -> None:
+    """Flag integration tests that import feature-gated modules without a #![cfg] gate.
+
+    Pattern: a test file uses `use crate_name::feature_module::` but doesn't have
+    `#![cfg(feature = "...")]` at the top. This causes compilation failures when
+    running `cargo test` without that feature enabled.
+    """
+    features = _read_features(repo)
+    if not features:
+        return
+
+    # Find crate name from Cargo.toml
+    cargo_toml = repo / "Cargo.toml"
+    try:
+        text = cargo_toml.read_text(encoding="utf-8", errors="replace")
+        name_match = re.search(
+            r'^\[package\].*?^name\s*=\s*"([^"]+)"', text, re.MULTILINE | re.DOTALL
+        )
+        if not name_match:
+            return
+        crate_name = name_match.group(1).replace("-", "_")
+    except Exception:
+        return
+
+    # Scan tests/ and also workspace member tests/
+    test_dirs = [repo / "tests"]
+    # Check workspace members
+    members_match = re.search(
+        r"^\[workspace\].*?members\s*=\s*\[(.*?)\]", text, re.MULTILINE | re.DOTALL
+    )
+    if members_match:
+        for m in re.finditer(r'"([^"]+)"', members_match.group(1)):
+            member_path = repo / m.group(1)
+            test_dirs.append(member_path / "tests")
+            # Also read that member's features and crate name
+            member_toml = member_path / "Cargo.toml"
+            if member_toml.is_file():
+                try:
+                    mt = member_toml.read_text(encoding="utf-8", errors="replace")
+                    mname = re.search(
+                        r'^\[package\].*?^name\s*=\s*"([^"]+)"', mt, re.MULTILINE | re.DOTALL
+                    )
+                    if mname:
+                        member_crate = mname.group(1).replace("-", "_")
+                        mfeats = re.search(
+                            r"^\[features\](.*?)(?=^\[|\Z)", mt, re.MULTILINE | re.DOTALL
+                        )
+                        if mfeats:
+                            for feat_m in re.finditer(
+                                r"^(\w[\w-]*)\s*=", mfeats.group(1), re.MULTILINE
+                            ):
+                                features.add(feat_m.group(1))
+                            crate_name = member_crate  # use member name for import matching
+                except Exception:
+                    pass
+
+    for test_dir in test_dirs:
+        if not test_dir.is_dir():
+            continue
+        try:
+            for test_file in test_dir.iterdir():
+                if not test_file.is_file() or test_file.suffix != ".rs":
+                    continue
+                try:
+                    content = test_file.read_text(encoding="utf-8", errors="replace")
+                except Exception:
+                    continue
+
+                # Check if file has a top-level cfg gate
+                has_cfg = bool(re.search(r"#!\[cfg\(feature\s*=", content[:500]))
+                if has_cfg:
+                    continue
+
+                # Check if file imports feature-gated modules
+                for feat in features:
+                    feat_mod = feat.replace("-", "_")
+                    # Look for `use crate_name::feat_mod` or `crate_name::feat_mod::`
+                    pattern = rf"\b{re.escape(crate_name)}::{re.escape(feat_mod)}\b"
+                    if re.search(pattern, content):
+                        result.findings.append(
+                            Finding(
+                                check="ungated_feature_test",
+                                severity="error",
+                                message=f"{test_file.name}: imports `{crate_name}::{feat_mod}` "
+                                f'but lacks `#![cfg(feature = "{feat}")]`',
+                                detail="This test will fail to compile without the feature enabled. "
+                                'Add `#![cfg(feature = "...")]` at the top of the test file.',
+                            )
+                        )
+                        break  # one finding per file is enough
+        except Exception:
+            continue
+
+
 def _audit_repo(repo: Path) -> RepoAuditResult:
     """Run all cargo publish checks on a single repo."""
     name = repo.name
@@ -309,6 +421,72 @@ def _audit_repo(repo: Path) -> RepoAuditResult:
                     detail="Use ${{{{ secrets.CARGO_REGISTRY_TOKEN }}}} or OIDC trusted publishing",
                 )
             )
+
+    # Check: secret-based auth when OIDC is available (migration target)
+    for fname, text in publish_files:
+        uses_secret = bool(re.search(r"secrets\.CARGO_REGISTRY_TOKEN", text))
+        if uses_secret and not has_oidc:
+            result.findings.append(
+                Finding(
+                    check="secret_based_auth",
+                    severity="warning",
+                    message=f"{fname}: uses secrets.CARGO_REGISTRY_TOKEN instead of OIDC",
+                    detail="Migrate to rust-lang/crates-io-auth-action@v1 for short-lived tokens. "
+                    "Add `permissions: id-token: write` and remove the secret.",
+                )
+            )
+
+    # Check: LICENSE file for public repos
+    if is_public:
+        has_license = any(
+            (repo / name).exists()
+            for name in (
+                "LICENSE",
+                "LICENSE.md",
+                "LICENSE.txt",
+                "LICENSE-MIT",
+                "LICENSE-APACHE",
+                "LICENCE",
+            )
+        )
+        if not has_license:
+            result.findings.append(
+                Finding(
+                    check="no_license_file",
+                    severity="error",
+                    message="Public repo has no LICENSE file",
+                    detail="Cargo.toml may declare a license but crates.io and legal compliance "
+                    "require the actual license text. Add LICENSE-MIT and/or LICENSE-APACHE.",
+                )
+            )
+
+    # Check: CI quality (fmt + clippy in CI workflows)
+    if has_ci_workflow:
+        ci_text = "\n".join(t for _, t in workflows if "pull_request" in t or "push:" in t)
+        has_fmt = bool(re.search(r"cargo\s+fmt", ci_text))
+        has_clippy = bool(re.search(r"cargo\s+clippy", ci_text))
+        if not has_fmt:
+            result.findings.append(
+                Finding(
+                    check="ci_no_fmt",
+                    severity="info",
+                    message="CI does not run `cargo fmt --check`",
+                    detail="Formatting drift accumulates without CI enforcement.",
+                )
+            )
+        if not has_clippy:
+            result.findings.append(
+                Finding(
+                    check="ci_no_clippy",
+                    severity="info",
+                    message="CI does not run `cargo clippy`",
+                )
+            )
+
+    # Check: feature-gated tests without cfg gate.
+    # Tests that import feature-gated modules (e.g., `use crate::qdrant::`) but lack
+    # `#![cfg(feature = "...")]` will fail to compile without that feature enabled.
+    _check_feature_gated_tests(repo, result)
 
     # Check: version vs tag consistency
     if cargo_version and latest_tag:
