@@ -226,12 +226,20 @@ def _audit_pypi_repo(repo: Path) -> RepoAuditResult:
         or "gh-action-pypi-publish" in t
     ]
 
+    # Severity: "error" if evidence of registry publication (version tags),
+    # "warning" if public but no tags, "info" if private.
+    has_tags = latest_tag is not None
+
+    def _sev() -> str:
+        if has_tags:
+            return "error"
+        return "warning" if is_public else "info"
+
     if not publish_files:
-        sev = "error" if is_public else "warning"
         result.findings.append(
             Finding(
                 check="no_publish_workflow",
-                severity=sev,
+                severity=_sev(),
                 message="No PyPI publish workflow detected",
                 detail="Expected a workflow using pypa/gh-action-pypi-publish, twine, or maturin.",
             )
@@ -242,7 +250,6 @@ def _audit_pypi_repo(repo: Path) -> RepoAuditResult:
     has_pypi_action = "gh-action-pypi-publish" in all_text
 
     if publish_files and not has_oidc:
-        sev = "error" if is_public else "warning"
         result.findings.append(
             Finding(
                 check="no_oidc",
@@ -317,12 +324,20 @@ def _audit_npm_repo(repo: Path) -> RepoAuditResult:
         (f, t) for f, t in workflows if "npm publish" in t or "provenance" in t.lower()
     ]
 
+    # Severity: "error" if version tags exist (likely published),
+    # "warning" if public, "info" if private.
+    has_tags = latest_tag is not None
+
+    def _sev() -> str:
+        if has_tags:
+            return "error"
+        return "warning" if is_public else "info"
+
     if not publish_files:
-        sev = "error" if is_public else "warning"
         result.findings.append(
             Finding(
                 check="no_publish_workflow",
-                severity=sev,
+                severity=_sev(),
                 message="No npm publish workflow detected",
             )
         )

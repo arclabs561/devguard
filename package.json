@@ -1,6 +1,7 @@
 {
   "name": "guardian",
   "version": "0.1.0",
+  "private": true,
   "description": "Unified monitoring for npm packages, GitHub repos, and Fly.io/Vercel deployments",
   "type": "module",
   "scripts": {
