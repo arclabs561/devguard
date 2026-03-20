@@ -17,8 +17,8 @@ ai_editor_config_audit:       47 repos checked, 2 errors
 
 ```bash
 pip install -e .              # or: uv pip install -e .
-guardian sweep                # run all enabled sweeps
-guardian sweep --only ssh_key_audit --only dependency_audit  # run specific sweeps
+guardian doctor                # check prerequisites (trufflehog, cargo-audit, etc.)
+guardian sweep                 # run all enabled sweeps
 ```
 
 No spec file is required. Without one, Guardian uses built-in defaults. Create `guardian.spec.yaml` to customize which sweeps run and their parameters.
