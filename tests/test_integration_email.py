@@ -10,9 +10,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from guardian.config import Settings
-from guardian.models import CheckResult, GuardianReport, Severity, Vulnerability
-from guardian.reporting import Reporter
+from devguard.config import Settings
+from devguard.models import CheckResult, GuardianReport, Severity, Vulnerability
+from devguard.reporting import Reporter
 
 
 @pytest.fixture
@@ -157,7 +157,7 @@ async def test_email_smart_email_sends_when_issues_present(
     """Test that smart_email is used when enabled and issues are present."""
     reporter = Reporter(mock_settings_smart_email)
 
-    with patch("guardian.utils.import_smart_email") as mock_import:
+    with patch("devguard.utils.import_smart_email") as mock_import:
         mock_smart_email = MagicMock()
         mock_smart_email.smart_send_alert = MagicMock(return_value=True)
         mock_import.return_value = mock_smart_email
@@ -184,7 +184,7 @@ async def test_email_smart_email_falls_back_to_smtp(
     mock_settings_smart_email.smtp_use_tls = True
     mock_settings_smart_email.email_thread_id_file = None
 
-    with patch("guardian.utils.import_smart_email") as mock_import:
+    with patch("devguard.utils.import_smart_email") as mock_import:
         mock_import.return_value = None  # smart_email not available
 
         with patch("aiosmtplib.SMTP") as mock_smtp_class:

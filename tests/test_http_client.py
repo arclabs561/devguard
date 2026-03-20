@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from guardian.http_client import create_client, retry_with_backoff
+from devguard.http_client import create_client, retry_with_backoff
 
 
 @pytest.mark.asyncio

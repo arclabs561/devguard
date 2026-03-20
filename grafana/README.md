@@ -22,7 +22,7 @@ global:
   scrape_interval: 30s
 
 scrape_configs:
-  - job_name: 'guardian'
+  - job_name: 'devguard'
     static_configs:
       - targets: ['localhost:9090']  # Guardian metrics port
 ```
@@ -37,29 +37,29 @@ prometheus --config.file=prometheus.yml
 
 1. Start Grafana (or use Grafana Cloud)
 2. Go to Dashboards → Import
-3. Upload `grafana/dashboards/guardian.json`
+3. Upload `grafana/dashboards/devguard.json`
 4. Select Prometheus as the data source
 5. Configure the dashboard
 
 ## Metrics Available
 
 ### Check Metrics
-- `guardian_checks_total` - Total checks performed (by type and status)
-- `guardian_check_duration_seconds` - Check duration histogram
-- `guardian_check_errors_total` - Check errors (by type)
+- `devguard_checks_total` - Total checks performed (by type and status)
+- `devguard_check_duration_seconds` - Check duration histogram
+- `devguard_check_errors_total` - Check errors (by type)
 
 ### Security Metrics
-- `guardian_vulnerabilities_total` - Vulnerabilities (by severity)
-- `guardian_repository_alerts_total` - Repository alerts (by state)
+- `devguard_vulnerabilities_total` - Vulnerabilities (by severity)
+- `devguard_repository_alerts_total` - Repository alerts (by state)
 
 ### Deployment Metrics
-- `guardian_deployments_total` - Deployments (by status)
+- `devguard_deployments_total` - Deployments (by status)
 
 ### Cost Metrics
-- `guardian_service_cost_usd` - Service costs in USD (by service and period)
-- `guardian_service_usage` - Service usage (by service and unit)
-- `guardian_service_usage_percent` - Usage percentage (0-100)
-- `guardian_service_usage_limit` - Usage limits
+- `devguard_service_cost_usd` - Service costs in USD (by service and period)
+- `devguard_service_usage` - Service usage (by service and unit)
+- `devguard_service_usage_percent` - Usage percentage (0-100)
+- `devguard_service_usage_limit` - Usage limits
 
 ## Dashboard Features
 

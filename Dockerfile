@@ -36,9 +36,9 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY . /app/
 RUN uv sync --frozen --no-dev --no-editable
 
-# Expose venv-installed entrypoints (e.g. `guardian`).
+# Expose venv-installed entrypoints (e.g. `devguard`).
 ENV PATH="/app/.venv/bin:${PATH}"
 
 # Default to running the CLI.
-ENTRYPOINT ["guardian"]
+ENTRYPOINT ["devguard"]
 CMD ["--help"]

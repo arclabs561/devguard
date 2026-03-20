@@ -1,7 +1,7 @@
 """Tests for discovery module."""
 
 
-from guardian.discovery import _parse_json_robustly
+from devguard.discovery import _parse_json_robustly
 
 
 class TestParseJsonRobustly:

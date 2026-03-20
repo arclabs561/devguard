@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from guardian.models import (
+from devguard.models import (
     CheckResult,
     CheckStatus,
     DeploymentStatus,
@@ -12,7 +12,7 @@ from guardian.models import (
     Severity,
     Vulnerability,
 )
-from guardian.reporting import Reporter
+from devguard.reporting import Reporter
 
 
 @pytest.fixture
@@ -101,7 +101,7 @@ async def test_reporter_sends_webhook(mock_settings, sample_report):
     mock_settings.alert_webhook_url = "https://example.com/webhook"
     reporter = Reporter(mock_settings)
 
-    with patch("guardian.http_client.create_client") as mock_create_client:
+    with patch("devguard.http_client.create_client") as mock_create_client:
         mock_client = AsyncMock()
         mock_create_client.return_value.__aenter__.return_value = mock_client
         mock_client.post = AsyncMock()
@@ -124,7 +124,7 @@ async def test_reporter_handles_webhook_failure(mock_settings, sample_report):
     mock_settings.alert_webhook_url = "https://example.com/webhook"
     reporter = Reporter(mock_settings)
 
-    with patch("guardian.http_client.create_client") as mock_create_client:
+    with patch("devguard.http_client.create_client") as mock_create_client:
         mock_client = AsyncMock()
         mock_create_client.return_value.__aenter__.return_value = mock_client
         mock_client.post = AsyncMock(side_effect=Exception("Network error"))
@@ -138,7 +138,7 @@ async def test_reporter_skips_webhook_when_not_configured(mock_settings, sample_
     """Test that reporter skips webhook when not configured."""
     reporter = Reporter(mock_settings)
 
-    with patch("guardian.http_client.create_client") as mock_create_client:
+    with patch("devguard.http_client.create_client") as mock_create_client:
         await reporter.report(sample_report)
 
         # Verify webhook was not called

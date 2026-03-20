@@ -1,32 +1,32 @@
-# Pre-commit hooks for guardian.
+# Pre-commit hooks for devguard.
 #
-# NOTE: These hooks require `uv` and `guardian` to be installed.
+# NOTE: These hooks require `uv` and `devguard` to be installed.
 # They use language: system, so the caller's environment must have both.
 #
-# The `guardian sweep` command currently requires a spec file
-# (guardian.spec.yaml).  If the consuming repo does not have one,
+# The `devguard sweep` command currently requires a spec file
+# (devguard.spec.yaml).  If the consuming repo does not have one,
 # these hooks will exit non-zero.  A future zero-config mode in
 # cli.py (defaulting to SweepSpec()) would remove that requirement.
 
-- id: guardian-gitignore
-  name: Guardian gitignore audit
-  entry: uv run python -m guardian sweep --only gitignore_audit
+- id: devguard-gitignore
+  name: devguard gitignore audit
+  entry: uv run python -m devguard sweep --only gitignore_audit
   language: system
   pass_filenames: false
   always_run: true
   stages: [pre-commit]
 
-- id: guardian-ai-config
-  name: Guardian AI editor config audit
-  entry: uv run python -m guardian sweep --only ai_editor_config_audit
+- id: devguard-ai-config
+  name: devguard AI editor config audit
+  entry: uv run python -m devguard sweep --only ai_editor_config_audit
   language: system
   pass_filenames: false
   always_run: true
   stages: [pre-commit]
 
-- id: guardian-secrets
-  name: Guardian dirty worktree secrets
-  entry: uv run python -m guardian sweep --only local_dirty_worktree_secrets
+- id: devguard-secrets
+  name: devguard dirty worktree secrets
+  entry: uv run python -m devguard sweep --only local_dirty_worktree_secrets
   language: system
   pass_filenames: false
   always_run: true

@@ -4,9 +4,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from guardian.checkers.npm import NpmChecker
-from guardian.core import Guardian
-from guardian.models import CheckResult
+from devguard.checkers.npm import NpmChecker
+from devguard.core import Guardian
+from devguard.models import CheckResult
 
 
 @pytest.fixture
@@ -52,7 +52,7 @@ async def test_npm_checker_handles_missing_package(mock_settings):
     """Test that NpmChecker handles missing packages gracefully."""
     checker = NpmChecker(mock_settings)
 
-    with patch("guardian.checkers.npm.create_client") as mock_client:
+    with patch("devguard.checkers.npm.create_client") as mock_client:
         mock_response = MagicMock()
         mock_response.status_code = 404
         mock_response.raise_for_status.side_effect = Exception("Not found")
@@ -75,7 +75,7 @@ async def test_npm_checker_handles_network_error(mock_settings):
 
     checker = NpmChecker(mock_settings)
 
-    with patch("guardian.checkers.npm.create_client") as mock_client:
+    with patch("devguard.checkers.npm.create_client") as mock_client:
         mock_client_instance = AsyncMock()
         mock_client_instance.__aenter__.return_value.get.side_effect = httpx.RequestError(
             "Network error", request=MagicMock()

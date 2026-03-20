@@ -3,7 +3,7 @@
 import os
 from unittest.mock import patch
 
-from guardian.config import Settings, get_settings
+from devguard.config import Settings, get_settings
 
 
 def test_settings_loads_from_env():

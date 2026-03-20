@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from guardian.checkers.secret import SecretChecker
-from guardian.config import Settings
+from devguard.checkers.secret import SecretChecker
+from devguard.config import Settings
 
 
 @pytest.fixture
@@ -130,7 +130,7 @@ class TestSecretChecker:
         repo_names = [r.name for r in repos]
         assert any(
             name in repo_names
-            for name in ["infra", "_infra", "accounting", "dossier", "www", "guardian"]
+            for name in ["infra", "_infra", "accounting", "dossier", "www", "devguard"]
         )
 
     def test_get_repos_to_scan_configured(self, settings, temp_git_repo):

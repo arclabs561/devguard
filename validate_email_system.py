@@ -102,12 +102,15 @@ def validate_history_entries(db_path: Path, limit: int = 5) -> tuple[bool, list[
     conn = sqlite3.connect(str(db_path))
 
     # Get recent entries
-    rows = conn.execute("""
+    rows = conn.execute(
+        """
         SELECT author, message_preview, metadata_json
         FROM alert_history
         ORDER BY sent_at DESC
         LIMIT ?
-    """, (limit,)).fetchall()
+    """,
+        (limit,),
+    ).fetchall()
 
     if not rows:
         return True, ["No history entries to validate"]
@@ -170,7 +173,7 @@ def validate_guardian_integration() -> tuple[bool, list[str]]:
     errors = []
 
     try:
-        guardian_path = Path(__file__).parent / "guardian" / "reporting.py"
+        guardian_path = Path(__file__).parent / "devguard" / "reporting.py"
         content = guardian_path.read_text()
 
         # Check that _send_via_smart_email builds rich_metadata
@@ -268,10 +271,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-
-
-
-
-
-
-

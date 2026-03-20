@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from guardian.sweeps.dependency_audit import (
+from devguard.sweeps.dependency_audit import (
     DetectedEngine,
     _normalize_severity,
     audit_dependencies,
@@ -242,7 +242,7 @@ class TestRepoDiscovery:
         (repo_b / ".git").mkdir()
         (repo_b / "package-lock.json").touch()
 
-        from guardian.sweeps.dependency_audit import _iter_git_repos
+        from devguard.sweeps.dependency_audit import _iter_git_repos
 
         repos = _iter_git_repos(tmp_path, max_depth=2)
         repo_names = {r.name for r in repos}
@@ -263,7 +263,7 @@ class TestGracefulSkip:
         (repo / ".git").mkdir()
         (repo / "Cargo.lock").touch()
 
-        with patch("guardian.sweeps.dependency_audit.shutil.which", return_value=None):
+        with patch("devguard.sweeps.dependency_audit.shutil.which", return_value=None):
             report, errors = audit_dependencies(
                 dev_root=tmp_path,
                 max_depth=2,

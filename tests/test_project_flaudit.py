@@ -3,18 +3,18 @@
 import json
 from pathlib import Path
 
-from guardian.sweeps.local_dirty_worktree_secrets import (
+from devguard.sweeps.local_dirty_worktree_secrets import (
     LOCK_FILE_BASENAMES,
     _parse_trufflehog_filesystem_json,
 )
-from guardian.sweeps.project_flaudit import (
+from devguard.sweeps.project_flaudit import (
     _parse_llm_findings,
     files_to_prompt,
 )
-from guardian.sweeps.public_github_secrets import (
+from devguard.sweeps.public_github_secrets import (
     _LOCK_FILE_BASENAMES as PUB_LOCK_FILE_BASENAMES,
 )
-from guardian.sweeps.public_github_secrets import (
+from devguard.sweeps.public_github_secrets import (
     _extract_finding,
 )
 

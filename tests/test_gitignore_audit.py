@@ -3,7 +3,7 @@
 from pathlib import Path
 from unittest.mock import patch
 
-from guardian.sweeps.gitignore_audit import (
+from devguard.sweeps.gitignore_audit import (
     _detect_languages,
     _is_likely_public,
     _pattern_satisfied,
@@ -82,7 +82,7 @@ def test_pattern_satisfied_negation_ignored() -> None:
     assert _pattern_satisfied(["!.env"], [".env"]) is False
 
 
-@patch("guardian.sweeps.gitignore_audit._read_global_gitignore_lines", return_value=[])
+@patch("devguard.sweeps.gitignore_audit._read_global_gitignore_lines", return_value=[])
 def test_audit_gitignores_basic(_mock_global, tmp_path: Path) -> None:
     """End-to-end audit on a minimal repo structure."""
     # Create a repo with a gap
@@ -129,7 +129,7 @@ def test_audit_gitignores_clean_repo(tmp_path: Path) -> None:
     assert len(report["repos"]) == 0
 
 
-@patch("guardian.sweeps.gitignore_audit._read_global_gitignore_lines", return_value=[])
+@patch("devguard.sweeps.gitignore_audit._read_global_gitignore_lines", return_value=[])
 def test_audit_gitignores_public_flagging(_mock_global, tmp_path: Path) -> None:
     """Public repos (with LICENSE) are flagged separately."""
     repo = tmp_path / "pub"

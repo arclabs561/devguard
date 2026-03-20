@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from guardian.discovery import DiscoveryResult, discover_all
-from guardian.spec import DiscoveryRule, MonitorSpec
+from devguard.discovery import DiscoveryResult, discover_all
+from devguard.spec import DiscoveryRule, MonitorSpec
 
 
 @pytest.fixture
@@ -103,7 +103,7 @@ async def test_discover_all_handles_invalid_json(temp_project_dir, minimal_spec)
 
 def test_discovery_result_to_dict():
     """Test that DiscoveryResult can be converted to dict."""
-    from guardian.discovery import DiscoveryResult
+    from devguard.discovery import DiscoveryResult
 
     result = DiscoveryResult()
     result.add_resource("npm", "package1")

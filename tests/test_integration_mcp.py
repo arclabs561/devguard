@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from guardian.config import Settings
-from guardian.models import CheckResult, GuardianReport
+from devguard.config import Settings
+from devguard.models import CheckResult, GuardianReport
 
 
 @pytest.fixture
@@ -23,9 +23,9 @@ def mock_settings():
 @pytest.mark.asyncio
 async def test_mcp_run_checks_basic(mock_settings):
     """Test that MCP run_checks tool works."""
-    from guardian.mcp_server import run_checks
+    from devguard.mcp_server import run_checks
 
-    with patch("guardian.core.Guardian") as mock_guardian_class:
+    with patch("devguard.core.Guardian") as mock_guardian_class:
         mock_guardian = MagicMock()
         mock_guardian_class.return_value = mock_guardian
 
@@ -43,12 +43,12 @@ async def test_mcp_run_checks_basic(mock_settings):
 @pytest.mark.asyncio
 async def test_mcp_run_checks_with_packages(mock_settings):
     """Test that MCP run_checks accepts package list."""
-    from guardian.mcp_server import run_checks
+    from devguard.mcp_server import run_checks
 
-    with patch("guardian.config.get_settings") as mock_get_settings:
+    with patch("devguard.config.get_settings") as mock_get_settings:
         mock_get_settings.return_value = mock_settings
 
-        with patch("guardian.core.Guardian") as mock_guardian_class:
+        with patch("devguard.core.Guardian") as mock_guardian_class:
             mock_guardian = MagicMock()
             mock_guardian_class.return_value = mock_guardian
 
@@ -67,9 +67,9 @@ async def test_mcp_run_checks_with_packages(mock_settings):
 @pytest.mark.asyncio
 async def test_mcp_scan_npm_package(mock_settings):
     """Test that MCP scan_npm_package tool works."""
-    from guardian.mcp_server import scan_npm_package
+    from devguard.mcp_server import scan_npm_package
 
-    with patch("guardian.core.Guardian") as mock_guardian_class:
+    with patch("devguard.core.Guardian") as mock_guardian_class:
         mock_guardian = MagicMock()
         mock_guardian_class.return_value = mock_guardian
 
@@ -97,9 +97,9 @@ async def test_mcp_scan_npm_package(mock_settings):
 @pytest.mark.asyncio
 async def test_mcp_get_email_history(mock_settings):
     """Test that MCP get_email_history tool works."""
-    from guardian.mcp_server import get_email_history
+    from devguard.mcp_server import get_email_history
 
-    with patch("guardian.reporting.Reporter") as mock_reporter_class:
+    with patch("devguard.reporting.Reporter") as mock_reporter_class:
         mock_reporter = MagicMock()
         mock_reporter_class.return_value = mock_reporter
         mock_reporter.get_email_history.return_value = [
@@ -121,11 +121,11 @@ async def test_mcp_get_email_history(mock_settings):
 @pytest.mark.asyncio
 async def test_mcp_get_unified_alert_history_with_smart_email(mock_settings):
     """Test that MCP get_unified_alert_history works with smart_email."""
-    from guardian.mcp_server import get_unified_alert_history
+    from devguard.mcp_server import get_unified_alert_history
 
     mock_settings.use_smart_email = True
 
-    with patch("guardian.utils.import_smart_email") as mock_import:
+    with patch("devguard.utils.import_smart_email") as mock_import:
         mock_smart_email = MagicMock()
         mock_smart_email.init_db = MagicMock()
         mock_import.return_value = mock_smart_email
@@ -146,7 +146,7 @@ async def test_mcp_get_unified_alert_history_with_smart_email(mock_settings):
 @pytest.mark.asyncio
 async def test_mcp_get_unified_alert_history_without_smart_email(mock_settings):
     """Test that MCP get_unified_alert_history returns error when smart_email disabled."""
-    from guardian.mcp_server import get_unified_alert_history
+    from devguard.mcp_server import get_unified_alert_history
 
     mock_settings.use_smart_email = False
 
