@@ -142,7 +142,7 @@ class Reporter:
             async def send():
                 async with create_client() as client:
                     response = await client.post(
-                        self.settings.alert_webhook_url,
+                        self.settings.alert_webhook_url.get_secret_value(),
                         json=payload,
                     )
                     response.raise_for_status()

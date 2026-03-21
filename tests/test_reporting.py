@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import SecretStr
 
 from devguard.models import (
     CheckResult,
@@ -98,7 +99,7 @@ async def test_reporter_prints_report(mock_settings, sample_report):
 @pytest.mark.asyncio
 async def test_reporter_sends_webhook(mock_settings, sample_report):
     """Test that reporter sends webhook when configured."""
-    mock_settings.alert_webhook_url = "https://example.com/webhook"
+    mock_settings.alert_webhook_url = SecretStr("https://example.com/webhook")
     reporter = Reporter(mock_settings)
 
     with patch("devguard.http_client.create_client") as mock_create_client:
@@ -121,7 +122,7 @@ async def test_reporter_sends_webhook(mock_settings, sample_report):
 @pytest.mark.asyncio
 async def test_reporter_handles_webhook_failure(mock_settings, sample_report):
     """Test that reporter handles webhook failures gracefully."""
-    mock_settings.alert_webhook_url = "https://example.com/webhook"
+    mock_settings.alert_webhook_url = SecretStr("https://example.com/webhook")
     reporter = Reporter(mock_settings)
 
     with patch("devguard.http_client.create_client") as mock_create_client:

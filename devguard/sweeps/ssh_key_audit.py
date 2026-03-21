@@ -14,13 +14,10 @@ import re
 import shutil
 import stat
 import subprocess
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-
-def _utc_now() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+from devguard.sweeps._common import utc_now as _utc_now
 
 
 # Well-known private key filenames (without path).

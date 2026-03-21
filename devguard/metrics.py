@@ -5,7 +5,6 @@ import logging
 from prometheus_client import (
     Counter,
     Gauge,
-    Histogram,
     generate_latest,
     start_http_server,
 )
@@ -19,13 +18,6 @@ check_total = Counter(
     "devguard_checks_total",
     "Total number of checks performed",
     ["check_type", "status"],
-)
-
-check_duration = Histogram(
-    "devguard_check_duration_seconds",
-    "Time spent performing checks",
-    ["check_type"],
-    buckets=[0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0],
 )
 
 vulnerabilities_total = Gauge(

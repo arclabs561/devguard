@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import re
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -100,8 +101,8 @@ async def execute_cli_command(
         command = command.replace("{username}", username)
 
     try:
-        # Split command into parts
-        cmd_parts = command.split()
+        # Split command into parts (shlex handles quoted arguments)
+        cmd_parts = shlex.split(command)
         if not cmd_parts:
             return results
 
@@ -338,15 +339,15 @@ async def discover_all(
                 pass
 
     # Run all discovery rules
+    non_username_rules = [r for r in spec.discovery_rules if r.type != "username"]
     tasks = []
-    for rule in spec.discovery_rules:
-        if rule.type != "username":  # Already handled
-            tasks.append(discover_from_rule(rule, base_path, username))
+    for rule in non_username_rules:
+        tasks.append(discover_from_rule(rule, base_path, username))
 
     try:
         rule_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        for rule, rule_result in zip(spec.discovery_rules, rule_results):
+        for rule, rule_result in zip(non_username_rules, rule_results):
             if isinstance(rule_result, Exception):
                 result.errors.append(f"{rule.name}: {str(rule_result)}")
             elif isinstance(rule_result, list):

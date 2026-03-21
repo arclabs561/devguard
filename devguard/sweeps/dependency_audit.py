@@ -9,64 +9,16 @@ from __future__ import annotations
 
 import fnmatch
 import json
-import os
 import shutil
 import subprocess
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-
-def _utc_now() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
-
-
-def _default_dev_root() -> Path:
-    return Path(os.getenv("DEV_DIR") or "~/Documents/dev").expanduser()
-
-
-# ---------------------------------------------------------------------------
-# Repo discovery (same pattern as gitignore_audit)
-# ---------------------------------------------------------------------------
-
-def _iter_git_repos(root: Path, max_depth: int) -> list[Path]:
-    """Discover git repos under root, bounded by max_depth."""
-    root = root.resolve()
-    max_depth = max(0, min(int(max_depth), 6))
-    junk = {
-        "node_modules", ".venv", "venv", "dist", "build", ".git",
-        ".cache", ".state", "__pycache__", "_trash", "_scratch",
-        "_external", "_archive", "_forks",
-    }
-    repos: list[Path] = []
-    stack: list[tuple[Path, int]] = [(root, 0)]
-    seen: set[Path] = set()
-    while stack:
-        cur, depth = stack.pop()
-        if cur in seen:
-            continue
-        seen.add(cur)
-        if (cur / ".git").exists():
-            repos.append(cur)
-            continue
-        if depth >= max_depth:
-            continue
-        try:
-            for child in cur.iterdir():
-                if not child.is_dir():
-                    continue
-                name = child.name
-                if depth == 0 and name in junk:
-                    continue
-                if name.startswith("."):
-                    continue
-                stack.append((child, depth + 1))
-        except Exception:
-            continue
-    return sorted(repos)
+from devguard.sweeps._common import default_dev_root as _default_dev_root
+from devguard.sweeps._common import iter_git_repos, utc_now as _utc_now
 
 
 # ---------------------------------------------------------------------------
@@ -345,7 +297,7 @@ def audit_dependencies(
     root = dev_root if dev_root is not None else _default_dev_root()
     all_engines = engines or ["cargo-audit", "npm-audit", "pip-audit"]
 
-    repos = _iter_git_repos(root, max_depth=max_depth)
+    repos = sorted(iter_git_repos(root, max_depth=max_depth))
     globs = [g for g in (exclude_repo_globs or []) if isinstance(g, str) and g.strip()]
     if globs:
         repos = [r for r in repos if not any(fnmatch.fnmatch(str(r), g) for g in globs)]
