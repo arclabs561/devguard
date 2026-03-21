@@ -178,7 +178,7 @@ class TailsnitchChecker(BaseChecker):
                     errors=errors,
                 )
 
-            # Convert Tailsnitch findings to Guardian Findings
+            # Convert Tailsnitch findings to devguard Findings
             suggestions = output.get("suggestions", [])
             summary = output.get("summary", {})
             tailnet_name = output.get("tailnet", "unknown")
@@ -205,7 +205,7 @@ class TailsnitchChecker(BaseChecker):
                 remediation = suggestion.get("remediation", "")
                 category = suggestion.get("category", "")
 
-                # Map Tailsnitch severity to Guardian severity
+                # Map Tailsnitch severity to devguard severity
                 severity_map = {
                     "CRITICAL": Severity.CRITICAL,
                     "HIGH": Severity.HIGH,

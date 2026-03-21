@@ -1,5 +1,5 @@
 name: default
-description: Default Guardian monitoring specification
+description: Default devguard monitoring specification
 
 discovery_rules:
   - name: npm_list
@@ -107,7 +107,7 @@ filters:
   # exclude_patterns: [".*test.*", ".*example.*"]
   # include_patterns: []
 
-# Policy sweeps (dogfood Guardian locally).
+# Policy sweeps (dogfood devguard locally).
 # - Outputs go to `.state/` (ignored by git)
 # - `public_github_secrets` is the primary exposure-surface check (public repos)
 sweeps:

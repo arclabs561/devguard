@@ -15,8 +15,10 @@ ai_editor_config_audit:       47 repos checked, 2 errors
 
 ## Quick start
 
+Requires Python >= 3.11.
+
 ```bash
-pip install -e .              # or: uv pip install -e .
+pip install devguard
 devguard doctor                # check prerequisites (trufflehog, cargo-audit, etc.)
 devguard sweep                 # run all enabled sweeps
 ```
@@ -41,6 +43,7 @@ No spec file is required. Without one, devguard uses built-in defaults. Create `
 | `gitignore_audit` | Find repos missing `.gitignore` or lacking expected ignore patterns for their language. |
 | `ai_editor_config_audit` | Check AI editor configs (Cursor rules, Claude settings) for consistency across repos. |
 | `cargo_publish_audit` | Verify Rust crates have publish CI, correct metadata, and no publish blockers. |
+| `publish_audit` | Audit PyPI and npm repos for correct CI publish pipelines, OIDC trusted publishing, and version/license consistency. |
 
 ### Analysis
 
@@ -72,7 +75,7 @@ Environment variables can be set in `.env` or exported in your shell.
 devguard ships `.pre-commit-hooks.yaml` with three hooks: `devguard-gitignore`, `devguard-ai-config`, and `devguard-secrets`. Add to your `.pre-commit-config.yaml`:
 
 ```yaml
-- repo: https://github.com/yourorg/devguard
+- repo: https://github.com/arclabs561/devguard
   rev: main
   hooks:
     - id: devguard-gitignore
@@ -91,7 +94,7 @@ from devguard.sweeps.dependency_audit import audit_dependencies
 ## Development
 
 ```bash
-uv pip install -e ".[dev]"
+pip install -e ".[dev]"       # editable install for development
 pytest
 ruff check .
 mypy devguard/
@@ -161,7 +164,7 @@ DASHBOARD_API_KEY=your_secure_key
 
 ### Architecture (legacy)
 
-- **Guardian**: Main orchestrator managing checkers and reports
+- **devguard**: Main orchestrator managing checkers and reports
 - **BaseChecker**: Abstract base class for all checkers
 - **Reporter**: Output formatting, webhooks, email delivery
 - **Checkers**: NpmChecker, GitHubChecker, VercelChecker, FlyChecker, ContainerChecker, SecretChecker, AWSIAMChecker, RedTeamChecker

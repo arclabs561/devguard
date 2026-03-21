@@ -135,7 +135,7 @@ def test_config_command(mock_get_settings, runner, mock_settings):
     result = runner.invoke(app, ["config"])
 
     assert result.exit_code == 0
-    assert "Guardian Configuration" in result.stdout
+    assert "devguard Configuration" in result.stdout
     assert "GitHub" in result.stdout
     assert "Vercel" in result.stdout
 

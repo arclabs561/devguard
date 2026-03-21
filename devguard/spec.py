@@ -525,7 +525,7 @@ def get_default_spec() -> MonitorSpec:
     """Get the default monitoring spec."""
     return MonitorSpec(
         name="default",
-        description="Default Guardian monitoring spec",
+        description="Default devguard monitoring spec",
         discovery_rules=[
             DiscoveryRule(  # type: ignore[call-arg]
                 name="npm_list",

@@ -1,4 +1,4 @@
-"""LLM service for Guardian judgements and content generation."""
+"""LLM service for devguard judgements and content generation."""
 
 import json
 import logging
@@ -205,7 +205,7 @@ Top issues:
 {json.dumps(report.get("issues", {}), indent=2)[:500]}
 
 Generate a subject line that:
-1. Starts with "Guardian Security Report -"
+1. Starts with "devguard Security Report -"
 2. Indicates urgency level
 3. Highlights the most critical issue(s)
 4. Is under 100 characters
@@ -231,8 +231,8 @@ Respond with ONLY the subject line, no quotes or explanation."""
                 raise ValueError(f"Unknown provider: {provider}")
 
             # Ensure it starts with prefix
-            if not subject.startswith("Guardian Security Report"):
-                subject = f"Guardian Security Report - {subject}"
+            if not subject.startswith("devguard Security Report"):
+                subject = f"devguard Security Report - {subject}"
 
             return subject[:120]  # Safety limit
         except Exception as e:
@@ -246,11 +246,11 @@ Respond with ONLY the subject line, no quotes or explanation."""
         unhealthy = summary.get("unhealthy_deployments", 0)
 
         if critical > 0 or unhealthy > 0:
-            return f"Guardian Security Report - URGENT: {critical} critical, {unhealthy} unhealthy"
+            return f"devguard Security Report - URGENT: {critical} critical, {unhealthy} unhealthy"
         elif summary.get("total_vulnerabilities", 0) > 0:
-            return f"Guardian Security Report - ALERT: {summary.get('total_vulnerabilities', 0)} vulnerabilities"
+            return f"devguard Security Report - ALERT: {summary.get('total_vulnerabilities', 0)} vulnerabilities"
         else:
-            return "Guardian Security Report - Status: All systems healthy"
+            return "devguard Security Report - Status: All systems healthy"
 
     async def generate_executive_summary(
         self, report: dict[str, Any], priority: str = "medium"
@@ -403,12 +403,12 @@ Be concrete: cite specific file paths and line references when possible."""
 
         # Prefer OpenRouter for Google models when key is available
         use_openrouter = (
-            model_id.startswith("google/")
-            and self.settings.openrouter_api_key is not None
+            model_id.startswith("google/") and self.settings.openrouter_api_key is not None
         )
         if use_openrouter:
             try:
                 import openai
+
                 client = openai.OpenAI(
                     api_key=str(self.settings.openrouter_api_key.get_secret_value()),
                     base_url="https://openrouter.ai/api/v1",
@@ -475,7 +475,3 @@ Be concrete: cite specific file paths and line references when possible."""
         except Exception as e:
             logger.warning(f"Project flaudit LLM call failed: {e}")
             return json.dumps({"findings": [], "error": str(e)})
-
-
-
-

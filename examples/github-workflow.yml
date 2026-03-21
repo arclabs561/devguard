@@ -1,56 +1,48 @@
-name: Guardian Security Scan
-
+name: devguard sweep
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   schedule:
-    - cron: '0 0 * * *'  # Run daily at midnight
-
+    - cron: '0 0 * * 1' # weekly on Monday
+permissions:
+  contents: read
+  security-events: write # required for SARIF upload
 jobs:
-  guardian-scan:
+  devguard-sweep:
     runs-on: ubuntu-latest
-    
     steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0  # Important for secret scanning history
-    
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-        
-    - name: Install uv
-      uses: astral-sh/setup-uv@v1
-      
-    - name: Install Guardian
-      run: uv pip install .
-      
-    - name: Install TruffleHog (Optional but recommended)
-      run: |
-        curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin
-        
-    - name: Run Guardian Checks
-      env:
-        # Pass secrets from GitHub Secrets
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        NPM_PACKAGES_TO_MONITOR: "lodash,express" # Example
-        # Enable all scanners
-        SECRET_SCAN_ENABLED: "true"
-        CONTAINER_CHECK_ENABLED: "true"
-        NPM_SECURITY_ENABLED: "true"
-      run: |
-        # Run checks and output JSON for parsing if needed
-        guardian check --json > guardian-report.json
-        
-        # Also show human readable output
-        guardian check
-        
-    - name: Upload Report
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: guardian-report
-        path: guardian-report.json
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install devguard
+        run: pip install devguard
+      - name: Install optional tools
+        run: |
+          # TruffleHog (for secret scanning)
+          curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin
+          # pip-audit (for Python dependency audit)
+          pip install pip-audit
+      - name: Run devguard sweep
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          devguard sweep --format sarif --output devguard-results.sarif
+          devguard sweep
+      - name: Upload SARIF to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: devguard-results.sarif
+          category: devguard
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: devguard-results
+          path: devguard-results.sarif

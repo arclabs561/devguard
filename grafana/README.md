@@ -1,6 +1,6 @@
-# Grafana Integration for Guardian
+# Grafana Integration for devguard
 
-Guardian exports Prometheus metrics that can be visualized in Grafana.
+devguard exports Prometheus metrics that can be visualized in Grafana.
 
 ## Setup
 
@@ -24,7 +24,7 @@ global:
 scrape_configs:
   - job_name: 'devguard'
     static_configs:
-      - targets: ['localhost:9090']  # Guardian metrics port
+      - targets: ['localhost:9090']  # devguard metrics port
 ```
 
 ### 3. Start Prometheus
@@ -63,7 +63,7 @@ prometheus --config.file=prometheus.yml
 
 ## Dashboard Features
 
-The Guardian Grafana dashboard includes:
+The devguard Grafana dashboard includes:
 
 1. **Overview Panels**
    - Total checks
@@ -88,7 +88,7 @@ The Guardian Grafana dashboard includes:
 
 ## Accessing Metrics
 
-Guardian exposes metrics at:
+devguard exposes metrics at:
 - Dashboard: `http://localhost:8080/metrics`
 - Standalone: `http://localhost:9090/metrics` (if metrics server enabled)
 

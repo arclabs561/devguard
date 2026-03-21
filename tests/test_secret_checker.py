@@ -126,7 +126,7 @@ class TestSecretChecker:
         repos = checker._get_repos_to_scan()
 
         # Should find either the surrounding workspace repos (when present)
-        # or fall back to scanning Guardian itself (so the tool can self-audit).
+        # or fall back to scanning devguard itself (so the tool can self-audit).
         repo_names = [r.name for r in repos]
         assert any(
             name in repo_names

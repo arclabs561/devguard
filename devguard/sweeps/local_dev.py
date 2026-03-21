@@ -62,7 +62,7 @@ DEFAULT_DENY_GLOBS: list[str] = [
     # GCP / OAuth tokens
     "**/credentials.json",
     "**/token.json",
-    # Known Guardian "oops outputs"
+    # Known devguard "oops outputs"
     "**/.devguard-email-history.json",
     "**/.devguard-email-thread",
     "**/repo_review_results.json",

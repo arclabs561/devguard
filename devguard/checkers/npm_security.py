@@ -129,7 +129,7 @@ class NpmSecurityChecker(BaseChecker):
         findings: dict,
         dep_vulns: list[dict],
     ) -> list[Vulnerability]:
-        """Convert security findings to Guardian Vulnerability objects."""
+        """Convert security findings to devguard Vulnerability objects."""
         vulnerabilities: list[Vulnerability] = []
 
         # Convert secrets to vulnerabilities

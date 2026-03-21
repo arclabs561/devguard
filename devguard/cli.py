@@ -1,4 +1,4 @@
-"""CLI interface for Guardian."""
+"""CLI interface for devguard."""
 
 import asyncio
 import json
@@ -12,12 +12,9 @@ from rich.table import Table
 
 from devguard.config import get_settings
 from devguard.core import Guardian
-from devguard.dashboard import run_dashboard
 from devguard.reporting import Reporter
 
-app = typer.Typer(
-    help="Guardian - Unified monitoring for npm packages, GitHub repos, and deployments"
-)
+app = typer.Typer(help="devguard - Security and hygiene scanning for developer workstations")
 console = Console()
 
 _MAX_TABLE_ROWS = 15
@@ -346,7 +343,7 @@ def config() -> None:
     """Show current configuration."""
     settings = get_settings()
 
-    console.print("[bold blue]Guardian Configuration[/bold blue]\n")
+    console.print("[bold blue]devguard Configuration[/bold blue]\n")
 
     console.print(f"GitHub: {'✓' if settings.github_token else '✗'}")
     if settings.github_org:
@@ -449,16 +446,16 @@ def auth(
             console.print("[yellow]Token saved but test failed. Please verify manually.[/yellow]")
 
     console.print(
-        "\n[bold]Note:[/bold] Restart Guardian or reload environment to use the new token."
+        "\n[bold]Note:[/bold] Restart devguard or reload environment to use the new token."
     )
 
 
 @app.command()
 def mcp() -> None:
-    """Start the Guardian MCP server."""
+    """Start the devguard MCP server."""
     from devguard.mcp_server import run_mcp_server
 
-    console.print("[bold green]Starting Guardian MCP Server...[/bold green]")
+    console.print("[bold green]Starting devguard MCP Server...[/bold green]")
     run_mcp_server()
 
 
@@ -494,12 +491,14 @@ def dashboard(
         console.print("Generate a key with: [dim]openssl rand -hex 32[/dim]")
         console.print()
 
-    console.print("[bold]Starting Guardian dashboard...[/bold]")
+    console.print("[bold]Starting devguard dashboard...[/bold]")
     dashboard_url = f"http://{host or settings.dashboard_host}:{port or settings.dashboard_port}"
     console.print(f"Access at: {dashboard_url}")
     console.print()
 
     try:
+        from devguard.dashboard import run_dashboard
+
         run_dashboard(host=host, port=port)
     except KeyboardInterrupt:
         console.print("\n[bold]Dashboard stopped[/bold]")
@@ -535,7 +534,7 @@ def spec(
         description = Prompt.ask("Description (optional)", default="")
 
         # Ask what to discover
-        console.print("\n[bold]What should Guardian discover?[/bold]")
+        console.print("\n[bold]What should devguard discover?[/bold]")
         discover_npm = typer.confirm("  Discover npm packages?", default=True)
         discover_github = typer.confirm("  Discover GitHub repos?", default=True)
         discover_vercel = typer.confirm("  Discover Vercel projects?", default=True)
@@ -818,7 +817,7 @@ def stats(
 
         # Header
         header = Panel.fit(
-            "[bold blue]🛡️ Guardian Monitoring Stats[/bold blue]",
+            "[bold blue]devguard Monitoring Stats[/bold blue]",
             border_style="blue",
         )
 

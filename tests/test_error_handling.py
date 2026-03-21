@@ -29,7 +29,7 @@ def mock_settings():
 
 @pytest.mark.asyncio
 async def test_guardian_handles_checker_exception(mock_settings):
-    """Test that Guardian handles exceptions from checkers gracefully."""
+    """Test that the Guardian class handles exceptions from checkers gracefully."""
     guardian = Guardian(mock_settings)
 
     # Mock a checker that raises an exception
@@ -149,7 +149,7 @@ def test_guardian_validation_npm_no_packages():
 
 @pytest.mark.asyncio
 async def test_guardian_empty_report():
-    """Test Guardian generates valid report even with no checkers."""
+    """Test the Guardian class generates valid report even with no checkers."""
     settings = MagicMock()
     settings.npm_packages_to_monitor = []
     settings.snyk_token = None
