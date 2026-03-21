@@ -1,3 +1,3 @@
-"""Guardian - Unified monitoring for npm packages, GitHub repos, and deployments."""
+"""devguard - Security and hygiene scanning for developer workstations."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
