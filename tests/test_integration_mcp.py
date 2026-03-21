@@ -106,7 +106,7 @@ async def test_mcp_get_email_history(mock_settings):
             {
                 "timestamp": "2025-01-01T00:00:00Z",
                 "subject": "Test Alert",
-                "author": "guardian",
+                "author": "devguard",
             }
         ]
 
