@@ -15,22 +15,13 @@ class TailscaleChecker(BaseChecker):
 
     check_type = "tailscale"
 
-    # Expected nodes (Pokemon names per RFC 1178)
-    EXPECTED_NODES = {
-        "alakazam": {"availability": "always-on", "role": "Swarm Manager"},
-        "gyarados": {"availability": "always-on", "role": "Swarm Manager, Exit Node"},
-        "starmie": {"availability": "always-on", "role": "Swarm Manager"},
-        "charizard": {"availability": "intermittent", "role": "Dev laptop"},
-        "metagross": {"availability": "intermittent", "role": "Mac mini"},
-        "snorlax": {"availability": "intermittent", "role": "NAS"},
-        "kadabra": {"availability": "intermittent", "role": "iPhone"},
-    }
-
     async def check(self) -> CheckResult:
         """Check Tailscale node status."""
         deployments: list[DeploymentStatus] = []
         findings: list[Finding] = []
         errors: list[str] = []
+
+        expected_nodes = set(self.settings.tailscale_expected_nodes)
 
         try:
             # Run tailscale status --json
@@ -64,7 +55,7 @@ class TailscaleChecker(BaseChecker):
                         project_name=self_name,
                         deployment_id=self_node.get("PublicKey", "")[:16],
                         status=CheckStatus.HEALTHY,
-                        url=f"https://{self_name}.tailf8f94.ts.net",
+                        url=f"tailscale://{self_name}",
                         metadata={"role": "self", "online": True},
                     )
                 )
@@ -76,20 +67,19 @@ class TailscaleChecker(BaseChecker):
                 seen_nodes.add(hostname)
                 online = peer.get("Online", False)
 
-                expected = self.EXPECTED_NODES.get(hostname, {})
-                is_always_on = expected.get("availability") == "always-on"
+                is_expected = hostname in expected_nodes
 
                 if online:
                     status_val = CheckStatus.HEALTHY
-                elif is_always_on:
+                elif is_expected:
                     status_val = CheckStatus.UNHEALTHY
                     findings.append(
                         Finding(
                             severity=Severity.HIGH,
-                            title=f"Always-on node offline: {hostname}",
-                            description=f"{hostname} ({expected.get('role', 'unknown')}) is offline but should be always-on",
+                            title=f"Expected node offline: {hostname}",
+                            description=f"{hostname} is offline but listed in expected nodes",
                             resource=hostname,
-                            remediation=f"Check {hostname} in AWS console or via SSM",
+                            remediation=f"Check {hostname} connectivity",
                         )
                     )
                 else:
@@ -101,11 +91,10 @@ class TailscaleChecker(BaseChecker):
                         project_name=hostname,
                         deployment_id=pubkey[:16],
                         status=status_val,
-                        url=f"https://{hostname}.tailf8f94.ts.net",
+                        url=f"tailscale://{hostname}",
                         metadata={
                             "online": online,
-                            "role": expected.get("role", "unknown"),
-                            "availability": expected.get("availability", "unknown"),
+                            "expected": is_expected,
                             "exit_node": peer.get("ExitNode", False),
                             "exit_node_option": peer.get("ExitNodeOption", False),
                         },
@@ -113,18 +102,17 @@ class TailscaleChecker(BaseChecker):
                 )
 
             # Check for missing expected nodes
-            for node_name, node_info in self.EXPECTED_NODES.items():
+            for node_name in expected_nodes:
                 if node_name not in seen_nodes:
-                    if node_info["availability"] == "always-on":
-                        findings.append(
-                            Finding(
-                                severity=Severity.HIGH,
-                                title=f"Expected node not in mesh: {node_name}",
-                                description=f"{node_name} ({node_info['role']}) is not visible in Tailscale mesh",
-                                resource=node_name,
-                                remediation="Check if node is registered with Tailscale",
-                            )
+                    findings.append(
+                        Finding(
+                            severity=Severity.HIGH,
+                            title=f"Expected node not in mesh: {node_name}",
+                            description=f"{node_name} is not visible in Tailscale mesh",
+                            resource=node_name,
+                            remediation="Check if node is registered with Tailscale",
                         )
+                    )
 
         except TimeoutError:
             errors.append("tailscale status timed out after 10s")
@@ -135,22 +123,21 @@ class TailscaleChecker(BaseChecker):
         except Exception as e:
             errors.append(f"Tailscale check failed: {e}")
 
-        # Count always-on nodes that are offline
-        always_on_offline = sum(
+        expected_offline = sum(
             1
             for d in deployments
-            if d.metadata.get("availability") == "always-on" and d.status == CheckStatus.UNHEALTHY
+            if d.metadata.get("expected") and d.status == CheckStatus.UNHEALTHY
         )
 
         return CheckResult(
             check_type=self.check_type,
-            success=len(errors) == 0 and always_on_offline == 0,
+            success=len(errors) == 0 and expected_offline == 0,
             deployments=deployments,
             findings=findings,
             errors=errors,
             metadata={
                 "total_nodes": len(deployments),
                 "online_nodes": sum(1 for d in deployments if d.status == CheckStatus.HEALTHY),
-                "always_on_offline": always_on_offline,
+                "expected_offline": expected_offline,
             },
         )

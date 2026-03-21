@@ -15,26 +15,15 @@ class SwarmChecker(BaseChecker):
 
     check_type = "swarm"
 
-    # Expected nodes from ops/NODES.md
-    EXPECTED_NODES = {
-        "alakazam": {"role": "manager", "always_on": True},
-        "gyarados": {"role": "worker", "always_on": True},
-        "charizard": {"role": "worker", "always_on": False},
-    }
-
-    # Expected services from agents-stack.yml
-    CRITICAL_SERVICES = [
-        "arclabs-agents_sre-agent",
-        "arclabs-agents_chat-api",
-        "arclabs-agents_guardian-agent",
-    ]
-
     async def check(self) -> CheckResult:
         """Check Docker Swarm cluster status."""
         deployments: list[DeploymentStatus] = []
         findings: list[Finding] = []
         errors: list[str] = []
         metadata: dict = {}
+
+        expected_nodes = set(self.settings.swarm_expected_nodes)
+        critical_services = set(self.settings.swarm_critical_services)
 
         # Check if we're in a swarm
         swarm_info = await self._get_swarm_info()
@@ -72,7 +61,7 @@ class SwarmChecker(BaseChecker):
         # If we're a worker (not manager), we can't query cluster state
         if not is_manager:
             metadata["note"] = (
-                "Running on worker node - cannot query cluster state. Run on manager node (alakazam) for full cluster visibility."
+                "Running on worker node - cannot query cluster state. Run on a manager node for full cluster visibility."
             )
             return CheckResult(
                 check_type=self.check_type,
@@ -109,16 +98,16 @@ class SwarmChecker(BaseChecker):
                     manager_status = node.get("manager_status", "")
 
                     is_healthy = status == "ready" and availability == "active"
-                    expected = self.EXPECTED_NODES.get(hostname, {})
+                    is_expected = hostname in expected_nodes
 
                     if is_healthy:
                         check_status = CheckStatus.HEALTHY
-                    elif expected.get("always_on"):
+                    elif is_expected:
                         check_status = CheckStatus.UNHEALTHY
                         findings.append(
                             Finding(
                                 severity=Severity.HIGH,
-                                title=f"Always-on swarm node unhealthy: {hostname}",
+                                title=f"Expected swarm node unhealthy: {hostname}",
                                 description=f"{hostname} status={status}, availability={availability}",
                                 resource=hostname,
                                 remediation=f"Check {hostname} Docker daemon and network",
@@ -145,13 +134,13 @@ class SwarmChecker(BaseChecker):
 
                 # Check for missing expected nodes
                 seen_hostnames = {n.get("hostname") for n in nodes}
-                for expected_host, info in self.EXPECTED_NODES.items():
-                    if expected_host not in seen_hostnames and info.get("always_on"):
+                for expected_host in expected_nodes:
+                    if expected_host not in seen_hostnames:
                         findings.append(
                             Finding(
                                 severity=Severity.HIGH,
                                 title=f"Expected swarm node missing: {expected_host}",
-                                description=f"{expected_host} ({info['role']}) is not in the swarm cluster",
+                                description=f"{expected_host} is not in the swarm cluster",
                                 resource=expected_host,
                                 remediation=f"Join {expected_host} to the swarm cluster",
                             )
@@ -178,7 +167,7 @@ class SwarmChecker(BaseChecker):
                     except (ValueError, ZeroDivisionError):
                         is_healthy = False
 
-                    if not is_healthy and name in self.CRITICAL_SERVICES:
+                    if not is_healthy and name in critical_services:
                         findings.append(
                             Finding(
                                 severity=Severity.HIGH,
@@ -331,7 +320,7 @@ class SwarmChecker(BaseChecker):
 
             constraints = json.loads(constraints_json) if constraints_json else []
 
-            # Extract expected hostname from constraints (e.g., "node.hostname == alakazam")
+            # Extract expected hostname from constraints (e.g., "node.hostname == mynode")
             expected_hostname = None
             for constraint in constraints:
                 if constraint.startswith("node.hostname == "):

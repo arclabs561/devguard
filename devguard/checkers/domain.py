@@ -19,23 +19,6 @@ class DomainChecker(BaseChecker):
 
     check_type = "domain"
 
-    # Domains to monitor (from manifest.yaml)
-    # Note: Some domains may be intentionally down or behind WAF/CDN
-    DOMAINS = [
-        {"domain": "arclabs.systems", "desc": "Main site (WAF protected)", "expected_online": True},
-        {
-            "domain": "trackweave.fm",
-            "desc": "Music app (WAF protected)",
-            "expected_online": False,
-        },  # May be down/redirecting
-        {
-            "domain": "music.attobop.net",
-            "desc": "Music app (public)",
-            "expected_online": False,
-        },  # CNAME to trackweave.fly.dev
-        {"domain": "trackweave.fly.dev", "desc": "Fly.io origin", "expected_online": True},
-    ]
-
     # SSL warning thresholds (days)
     SSL_CRITICAL_DAYS = 7
     SSL_WARNING_DAYS = 30
@@ -46,39 +29,30 @@ class DomainChecker(BaseChecker):
         findings: list[Finding] = []
         errors: list[str] = []
 
-        for domain_info in self.DOMAINS:
-            domain = domain_info["domain"]
-            desc = domain_info["desc"]
-            expected_online = domain_info.get("expected_online", True)
+        domains = self.settings.domains_to_monitor
+        if not domains:
+            return CheckResult(
+                check_type=self.check_type,
+                success=True,
+                metadata={"skipped": "no domains configured (set DOMAINS_TO_MONITOR)"},
+            )
 
+        for domain in domains:
             try:
                 # Check SSL certificate
                 ssl_info = await self._check_ssl(domain)
 
                 if ssl_info.get("error"):
-                    # If domain is not expected to be online, downgrade severity
-                    if not expected_online:
-                        status = CheckStatus.UNKNOWN
-                        findings.append(
-                            Finding(
-                                severity=Severity.WARNING,
-                                title=f"Domain check failed (expected): {domain}",
-                                description=f"{ssl_info['error']} - Domain may be intentionally down or redirecting",
-                                resource=domain,
-                                remediation="Verify if domain should be online or remove from monitoring",
-                            )
+                    status = CheckStatus.UNHEALTHY
+                    findings.append(
+                        Finding(
+                            severity=Severity.HIGH,
+                            title=f"SSL check failed: {domain}",
+                            description=ssl_info["error"],
+                            resource=domain,
+                            remediation="Check domain DNS and certificate configuration",
                         )
-                    else:
-                        status = CheckStatus.UNHEALTHY
-                        findings.append(
-                            Finding(
-                                severity=Severity.HIGH,
-                                title=f"SSL check failed: {domain}",
-                                description=ssl_info["error"],
-                                resource=domain,
-                                remediation="Check domain DNS and certificate configuration",
-                            )
-                        )
+                    )
                 else:
                     days_until_expiry = ssl_info.get("days_until_expiry", 0)
 
@@ -115,7 +89,6 @@ class DomainChecker(BaseChecker):
                         status=status,
                         url=f"https://{domain}",
                         metadata={
-                            "description": desc,
                             "ssl_valid": not ssl_info.get("error"),
                             "ssl_expiry": ssl_info.get("expiry"),
                             "ssl_days_remaining": ssl_info.get("days_until_expiry"),
@@ -135,21 +108,11 @@ class DomainChecker(BaseChecker):
             except Exception as e:
                 errors.append(f"Unexpected error checking {domain}: {e}")
 
-        # Success if no errors and all expected-online domains are healthy
-        # Domains marked as expected_online=False can be UNKNOWN without failing
-        domain_map = {dom["domain"]: dom for dom in self.DOMAINS}
-        expected_online_deployments = [
-            d
-            for d in deployments
-            if domain_map.get(d.project_name, {}).get("expected_online", True)
-        ]
-        all_expected_healthy = all(
-            d.status == CheckStatus.HEALTHY for d in expected_online_deployments
-        )
+        all_healthy = all(d.status == CheckStatus.HEALTHY for d in deployments)
 
         return CheckResult(
             check_type=self.check_type,
-            success=len(errors) == 0 and all_expected_healthy,
+            success=len(errors) == 0 and all_healthy,
             deployments=deployments,
             findings=findings,
             errors=errors,

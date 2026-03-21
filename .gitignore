@@ -66,6 +66,9 @@ npm_security_report.md
 # Devguard dogfooding outputs (spec-driven sweeps)
 .state/
 
+# Local operational archives (personal infra docs)
+archive/
+
 # Personal spec files (copy devguard.spec.example.yaml to get started)
 devguard.spec.yaml
 devguard.spec.fast.yaml
