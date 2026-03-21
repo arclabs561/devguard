@@ -124,9 +124,9 @@ def show_auth_status(settings: Settings) -> None:
     """Show authentication status for all configured services.
 
     Args:
-        settings: Guardian settings
+        settings: devguard settings
     """
-    console.print("[bold blue]Guardian Authentication Status[/bold blue]\n")
+    console.print("[bold blue]devguard Authentication Status[/bold blue]\n")
 
     # GitHub
     if settings.github_token:
