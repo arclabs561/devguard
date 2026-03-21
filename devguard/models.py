@@ -200,9 +200,3 @@ class GuardianReport(BaseModel):
             high.extend([f for f in check.findings if f.severity == Severity.HIGH])
         return high
 
-    def get_findings_by_check(self, check_type: str) -> list[Finding]:
-        """Get all findings from a specific check type."""
-        for check in self.checks:
-            if check.check_type == check_type:
-                return check.findings
-        return []

@@ -8,18 +8,12 @@ from collections import Counter
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from threading import Lock
 from typing import Any
 
-
-def _utc_now() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
-
-
-def _default_dev_root() -> Path:
-    return Path(os.getenv("DEV_DIR") or "~/Documents/dev").expanduser()
+from devguard.sweeps._common import default_dev_root as _default_dev_root
+from devguard.sweeps._common import iter_git_repos, utc_now as _utc_now
 
 
 # Files where hash-like strings routinely trigger false positives (e.g. SentryToken on uv.lock).
@@ -35,66 +29,6 @@ LOCK_FILE_BASENAMES: frozenset[str] = frozenset({
     "Pipfile.lock",
     "requirements.lock",
 })
-
-
-def _iter_git_repos(root: Path, max_depth: int) -> Iterable[Path]:
-    """Discover git repos under root, bounded by max_depth."""
-    root = root.resolve()
-    try:
-        max_depth = int(max_depth)
-    except Exception:
-        max_depth = 2
-    max_depth = max(0, min(max_depth, 6))
-
-    # BFS-ish walk with depth bound.
-    stack: list[tuple[Path, int]] = [(root, 0)]
-    seen: set[Path] = set()
-
-    junk_top = {
-        "node_modules",
-        ".venv",
-        "venv",
-        "dist",
-        "build",
-        ".git",
-        ".cache",
-        ".state",
-        "__pycache__",
-        "_trash",
-        "_scratch",
-        "_external",
-        "_archive",
-        "_forks",
-    }
-
-    while stack:
-        cur, depth = stack.pop()
-        if cur in seen:
-            continue
-        seen.add(cur)
-
-        # If this directory *is* a repo root, yield it and don't descend further.
-        if (cur / ".git").exists():
-            yield cur
-            continue
-
-        if depth >= max_depth:
-            continue
-
-        try:
-            for child in cur.iterdir():
-                if not child.is_dir():
-                    continue
-                name = child.name
-                if depth == 0 and name in junk_top:
-                    continue
-                # Skip hidden dirs by default (except `_infra` pattern is handled in other sweeps;
-                # here we only care about local worktrees).
-                if name.startswith("."):
-                    continue
-                stack.append((child, depth + 1))
-        except Exception:
-            continue
 
 
 def _dirty_paths(repo: Path, timeout_s: int = 8) -> tuple[list[str], str | None]:
@@ -228,7 +162,7 @@ def scan_dirty_worktrees(
     errors: list[str] = []
     root = dev_root if dev_root is not None else _default_dev_root()
 
-    repos = sorted({str(p) for p in _iter_git_repos(root, max_depth=max_depth)})
+    repos = sorted({str(p) for p in iter_git_repos(root, max_depth=max_depth)})
     globs = [g for g in (exclude_repo_globs or []) if isinstance(g, str) and g.strip()]
     if globs:
         repos = [r for r in repos if not any(fnmatch.fnmatch(r, g) for g in globs)]

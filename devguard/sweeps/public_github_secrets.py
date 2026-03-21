@@ -7,11 +7,12 @@ import os
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import httpx
+
+from devguard.sweeps._common import utc_now as _utc_now
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
@@ -21,10 +22,6 @@ _LOCK_FILE_BASENAMES: frozenset[str] = frozenset({
     "yarn.lock", "poetry.lock", "Gemfile.lock", "composer.lock",
     "Pipfile.lock", "requirements.lock",
 })
-
-
-def _utc_now() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _run(cmd: list[str], timeout_s: int) -> subprocess.CompletedProcess[str]:

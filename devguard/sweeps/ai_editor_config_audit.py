@@ -14,69 +14,14 @@ from __future__ import annotations
 
 import fnmatch
 import json
-import os
 import re
 import subprocess
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-
-def _utc_now() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
-
-
-def _default_dev_root() -> Path:
-    return Path(os.getenv("DEV_DIR") or "~/Documents/dev").expanduser()
-
-
-def _iter_git_repos(root: Path, max_depth: int, exclude_globs: list[str]) -> list[Path]:
-    """Discover git repos under root."""
-    root = root.resolve()
-    max_depth = max(0, min(int(max_depth), 6))
-    junk = {
-        "node_modules",
-        ".venv",
-        "venv",
-        "dist",
-        "build",
-        ".git",
-        ".cache",
-        ".state",
-        "__pycache__",
-        "_trash",
-        "_scratch",
-        "_external",
-        "_archive",
-        "_forks",
-        "target",
-    }
-    repos: list[Path] = []
-    stack: list[tuple[Path, int]] = [(root, 0)]
-    seen: set[Path] = set()
-    while stack:
-        cur, depth = stack.pop()
-        if cur in seen:
-            continue
-        seen.add(cur)
-        if (cur / ".git").exists():
-            if not any(fnmatch.fnmatch(str(cur), g) for g in exclude_globs):
-                repos.append(cur)
-            continue
-        if depth >= max_depth:
-            continue
-        try:
-            for child in cur.iterdir():
-                if not child.is_dir():
-                    continue
-                name = child.name
-                if name in junk or name.startswith("."):
-                    continue
-                stack.append((child, depth + 1))
-        except Exception:
-            continue
-    return sorted(repos)
+from devguard.sweeps._common import default_dev_root as _default_dev_root
+from devguard.sweeps._common import iter_git_repos, utc_now as _utc_now
 
 
 def _is_likely_public(repo: Path) -> bool:
@@ -605,7 +550,7 @@ def audit_ai_editor_configs(
     root = dev_root if dev_root is not None else _default_dev_root()
     globs = [g for g in (exclude_repo_globs or []) if isinstance(g, str) and g.strip()]
 
-    repos = _iter_git_repos(root, max_depth=max_depth, exclude_globs=globs)
+    repos = sorted(iter_git_repos(root, max_depth=max_depth, exclude_globs=globs))
 
     results: list[RepoAuditResult] = []
     for repo in repos:

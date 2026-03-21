@@ -9,21 +9,14 @@ from __future__ import annotations
 
 import fnmatch
 import json
-import os
 import re
 import subprocess
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-
-def _utc_now() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
-
-
-def _default_dev_root() -> Path:
-    return Path(os.getenv("DEV_DIR") or "~/Documents/dev").expanduser()
+from devguard.sweeps._common import default_dev_root as _default_dev_root
+from devguard.sweeps._common import utc_now as _utc_now
 
 
 def _iter_repos(root: Path, max_depth: int, exclude_globs: list[str]) -> list[tuple[Path, str]]:

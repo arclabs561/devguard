@@ -16,12 +16,12 @@ from __future__ import annotations
 
 import fnmatch
 import json
-import os
 import subprocess
-import time
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
+
+from devguard.sweeps._common import default_dev_root, utc_now
 
 DEFAULT_DENY_GLOBS: list[str] = [
     "**/.env",
@@ -79,10 +79,6 @@ class Hit:
     size_bytes: int | None = None
 
 
-def _utc_now_iso() -> str:
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-
-
 def _matches_any(path: str, globs: list[str]) -> str | None:
     p = path.lstrip("/")
     # Allow common "example" env files (these are typically safe to commit).
@@ -107,6 +103,7 @@ def _git_ls_files(repo: Path) -> list[str]:
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
+        timeout=60,
     )
     if proc.returncode != 0:
         return []
@@ -237,7 +234,7 @@ def sweep_dev_repos(
                 continue
 
     meta = {
-        "generated_at": _utc_now_iso(),
+        "generated_at": utc_now(),
         "dev_root": str(dev_root.expanduser()),
         "repos_scanned": len(repos),
         "max_depth": max_depth,
@@ -256,5 +253,5 @@ def write_report(path: Path, hits: Iterable[Hit], meta: dict) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def default_dev_root() -> Path:
-    return Path(os.environ.get("DEV_DIR", str(Path.home() / "Documents" / "dev")))
+
+# default_dev_root is imported from _common and re-exported via __init__.py

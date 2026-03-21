@@ -119,7 +119,7 @@ class GitHubChecker(BaseChecker):
             # Using REST API directly as PyGithub doesn't fully support Dependabot alerts
             headers = {
                 "Accept": "application/vnd.github+json",
-                "Authorization": f"token {self.settings.github_token}",
+                "Authorization": f"token {self.settings.github_token.get_secret_value()}",
                 "X-GitHub-Api-Version": "2022-11-28",
             }
 

@@ -77,7 +77,7 @@ def _get_session_secret() -> bytes:
     # Use dashboard API key as base for session secret
     # If not set, use a per-process random secret (sessions won't survive restarts)
     if settings.dashboard_api_key:
-        return hashlib.sha256(settings.dashboard_api_key.encode()).digest()
+        return hashlib.sha256(settings.dashboard_api_key.get_secret_value().encode()).digest()
     else:
         # Generate a random secret for development (not persistent)
         if not hasattr(_get_session_secret, "_dev_secret"):
