@@ -37,8 +37,7 @@ class AWSIAMChecker(BaseChecker):
     """Check AWS IAM posture for satellite nodes.
 
     Loads configuration from ops/security/iam-posture.yaml which defines:
-    - Satellite nodes (alakazam, gyarados)
-    - Expected IAM roles and policies
+    - Satellite nodes and their IAM roles
     - Forbidden policy patterns
     - Security rules to enforce
     """
@@ -71,21 +70,8 @@ class AWSIAMChecker(BaseChecker):
                 "purpose": node_config.get("purpose", ""),
             }
 
-        # Fallback to hardcoded defaults if no config found
         if not self.satellite_nodes:
-            logger.warning("No satellite nodes in posture config, using defaults")
-            self.satellite_nodes = {
-                "alakazam": {
-                    "role": "EC2-SSM-Access-Role",
-                    "instance_id": "i-0bb5da468ad8e730f",
-                    "purpose": "SRE Agent, monitoring",
-                },
-                "gyarados": {
-                    "role": "tailscale-exitnode-ssm-role",
-                    "instance_id": "i-0bbef6e651c9588b1",
-                    "purpose": "Tailscale exit node",
-                },
-            }
+            logger.info("No satellite nodes in posture config -- IAM check will be a no-op")
 
     async def check(self) -> CheckResult:
         """Check IAM roles for security issues."""

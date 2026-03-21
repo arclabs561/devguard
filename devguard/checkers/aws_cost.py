@@ -24,8 +24,7 @@ class AWSCostChecker(BaseChecker):
     _budget_config = load_budget_config()
     DAILY_THRESHOLD = _budget_config.get("daily_warn", 5.0)  # Alert if daily spend exceeds this
 
-    # Instance allowlist (from check-ec2-running-allowlist.sh)
-    ALLOWED_INSTANCES = ["gyarados", "alakazam", "starmie"]
+    # Instance allowlist loaded from settings (AWS_ALLOWED_INSTANCES env var)
 
     async def check(self) -> CheckResult:
         """Check AWS costs and resource compliance."""
@@ -140,7 +139,8 @@ class AWSCostChecker(BaseChecker):
             running = instances_result.get("instances", [])
             metadata["running_instances"] = running
 
-            unauthorized = [i for i in running if i not in self.ALLOWED_INSTANCES]
+            allowed = set(self.settings.aws_allowed_instances)
+            unauthorized = [i for i in running if allowed and i not in allowed]
             if unauthorized:
                 findings.append(
                     Finding(
@@ -283,7 +283,9 @@ class AWSCostChecker(BaseChecker):
                 for group in groups:
                     keys = group.get("Keys", [])
                     if any("Simple Storage Service" in k for k in keys):
-                        amount = group.get("Metrics", {}).get("UnblendedCost", {}).get("Amount", "0")
+                        amount = (
+                            group.get("Metrics", {}).get("UnblendedCost", {}).get("Amount", "0")
+                        )
                         return {"cost": float(amount)}
                 # If no S3 group found, cost is 0
                 return {"cost": 0.0}
