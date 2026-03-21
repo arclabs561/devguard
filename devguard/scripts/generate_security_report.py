@@ -272,20 +272,13 @@ def generate_markdown_report(report: dict) -> str:
 async def main():
     """Main entry point."""
 
+    # Replace with your own packages to audit
     packages = [
-        "ai-browser-test",
-        "@arclabs561/llm-utils",
-        "@arclabs561/hookwise",
-        "ai-visual-test",
-        "@arclabs561/ai-visual-test",
+        "example-package",
     ]
 
     versions = {
-        "ai-browser-test": "0.3.1",
-        "@arclabs561/llm-utils": "0.1.0",
-        "@arclabs561/hookwise": "0.1.0",
-        "ai-visual-test": "0.5.0",
-        "@arclabs561/ai-visual-test": "0.5.1",
+        "example-package": "1.0.0",
     }
 
     print("Generating comprehensive security report...")

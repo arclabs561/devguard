@@ -1,4 +1,4 @@
-"""Configuration management for Guardian."""
+"""Configuration management for devguard."""
 
 from typing import Annotated
 
@@ -151,12 +151,20 @@ class Settings(BaseSettings):
     )
     aws_monthly_cost_ceiling: float = Field(
         100.0,
-        description="AWS monthly cost ceiling in USD (alerts when exceeded). Reset to $100 Jan 2025. Matches ops/config/budget.yaml",
+        description="AWS monthly cost ceiling in USD (alerts when exceeded)",
+    )
+    aws_allowed_instances: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        description="Allowed EC2 instance names (comma-separated). Unlisted running instances trigger alerts.",
     )
 
     # Tailscale Network Health
     tailscale_check_enabled: bool = Field(
         False, description="Enable Tailscale mesh network health checks"
+    )
+    tailscale_expected_nodes: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        description="Expected Tailscale node hostnames (comma-separated)",
     )
 
     # Tailsnitch ACL Security Audit
@@ -179,10 +187,22 @@ class Settings(BaseSettings):
     domain_check_enabled: bool = Field(
         False, description="Enable domain and SSL certificate monitoring"
     )
+    domains_to_monitor: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        description="Domains to monitor for SSL/health (comma-separated, e.g. 'example.com,app.example.com')",
+    )
 
     # Docker Swarm Health
     swarm_check_enabled: bool = Field(
         False, description="Enable Docker Swarm cluster health checks"
+    )
+    swarm_expected_nodes: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        description="Expected swarm node hostnames (comma-separated)",
+    )
+    swarm_critical_services: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        description="Critical swarm service names (comma-separated)",
     )
 
     # API Usage/Credits Monitoring
@@ -197,6 +217,11 @@ class Settings(BaseSettings):
         "vercel_projects_to_monitor",
         "allowed_origins",
         "secret_scan_paths",
+        "domains_to_monitor",
+        "swarm_expected_nodes",
+        "swarm_critical_services",
+        "tailscale_expected_nodes",
+        "aws_allowed_instances",
         mode="before",
     )
     @classmethod
