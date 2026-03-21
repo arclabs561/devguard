@@ -111,32 +111,3 @@ async def retry_with_backoff(
 
     if last_exception:
         raise last_exception
-
-
-def classify_error(exception: Exception, status_code: int | None = None) -> str:
-    """
-    Classify error severity for monitoring purposes.
-
-    Returns: 'transient', 'permanent', or 'rate_limited'
-    """
-    # Rate limiting
-    if status_code in [429, 503]:
-        return "rate_limited"
-
-    # Server errors (5xx) are typically transient
-    if status_code and 500 <= status_code < 600:
-        return "transient"
-
-    # Client errors (4xx) except 429 are permanent
-    if status_code and 400 <= status_code < 500:
-        return "permanent"
-
-    # Network errors are transient
-    if isinstance(exception, (httpx.ConnectError, httpx.TimeoutException)):
-        return "transient"
-
-    # Connection reset, read errors are transient
-    if isinstance(exception, httpx.RequestError):
-        return "transient"
-
-    return "permanent"

@@ -1,1 +1,1 @@
-"""Tests for Guardian."""
+"""Tests for devguard."""

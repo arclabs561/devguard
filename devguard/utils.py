@@ -1,4 +1,4 @@
-"""Utility functions for Guardian.
+"""Utility functions for devguard.
 
 This module provides utilities for accessing external modules (like ops/agent)
 without fragile path manipulation.

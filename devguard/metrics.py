@@ -1,4 +1,4 @@
-"""Prometheus metrics exporter for Guardian."""
+"""Prometheus metrics exporter for devguard."""
 
 import logging
 
@@ -79,7 +79,7 @@ check_errors_total = Counter(
 
 
 def update_metrics_from_report(report: GuardianReport) -> None:
-    """Update Prometheus metrics from a Guardian report."""
+    """Update Prometheus metrics from a devguard report."""
     for check in report.checks:
         # Update check counters
         status = "success" if check.success else "failure"

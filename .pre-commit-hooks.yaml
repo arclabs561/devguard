@@ -1,33 +1,24 @@
-# Pre-commit hooks for devguard.
-#
-# NOTE: These hooks require `uv` and `devguard` to be installed.
-# They use language: system, so the caller's environment must have both.
-#
-# The `devguard sweep` command currently requires a spec file
-# (devguard.spec.yaml).  If the consuming repo does not have one,
-# these hooks will exit non-zero.  A future zero-config mode in
-# cli.py (defaulting to SweepSpec()) would remove that requirement.
-
 - id: devguard-gitignore
   name: devguard gitignore audit
-  entry: uv run python -m devguard sweep --only gitignore_audit
-  language: system
+  entry: devguard sweep --only gitignore_audit
+  language: python
+  additional_dependencies: [devguard]
   pass_filenames: false
   always_run: true
   stages: [pre-commit]
-
 - id: devguard-ai-config
   name: devguard AI editor config audit
-  entry: uv run python -m devguard sweep --only ai_editor_config_audit
-  language: system
+  entry: devguard sweep --only ai_editor_config_audit
+  language: python
+  additional_dependencies: [devguard]
   pass_filenames: false
   always_run: true
   stages: [pre-commit]
-
 - id: devguard-secrets
   name: devguard dirty worktree secrets
-  entry: uv run python -m devguard sweep --only local_dirty_worktree_secrets
-  language: system
+  entry: devguard sweep --only local_dirty_worktree_secrets
+  language: python
+  additional_dependencies: [devguard]
   pass_filenames: false
   always_run: true
   stages: [pre-commit]

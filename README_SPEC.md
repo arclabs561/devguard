@@ -1,6 +1,6 @@
-# Guardian Monitoring Spec
+# devguard Monitoring Spec
 
-Guardian uses a declarative YAML specification to define what resources to monitor. This makes it easy to customize discovery without changing code.
+devguard uses a declarative YAML specification to define what resources to monitor. This makes it easy to customize discovery without changing code.
 
 ## Quick Start
 
