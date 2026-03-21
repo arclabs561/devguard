@@ -1,4 +1,4 @@
-"""Data models for Guardian monitoring results."""
+"""Data models for devguard monitoring results."""
 
 from datetime import UTC, datetime
 from enum import Enum

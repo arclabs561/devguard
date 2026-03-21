@@ -1,4 +1,4 @@
-"""Web dashboard for Guardian monitoring."""
+"""Web dashboard for devguard monitoring."""
 
 import hashlib
 import hmac
@@ -171,13 +171,13 @@ def verify_api_key(api_key: str = Security(api_key_header)) -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup/shutdown."""
-    logger.info("Guardian dashboard server starting")
+    logger.info("devguard dashboard server starting")
     yield
-    logger.info("Guardian dashboard server shutting down")
+    logger.info("devguard dashboard server shutting down")
 
 
 app = FastAPI(
-    title="Guardian Dashboard",
+    title="devguard Dashboard",
     lifespan=lifespan,
     docs_url=None,
     redoc_url=None,
@@ -234,7 +234,7 @@ async def config_page(request: Request):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Guardian Configuration</title>
+    <title>devguard Configuration</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -270,7 +270,7 @@ async def config_page(request: Request):
 </head>
 <body>
     <div class="container">
-        <h1>⚙️ Guardian Configuration</h1>
+        <h1>devguard Configuration</h1>
         <div class="nav">
             <a href="/">Dashboard</a>
             <a href="/config">Configuration</a>
@@ -354,7 +354,7 @@ def get_dashboard_html(csrf_token: str) -> str:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Guardian Dashboard</title>
+    <title>devguard Dashboard</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -438,7 +438,7 @@ def get_dashboard_html(csrf_token: str) -> str:
 </head>
 <body>
     <div class="container">
-        <h1>🛡️ Guardian Dashboard</h1>
+        <h1>devguard Dashboard</h1>
         <div style="margin-bottom: 20px;">
             <a href="/" style="color: #4a9eff; margin-right: 20px;">Dashboard</a>
             <a href="/config" style="color: #4a9eff;">Configuration</a>
@@ -710,6 +710,6 @@ def run_dashboard(host: str | None = None, port: int | None = None) -> None:
         except Exception as e:
             logger.warning(f"Failed to start metrics server: {e}")
 
-    logger.info(f"Starting Guardian dashboard on {dashboard_host}:{dashboard_port}")
+    logger.info(f"Starting devguard dashboard on {dashboard_host}:{dashboard_port}")
     logger.info(f"Metrics endpoint: http://{dashboard_host}:{dashboard_port}/metrics")
     uvicorn.run(app, host=dashboard_host, port=dashboard_port)

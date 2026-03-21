@@ -1,6 +1,6 @@
-"""MCP Server for Guardian.
+"""MCP Server for devguard.
 
-This module exposes Guardian's capabilities as a Model Context Protocol (MCP) server,
+This module exposes devguard's capabilities as a Model Context Protocol (MCP) server,
 allowing AI assistants to directly run security checks and retrieve reports.
 """
 
@@ -102,8 +102,8 @@ async def get_email_history(limit: int = 10) -> str:
     """Get recent email alert history for introspection.
 
     Returns JSON array of recent emails with their summaries, issues, and metadata.
-    If USE_SMART_EMAIL is enabled, reads from unified SQLite database (includes Guardian + agent alerts).
-    Otherwise, reads from Guardian's JSON history.
+    If USE_SMART_EMAIL is enabled, reads from unified SQLite database (includes devguard + agent alerts).
+    Otherwise, reads from devguard's JSON history.
 
     Useful for agents to understand email patterns and decide when/how to send alerts.
 
@@ -121,9 +121,9 @@ async def get_email_history(limit: int = 10) -> str:
 
 @mcp.tool()
 async def get_unified_alert_history(limit: int = 20, topic: str | None = None) -> str:
-    """Get unified alert history from smart_email system (all agents + Guardian).
+    """Get unified alert history from smart_email system (all agents + devguard).
 
-    Returns alerts from all sources (Guardian, SRE Agent, Watchdog, etc.) in a unified format.
+    Returns alerts from all sources (devguard, SRE Agent, Watchdog, etc.) in a unified format.
     Only works if smart_email system is available.
 
     Args:
@@ -137,7 +137,7 @@ async def get_unified_alert_history(limit: int = 20, topic: str | None = None) -
         return json.dumps(
             {
                 "error": "smart_email not enabled. Set USE_SMART_EMAIL=true to use unified history.",
-                "fallback": "Use get_email_history() for Guardian-only history",
+                "fallback": "Use get_email_history() for devguard-only history",
             },
             indent=2,
         )
@@ -152,7 +152,7 @@ async def get_unified_alert_history(limit: int = 20, topic: str | None = None) -
             return json.dumps(
                 {
                     "error": "smart_email not enabled. Set USE_SMART_EMAIL=true to use unified history.",
-                    "fallback": "Use get_email_history() for Guardian-only history",
+                    "fallback": "Use get_email_history() for devguard-only history",
                 },
                 indent=2,
             )
@@ -230,7 +230,7 @@ async def get_unified_alert_history(limit: int = 20, topic: str | None = None) -
 
 def _format_text_report(report: GuardianReport) -> str:
     """Format report as text."""
-    lines = ["Guardian Security Report", "=" * 24, ""]
+    lines = ["devguard Security Report", "=" * 24, ""]
 
     summary = report.summary
     lines.append(f"Total Checks: {summary.get('total_checks', 0)}")

@@ -5,28 +5,33 @@ description = "Developer workstation security and hygiene sweeps -- secrets, dep
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
-authors = [{name = "arclabs561"}]
-keywords = ["security", "developer-tools", "secret-scanning", "dependency-audit", "devops"]
+authors = [{ name = "arclabs561" }]
+keywords = [
+  "security",
+  "developer-tools",
+  "secret-scanning",
+  "dependency-audit",
+  "devops",
+]
 classifiers = [
-    "Development Status :: 4 - Beta",
-    "Environment :: Console",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Topic :: Security",
-    "Topic :: Software Development :: Quality Assurance",
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security",
+  "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
-    "httpx>=0.27.0",
-    "pydantic>=2.9.0",
-    "pydantic-settings>=2.5.0",
-    "python-dotenv>=1.0.0",
-    "typer>=0.12.0",
-    "rich>=13.7.0",
-    "pyyaml>=6.0.0",
+  "httpx>=0.27.0",
+  "pydantic>=2.9.0",
+  "pydantic-settings>=2.5.0",
+  "typer>=0.12.0",
+  "rich>=13.7.0",
+  "pyyaml>=6.0.0",
 ]
 
 [project.urls]
@@ -39,27 +44,23 @@ devguard = "devguard.cli:main"
 
 [project.optional-dependencies]
 monitoring = [
-    "pygithub>=2.2.0",
-    "fastapi>=0.109.0",
-    "uvicorn>=0.27.0",
-    "slowapi>=0.1.9",
-    "aiosmtplib>=3.0.0",
-    "prometheus-client>=0.20.0",
-    "mcp>=0.1.0",
+  "pygithub>=2.2.0",
+  "fastapi>=0.109.0",
+  "uvicorn>=0.27.0",
+  "slowapi>=0.1.9",
+  "aiosmtplib>=3.0.0",
+  "prometheus-client>=0.20.0",
+  "mcp>=0.1.0",
 ]
-flaudit = [
-    "openai>=1.0.0",
-]
-all = [
-    "devguard[monitoring,flaudit]",
-]
+flaudit = ["openai>=1.0.0"]
+all = ["devguard[monitoring,flaudit]"]
 dev = [
-    "pytest>=8.3.0",
-    "pytest-asyncio>=0.24.0",
-    "pytest-cov>=5.0.0",
-    "ruff>=0.6.0",
-    "mypy>=1.11.0",
-    "hypothesis>=6.0.0",
+  "pytest>=8.3.0",
+  "pytest-asyncio>=0.24.0",
+  "pytest-cov>=5.0.0",
+  "ruff>=0.6.0",
+  "mypy>=1.11.0",
+  "hypothesis>=6.0.0",
 ]
 
 [build-system]
@@ -90,4 +91,3 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
-

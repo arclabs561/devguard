@@ -1,6 +1,6 @@
 # Visual Testing with ai-browser-test
 
-Guardian dashboard includes visual testing using `ai-browser-test` for AI-powered screenshot validation.
+devguard dashboard includes visual testing using `ai-browser-test` for AI-powered screenshot validation.
 
 ## Setup
 

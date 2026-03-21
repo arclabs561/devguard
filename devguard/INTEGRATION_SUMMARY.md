@@ -69,7 +69,7 @@ NPM_SECURITY_ENABLED=true
 NPM_PACKAGES_TO_MONITOR=package1,package2
 ```
 
-### Run Guardian Checks
+### Run devguard Checks
 
 ```bash
 devguard check
@@ -80,12 +80,12 @@ The deep security analysis will run automatically and report findings as vulnera
 ## Architecture
 
 ```
-Guardian.run_checks()
+devguard.run_checks()
     ↓
 [NpmChecker.check()]          # Basic vulnerability checking (npm audit)
 [NpmSecurityChecker.check()]  # Deep security analysis (secrets, obfuscation, etc.)
     ↓
-GuardianReport (unified results)
+devguardReport (unified results)
     ↓
 Reporter.report()
 ```

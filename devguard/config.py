@@ -36,10 +36,6 @@ class Settings(BaseSettings):
     alert_email: str | None = Field(None, description="Email address for alerts")
     environment: str = Field("development", description="Environment mode (development/production)")
 
-    # Rate Limiting Configuration
-    rate_limit_per_minute: int = Field(60, description="Maximum API calls per minute per service")
-    rate_limit_per_hour: int = Field(1000, description="Maximum API calls per hour per service")
-
     # Red Team Security Testing
     redteam_enabled: bool = Field(
         True, description="Enable red team security testing for deployments"
@@ -241,7 +237,7 @@ def get_settings(env_file: str | None = None) -> Settings:
 
     Args:
         env_file: Optional path to an env file to load (e.g. "../.env" when
-            running Guardian from inside an infra repo). When not provided,
+            running devguard from inside an infra repo). When not provided,
             the Settings `model_config.env_file` default is used.
     """
     if env_file:

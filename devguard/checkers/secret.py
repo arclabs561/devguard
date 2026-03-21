@@ -121,12 +121,12 @@ class SecretChecker(BaseChecker):
                     for git_dir in path.glob("*/.git"):
                         repos.append(git_dir.parent)
 
-        # Default: try to find "nearby" repos (works both when Guardian lives inside
+        # Default: try to find "nearby" repos (works both when devguard lives inside
         # a larger super-workspace and when it's a standalone repo).
         if not repos:
             # 1) If we are in a super-workspace, scan sibling repos if present.
             # We use the current repo's parent as the "workspace root" candidate.
-            # When Guardian is installed (e.g., in CI), `__file__` will live under
+            # When devguard is installed (e.g., in CI), `__file__` will live under
             # site-packages and won't have a `.git` ancestor. Prefer CWD first.
             this_repo = find_git_root(Path.cwd()) or find_git_root(Path(__file__))
             workspace_root = this_repo.parent if this_repo else Path.cwd()
@@ -143,7 +143,7 @@ class SecretChecker(BaseChecker):
                 if p.exists() and is_git_repo(p):
                     repos.append(p)
 
-            # 2) Always fall back to scanning Guardian itself (first application on itself).
+            # 2) Always fall back to scanning devguard itself (first application on itself).
             if not repos and this_repo and is_git_repo(this_repo):
                 repos.append(this_repo)
 
