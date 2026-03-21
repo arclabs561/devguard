@@ -1,0 +1,86 @@
+"""Shared utilities for sweep modules."""
+
+from __future__ import annotations
+
+import fnmatch
+import os
+from collections.abc import Iterator
+from datetime import UTC, datetime
+from pathlib import Path
+
+# Comprehensive set of directories to skip during repo discovery.
+_JUNK_DIRS: frozenset[str] = frozenset({
+    "node_modules",
+    ".venv",
+    "venv",
+    "dist",
+    "build",
+    ".git",
+    ".cache",
+    ".state",
+    "__pycache__",
+    "_trash",
+    "_scratch",
+    "_external",
+    "_archive",
+    "_forks",
+    "target",
+    ".pytest_cache",
+    ".ruff_cache",
+})
+
+
+def default_dev_root() -> Path:
+    """Return the dev workspace root from $DEV_DIR or the conventional default."""
+    return Path(os.getenv("DEV_DIR") or "~/Documents/dev").expanduser()
+
+
+def utc_now() -> str:
+    """Return the current UTC time as an ISO-8601 string with Z suffix."""
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def iter_git_repos(
+    root: Path,
+    max_depth: int = 3,
+    exclude_globs: list[str] | None = None,
+) -> Iterator[Path]:
+    """Discover git repos under *root*, bounded by *max_depth*.
+
+    Skips known junk directories and hidden directories (except at depth 0
+    where only junk dirs are skipped). Repos matching any of *exclude_globs*
+    are omitted.
+    """
+    root = root.resolve()
+    max_depth = max(0, min(int(max_depth), 6))
+    globs = exclude_globs or []
+
+    stack: list[tuple[Path, int]] = [(root, 0)]
+    seen: set[Path] = set()
+
+    while stack:
+        cur, depth = stack.pop()
+        if cur in seen:
+            continue
+        seen.add(cur)
+
+        if (cur / ".git").exists():
+            if not any(fnmatch.fnmatch(str(cur), g) for g in globs):
+                yield cur
+            continue
+
+        if depth >= max_depth:
+            continue
+
+        try:
+            for child in cur.iterdir():
+                if not child.is_dir():
+                    continue
+                name = child.name
+                if name in _JUNK_DIRS:
+                    continue
+                if name.startswith("."):
+                    continue
+                stack.append((child, depth + 1))
+        except Exception:
+            continue

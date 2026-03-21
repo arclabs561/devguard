@@ -118,6 +118,7 @@ def _git_ls_files(repo: Path) -> list[str]:
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
+        timeout=60,
     )
     if proc.returncode != 0:
         return []
@@ -132,6 +133,7 @@ def _git_files_changed_last_n(repo: Path, n: int) -> set[str]:
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
+        timeout=60,
     )
     if proc.returncode != 0:
         return set()
@@ -146,6 +148,7 @@ def _repo_last_commit_time(repo: Path) -> float:
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
+        timeout=60,
     )
     if proc.returncode != 0:
         return 0.0

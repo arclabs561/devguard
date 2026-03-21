@@ -242,7 +242,7 @@ class TestRepoDiscovery:
         (repo_b / ".git").mkdir()
         (repo_b / "package-lock.json").touch()
 
-        from devguard.sweeps.dependency_audit import _iter_git_repos
+        from devguard.sweeps._common import iter_git_repos as _iter_git_repos
 
         repos = _iter_git_repos(tmp_path, max_depth=2)
         repo_names = {r.name for r in repos}

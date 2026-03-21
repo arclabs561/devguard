@@ -29,7 +29,7 @@ class LLMService:
 
                 self._client = (
                     "anthropic",
-                    anthropic.Anthropic(api_key=str(self.settings.anthropic_api_key)),
+                    anthropic.Anthropic(api_key=self.settings.anthropic_api_key.get_secret_value()),
                 )
                 return self._client
             except ImportError:
@@ -42,7 +42,7 @@ class LLMService:
             try:
                 import openai
 
-                self._client = ("openai", openai.OpenAI(api_key=str(self.settings.openai_api_key)))
+                self._client = ("openai", openai.OpenAI(api_key=self.settings.openai_api_key.get_secret_value()))
                 return self._client
             except ImportError:
                 logger.debug("openai package not installed")
@@ -57,7 +57,7 @@ class LLMService:
                 self._client = (
                     "openrouter",
                     openai.OpenAI(
-                        api_key=str(self.settings.openrouter_api_key),
+                        api_key=self.settings.openrouter_api_key.get_secret_value(),
                         base_url="https://openrouter.ai/api/v1",
                     ),
                 )
@@ -251,70 +251,6 @@ Respond with ONLY the subject line, no quotes or explanation."""
             return f"devguard Security Report - ALERT: {summary.get('total_vulnerabilities', 0)} vulnerabilities"
         else:
             return "devguard Security Report - Status: All systems healthy"
-
-    async def generate_executive_summary(
-        self, report: dict[str, Any], priority: str = "medium"
-    ) -> str:
-        """Generate executive summary using LLM."""
-        client_info = self._get_client()
-        if not client_info:
-            return self._generate_summary_fallback(report)
-
-        provider, client = client_info
-
-        prompt = f"""Generate a concise executive summary (2-3 sentences) for a security monitoring report.
-
-Priority: {priority}
-
-Report summary:
-{json.dumps(report.get("summary", {}), indent=2)}
-
-Top issues:
-{json.dumps(report.get("issues", {}), indent=2)[:800]}
-
-Write a brief, actionable summary that:
-1. States the overall security posture
-2. Highlights the most critical issues requiring attention
-3. Provides context on urgency
-
-Respond with ONLY the summary text, no markdown or formatting."""
-
-        try:
-            if provider == "anthropic":
-                response = client.messages.create(
-                    model="claude-3-5-sonnet-20241022",
-                    max_tokens=200,
-                    messages=[{"role": "user", "content": prompt}],
-                )
-                summary = response.content[0].text.strip()
-            elif provider in ("openai", "openrouter"):
-                model = "gpt-4o-mini" if provider == "openai" else "anthropic/claude-3.5-sonnet"
-                response = client.chat.completions.create(
-                    model=model, messages=[{"role": "user", "content": prompt}], max_tokens=200
-                )
-                summary = response.choices[0].message.content.strip()
-            else:
-                raise ValueError(f"Unknown provider: {provider}")
-
-            return summary
-        except Exception as e:
-            logger.warning(f"LLM summary generation failed: {e}, using fallback")
-            return self._generate_summary_fallback(report)
-
-    def _generate_summary_fallback(self, report: dict[str, Any]) -> str:
-        """Fallback summary generation."""
-        summary = report.get("summary", {})
-        critical = summary.get("critical_vulnerabilities", 0)
-        unhealthy = summary.get("unhealthy_deployments", 0)
-
-        if critical > 0:
-            return f"Critical security issues detected: {critical} critical vulnerabilities and {unhealthy} unhealthy deployments require immediate attention."
-        elif unhealthy > 0:
-            return f"Infrastructure issues detected: {unhealthy} unhealthy deployments need investigation."
-        elif summary.get("total_vulnerabilities", 0) > 0:
-            return f"Security vulnerabilities detected: {summary.get('total_vulnerabilities', 0)} total vulnerabilities found across monitored systems."
-        else:
-            return "All systems are operating normally with no critical security issues detected."
 
     async def analyze_project_flaudit(
         self,
