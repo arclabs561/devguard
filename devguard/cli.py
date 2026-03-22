@@ -991,7 +991,7 @@ def sweep(
     only: list[str] = typer.Option(
         None,
         "--only",
-        help="Run only these sweeps (repeatable). Known: local_dev, public_github_secrets, local_dirty_worktree_secrets, project_flaudit, gitignore_audit, dependency_audit, ssh_key_audit, cargo_publish_audit, ai_editor_config_audit, pre_commit_audit, credential_file_audit",
+        help="Run only these sweeps (repeatable). Known: local_dev, public_github_secrets, local_dirty_worktree_secrets, project_flaudit, gitignore_audit, dependency_audit, ssh_key_audit, cargo_publish_audit, ai_editor_config_audit, pre_commit_audit, credential_file_audit, mcp_security_audit",
     ),
     format: str = typer.Option(
         "text",
@@ -1024,7 +1024,9 @@ def sweep(
     if repo is not None:
         _single_repo = Path(repo).resolve()
         if not (_single_repo / ".git").exists():
-            console.print(f"[bold red]Error:[/bold red] {_single_repo} is not a git repo (.git not found)")
+            console.print(
+                f"[bold red]Error:[/bold red] {_single_repo} is not a git repo (.git not found)"
+            )
             raise typer.Exit(code=1)
         # Override dev_root so discovery functions find only this repo at depth 0
         dev_root = str(_single_repo)
@@ -1046,12 +1048,7 @@ def sweep(
     else:
         spec = load_spec(spec_path)
 
-    wanted = {
-        s.strip()
-        for w in (only or [])
-        for s in w.split(",")
-        if s.strip()
-    }
+    wanted = {s.strip() for w in (only or []) for s in w.split(",") if s.strip()}
 
     exit_code = 0
 
@@ -1089,9 +1086,15 @@ def sweep(
 
     # public-github-secrets sweep (remote-scoped, skip in single-repo mode)
     pub = spec.sweeps.public_github_secrets
-    if pub.enabled and (not wanted or "public_github_secrets" in wanted) and _single_repo is not None:
+    if (
+        pub.enabled
+        and (not wanted or "public_github_secrets" in wanted)
+        and _single_repo is not None
+    ):
         if not machine_output:
-            stderr_console.print("public_github_secrets: skipped (not applicable in single-repo mode)")
+            stderr_console.print(
+                "public_github_secrets: skipped (not applicable in single-repo mode)"
+            )
     elif pub.enabled and (not wanted or "public_github_secrets" in wanted):
         report, errors = scan_public_github_repos(
             owners=pub.owners,
@@ -1436,8 +1439,7 @@ def sweep(
             console.print(f"[bold]pre_commit_audit report:[/bold] {out_path}")
             console.print(f"[bold]Repos scanned:[/bold] {report['scope']['repos_scanned']}")
             console.print(
-                f"[bold]Repos without config:[/bold]"
-                f" {report['summary']['repos_without_config']}"
+                f"[bold]Repos without config:[/bold] {report['summary']['repos_without_config']}"
             )
             console.print(
                 f"[bold]Repos hook not installed:[/bold]"
@@ -1454,9 +1456,15 @@ def sweep(
 
     # credential file audit sweep (machine-scoped, skip in single-repo mode)
     cfa = spec.sweeps.credential_file_audit
-    if cfa.enabled and (not wanted or "credential_file_audit" in wanted) and _single_repo is not None:
+    if (
+        cfa.enabled
+        and (not wanted or "credential_file_audit" in wanted)
+        and _single_repo is not None
+    ):
         if not machine_output:
-            stderr_console.print("credential_file_audit: skipped (not applicable in single-repo mode)")
+            stderr_console.print(
+                "credential_file_audit: skipped (not applicable in single-repo mode)"
+            )
     elif cfa.enabled and (not wanted or "credential_file_audit" in wanted):
         from devguard.sweeps.credential_file_audit import audit_credential_files
         from devguard.sweeps.credential_file_audit import write_report as write_cfa
@@ -1473,13 +1481,42 @@ def sweep(
             sweep_reports.append(("credential_file_audit", report))
         else:
             console.print(f"[bold]credential_file_audit report:[/bold] {out_path}")
-            console.print(
-                f"[bold]Files checked:[/bold] {report['summary']['files_checked']}"
-            )
+            console.print(f"[bold]Files checked:[/bold] {report['summary']['files_checked']}")
             console.print(f"[bold]Issues:[/bold] {report['summary']['issues_total']}")
             if errors:
                 console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
         if report["summary"]["errors_count"] > 0:
+            exit_code = max(exit_code, 2)
+
+    # MCP security audit sweep
+    mcps = spec.sweeps.mcp_security_audit
+    if mcps.enabled and (not wanted or "mcp_security_audit" in wanted):
+        from devguard.sweeps.mcp_security_audit import audit_mcp_security
+        from devguard.sweeps.mcp_security_audit import write_report as write_mcps
+
+        root = Path(mcps.dev_root).expanduser() if mcps.dev_root else default_dev_root()
+        report, errors = audit_mcp_security(
+            dev_root=root,
+            max_depth=mcps.max_depth,
+            exclude_repo_globs=mcps.exclude_repo_globs,
+            check_user_configs=mcps.check_user_configs,
+            trusted_domains=mcps.trusted_domains,
+        )
+        out_path = Path(mcps.output).expanduser()
+        write_mcps(out_path, report)
+        if machine_output:
+            sweep_reports.append(("mcp_security_audit", report))
+        else:
+            console.print(f"[bold]mcp_security_audit report:[/bold] {out_path}")
+            console.print(f"[bold]Configs scanned:[/bold] {report['scope']['configs_scanned']}")
+            console.print(f"[bold]Total findings:[/bold] {report['summary']['total_findings']}")
+            console.print(
+                f"[bold]Errors:[/bold] {report['summary']['total_errors']}  "
+                f"[bold]Warnings:[/bold] {report['summary']['total_warnings']}"
+            )
+            if errors:
+                console.print(f"[yellow]Scan errors:[/yellow] {len(errors)} (see report)")
+        if report["summary"]["total_errors"] > 0:
             exit_code = max(exit_code, 2)
 
     any_enabled = (
@@ -1495,6 +1532,7 @@ def sweep(
         or spec.sweeps.publish_audit.enabled
         or spec.sweeps.pre_commit_audit.enabled
         or spec.sweeps.credential_file_audit.enabled
+        or spec.sweeps.mcp_security_audit.enabled
     )
     if not wanted and not any_enabled:
         if not machine_output:

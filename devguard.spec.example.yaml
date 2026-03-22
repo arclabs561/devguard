@@ -1,6 +1,5 @@
 name: default
 description: Default devguard monitoring specification
-
 discovery_rules:
   - name: npm_list
     type: npm
@@ -10,7 +9,6 @@ discovery_rules:
     extract_path: dependencies.keys()
     timeout: 10
     enabled: true
-
   - name: npm_package_json
     type: npm
     method: file_scan
@@ -19,7 +17,6 @@ discovery_rules:
     extract_path: name
     timeout: 30
     enabled: true
-
   - name: github_repos
     type: github
     method: cli
@@ -28,7 +25,6 @@ discovery_rules:
     extract_path: "[].nameWithOwner"
     timeout: 10
     enabled: true
-
   - name: fly_apps
     type: fly
     method: cli
@@ -37,7 +33,6 @@ discovery_rules:
     extract_path: "[].Name"
     timeout: 10
     enabled: true
-
   - name: vercel_projects
     type: vercel
     method: file_scan
@@ -46,39 +41,30 @@ discovery_rules:
     extract_path: name
     timeout: 30
     enabled: true
-
   - name: domains
     type: domain
     method: file_scan
     file_pattern: "**/*.{json,yaml,yml,toml,env}"
     file_extractor: regex
-    extract_path: "https?://([a-zA-Z0-9.-]+\\.[a-zA-Z]{2,})"  # regex pattern
+    extract_path: "https?://([a-zA-Z0-9.-]+\\.[a-zA-Z]{2,})" # regex pattern
     timeout: 30
     enabled: true
-
   - name: github_commits
     type: github_commits
     method: cli
     command: >-
-      gh api user/events
-      --jq '[.[] | select(.type == "PushEvent") | {repo: .repo.name, message: .payload.commits[0].message, date: .created_at}]'
-      --limit 20
+      gh api user/events --jq '[.[] | select(.type == "PushEvent") | {repo: .repo.name, message: .payload.commits[0].message, date: .created_at}]' --limit 20
     command_parser: json
     timeout: 10
     enabled: true
-
   - name: github_mentions
     type: github_mentions
     method: cli
     command: >-
-      gh api search/issues
-      -f 'q=mentions:{username}'
-      --jq '.items[] | {title: .title, url: .html_url, state: .state, created_at: .created_at}'
-      --limit 20
+      gh api search/issues -f 'q=mentions:{username}' --jq '.items[] | {title: .title, url: .html_url, state: .state, created_at: .created_at}' --limit 20
     command_parser: json_lines
     timeout: 10
     enabled: true
-
   - name: ssh_keys
     type: ssh_key
     method: file_scan
@@ -86,7 +72,6 @@ discovery_rules:
     file_extractor: raw
     timeout: 5
     enabled: true
-
   - name: github_username
     type: username
     method: cli
@@ -94,18 +79,16 @@ discovery_rules:
     command_parser: text
     timeout: 5
     enabled: true
-
 manual_resources:
-  # Add manually specified resources here
-  # npm: [package1, package2]
-  # github: [owner/repo1, owner/repo2]
-  # vercel: [project1, project2]
-  # fly: [my-app-name]
-
+# Add manually specified resources here
+# npm: [package1, package2]
+# github: [owner/repo1, owner/repo2]
+# vercel: [project1, project2]
+# fly: [my-app-name]
 filters:
-  # Filters to apply to discovered resources
-  # exclude_patterns: [".*test.*", ".*example.*"]
-  # include_patterns: []
+# Filters to apply to discovered resources
+# exclude_patterns: [".*test.*", ".*example.*"]
+# include_patterns: []
 
 # Policy sweeps (dogfood devguard locally).
 # - Outputs go to `.state/` (ignored by git)
@@ -142,7 +125,6 @@ sweeps:
     max_concurrency: 4
     timeout_s: 180
     output: ".state/devguard/local-dirty-worktree-secrets.json"
-
   # LLM-driven flaw analysis. Requires OPENROUTER_API_KEY.
   project_flaudit:
     enabled: false
@@ -161,14 +143,12 @@ sweeps:
     public_repo_names: []
     stricter_public_prompt: true
     output: ".state/devguard/project-flaudit.json"
-
   gitignore_audit:
     enabled: true
     dev_root: null
     max_depth: 2
     exclude_repo_globs: ["*/_trash/*", "*/_scratch/*", "*/_external/*", "*/_archive/*", "*/_forks/*"]
     output: ".state/devguard/gitignore-audit.json"
-
   # Dependency vulnerability audit: cargo-audit, npm audit, pip-audit.
   dependency_audit:
     enabled: true
@@ -179,7 +159,6 @@ sweeps:
     max_concurrency: 4
     timeout_s: 120
     output: ".state/devguard/dependency-audit.json"
-
   # AI editor config audit: Claude, Cursor, Copilot, MCP validity and consistency.
   ai_editor_config_audit:
     enabled: true
@@ -188,7 +167,6 @@ sweeps:
     exclude_repo_globs: ["*/_trash/*", "*/_scratch/*", "*/_external/*", "*/_archive/*", "*/_forks/*"]
     only_with_configs: true
     output: ".state/devguard/ai-editor-config-audit.json"
-
   cargo_publish_audit:
     enabled: false
     dev_root: null
@@ -197,7 +175,6 @@ sweeps:
     only_public: false
     repo_names: []
     output: ".state/devguard/cargo-publish-audit.json"
-
   # Pre-commit hook audit: config presence and secret scanning coverage.
   pre_commit_audit:
     enabled: false
@@ -206,7 +183,6 @@ sweeps:
     exclude_repo_globs: ["*/_trash/*", "*/_scratch/*", "*/_external/*", "*/_archive/*", "*/_forks/*"]
     required_hooks: ["detect-secrets", "gitleaks", "trufflehog"]
     output: ".state/devguard/pre-commit-audit.json"
-
   # Credential file audit: permissions and plaintext secrets in dotfiles.
   credential_file_audit:
     enabled: true
@@ -214,7 +190,15 @@ sweeps:
     extra_paths: []
     skip_missing: true
     output: ".state/devguard/credential-file-audit.json"
-
+  # MCP config security: hardcoded secrets, command injection, trifecta risk.
+  mcp_security_audit:
+    enabled: true
+    dev_root: null
+    max_depth: 2
+    exclude_repo_globs: ["*/_trash/*", "*/_scratch/*", "*/_external/*", "*/_archive/*", "*/_forks/*"]
+    check_user_configs: true
+    trusted_domains: ["localhost", "127.0.0.1"]
+    output: ".state/devguard/mcp-security-audit.json"
   # SSH key hygiene: weak algorithms, missing passphrases, stale GitHub keys.
   ssh_key_audit:
     enabled: true
