@@ -4,8 +4,14 @@ import logging
 from datetime import datetime
 
 import httpx
-from github import Auth, Github
-from github.GithubException import GithubException
+
+try:
+    from github import Auth, Github
+    from github.GithubException import GithubException
+except ImportError:
+    Auth = None  # type: ignore[assignment,misc]
+    Github = None  # type: ignore[assignment,misc]
+    GithubException = Exception  # type: ignore[assignment,misc]
 
 from devguard.checkers.base import BaseChecker
 from devguard.config import Settings
