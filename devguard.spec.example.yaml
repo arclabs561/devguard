@@ -198,6 +198,23 @@ sweeps:
     repo_names: []
     output: ".state/devguard/cargo-publish-audit.json"
 
+  # Pre-commit hook audit: config presence and secret scanning coverage.
+  pre_commit_audit:
+    enabled: false
+    dev_root: null
+    max_depth: 2
+    exclude_repo_globs: ["*/_trash/*", "*/_scratch/*", "*/_external/*", "*/_archive/*", "*/_forks/*"]
+    required_hooks: ["detect-secrets", "gitleaks", "trufflehog"]
+    output: ".state/devguard/pre-commit-audit.json"
+
+  # Credential file audit: permissions and plaintext secrets in dotfiles.
+  credential_file_audit:
+    enabled: true
+    home_dir: null
+    extra_paths: []
+    skip_missing: true
+    output: ".state/devguard/credential-file-audit.json"
+
   # SSH key hygiene: weak algorithms, missing passphrases, stale GitHub keys.
   ssh_key_audit:
     enabled: true

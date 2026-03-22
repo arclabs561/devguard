@@ -982,10 +982,16 @@ def sweep(
         "--dev-root",
         help="Dev workspace root (default: $DEV_DIR or ~/Documents/dev).",
     ),
+    repo: str = typer.Option(
+        None,
+        "--repo",
+        "-r",
+        help="Scan a single repo (path). Overrides dev_root discovery.",
+    ),
     only: list[str] = typer.Option(
         None,
         "--only",
-        help="Run only these sweeps (repeatable). Known: local_dev, public_github_secrets, local_dirty_worktree_secrets, project_flaudit, gitignore_audit, dependency_audit, ssh_key_audit, cargo_publish_audit, ai_editor_config_audit",
+        help="Run only these sweeps (repeatable). Known: local_dev, public_github_secrets, local_dirty_worktree_secrets, project_flaudit, gitignore_audit, dependency_audit, ssh_key_audit, cargo_publish_audit, ai_editor_config_audit, pre_commit_audit, credential_file_audit",
     ),
     format: str = typer.Option(
         "text",
@@ -1012,6 +1018,16 @@ def sweep(
     from devguard.sweeps.public_github_secrets import write_report as write_json
 
     machine_output = format in ("json", "sarif")
+
+    # Single-repo mode: resolve path, verify .git, override dev_root
+    _single_repo: Path | None = None
+    if repo is not None:
+        _single_repo = Path(repo).resolve()
+        if not (_single_repo / ".git").exists():
+            console.print(f"[bold red]Error:[/bold red] {_single_repo} is not a git repo (.git not found)")
+            raise typer.Exit(code=1)
+        # Override dev_root so discovery functions find only this repo at depth 0
+        dev_root = str(_single_repo)
     sweep_reports: list[tuple[str, dict]] = []
 
     stderr_console = Console(stderr=True)
@@ -1030,7 +1046,12 @@ def sweep(
     else:
         spec = load_spec(spec_path)
 
-    wanted = {w.strip() for w in (only or []) if w and w.strip()}
+    wanted = {
+        s.strip()
+        for w in (only or [])
+        for s in w.split(",")
+        if s.strip()
+    }
 
     exit_code = 0
 
@@ -1066,9 +1087,12 @@ def sweep(
         if hits:
             exit_code = max(exit_code, 2)
 
-    # public-github-secrets sweep
+    # public-github-secrets sweep (remote-scoped, skip in single-repo mode)
     pub = spec.sweeps.public_github_secrets
-    if pub.enabled and (not wanted or "public_github_secrets" in wanted):
+    if pub.enabled and (not wanted or "public_github_secrets" in wanted) and _single_repo is not None:
+        if not machine_output:
+            stderr_console.print("public_github_secrets: skipped (not applicable in single-repo mode)")
+    elif pub.enabled and (not wanted or "public_github_secrets" in wanted):
         report, errors = scan_public_github_repos(
             owners=pub.owners,
             include_repos=pub.include_repos,
@@ -1255,9 +1279,12 @@ def sweep(
         if report["summary"]["total_vulns"] > 0:
             exit_code = max(exit_code, 2)
 
-    # ssh key audit sweep
+    # ssh key audit sweep (machine-scoped, skip in single-repo mode)
     sshk = spec.sweeps.ssh_key_audit
-    if sshk.enabled and (not wanted or "ssh_key_audit" in wanted):
+    if sshk.enabled and (not wanted or "ssh_key_audit" in wanted) and _single_repo is not None:
+        if not machine_output:
+            stderr_console.print("ssh_key_audit: skipped (not applicable in single-repo mode)")
+    elif sshk.enabled and (not wanted or "ssh_key_audit" in wanted):
         from devguard.sweeps.ssh_key_audit import audit_ssh_keys
         from devguard.sweeps.ssh_key_audit import write_report as write_sshk
 
@@ -1388,6 +1415,73 @@ def sweep(
         if report["summary"]["total_errors"] > 0:
             exit_code = max(exit_code, 2)
 
+    # pre-commit audit sweep
+    pca = spec.sweeps.pre_commit_audit
+    if pca.enabled and (not wanted or "pre_commit_audit" in wanted):
+        from devguard.sweeps.pre_commit_audit import audit_pre_commit
+        from devguard.sweeps.pre_commit_audit import write_report as write_pca
+
+        root = Path(pca.dev_root).expanduser() if pca.dev_root else default_dev_root()
+        report, errors = audit_pre_commit(
+            dev_root=root,
+            max_depth=pca.max_depth,
+            exclude_repo_globs=pca.exclude_repo_globs,
+            required_hooks=pca.required_hooks,
+        )
+        out_path = Path(pca.output).expanduser()
+        write_pca(out_path, report)
+        if machine_output:
+            sweep_reports.append(("pre_commit_audit", report))
+        else:
+            console.print(f"[bold]pre_commit_audit report:[/bold] {out_path}")
+            console.print(f"[bold]Repos scanned:[/bold] {report['scope']['repos_scanned']}")
+            console.print(
+                f"[bold]Repos without config:[/bold]"
+                f" {report['summary']['repos_without_config']}"
+            )
+            console.print(
+                f"[bold]Repos hook not installed:[/bold]"
+                f" {report['summary']['repos_hook_not_installed']}"
+            )
+            console.print(
+                f"[bold]Repos no secret scanning:[/bold]"
+                f" {report['summary']['repos_no_secret_scanning']}"
+            )
+            if errors:
+                console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+        if report["summary"]["total_errors"] > 0:
+            exit_code = max(exit_code, 2)
+
+    # credential file audit sweep (machine-scoped, skip in single-repo mode)
+    cfa = spec.sweeps.credential_file_audit
+    if cfa.enabled and (not wanted or "credential_file_audit" in wanted) and _single_repo is not None:
+        if not machine_output:
+            stderr_console.print("credential_file_audit: skipped (not applicable in single-repo mode)")
+    elif cfa.enabled and (not wanted or "credential_file_audit" in wanted):
+        from devguard.sweeps.credential_file_audit import audit_credential_files
+        from devguard.sweeps.credential_file_audit import write_report as write_cfa
+
+        home = Path(cfa.home_dir).expanduser() if cfa.home_dir else None
+        report, errors = audit_credential_files(
+            home_dir=home,
+            extra_paths=cfa.extra_paths or None,
+            skip_missing=cfa.skip_missing,
+        )
+        out_path = Path(cfa.output).expanduser()
+        write_cfa(out_path, report)
+        if machine_output:
+            sweep_reports.append(("credential_file_audit", report))
+        else:
+            console.print(f"[bold]credential_file_audit report:[/bold] {out_path}")
+            console.print(
+                f"[bold]Files checked:[/bold] {report['summary']['files_checked']}"
+            )
+            console.print(f"[bold]Issues:[/bold] {report['summary']['issues_total']}")
+            if errors:
+                console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+        if report["summary"]["errors_count"] > 0:
+            exit_code = max(exit_code, 2)
+
     any_enabled = (
         local.enabled
         or pub.enabled
@@ -1399,6 +1493,8 @@ def sweep(
         or spec.sweeps.cargo_publish_audit.enabled
         or spec.sweeps.ai_editor_config_audit.enabled
         or spec.sweeps.publish_audit.enabled
+        or spec.sweeps.pre_commit_audit.enabled
+        or spec.sweeps.credential_file_audit.enabled
     )
     if not wanted and not any_enabled:
         if not machine_output:
