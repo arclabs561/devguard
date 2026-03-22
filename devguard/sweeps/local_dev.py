@@ -141,7 +141,7 @@ def _discover_git_repos(dev_root: Path, max_depth: int = 2) -> list[Path]:
             name = child.name
             # Avoid obvious heavy dirs.
             #
-            # Important: the workspace root under ~/Documents/dev often contains
+            # Important: the workspace root under the workspace root often contains
             # very large scratch/backup directories. Scanning into them can take
             # minutes and isn't useful for "repo blunder" detection.
             if name in {
