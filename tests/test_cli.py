@@ -62,8 +62,8 @@ def mock_guardian_report():
 
 
 @patch("devguard.cli.get_settings")
-@patch("devguard.cli.Guardian")
-@patch("devguard.cli.Reporter")
+@patch("devguard.core.Guardian")
+@patch("devguard.reporting.Reporter")
 def test_check_command_basic(
     mock_reporter_class,
     mock_guardian_class,
@@ -94,8 +94,8 @@ def test_check_command_basic(
 
 
 @patch("devguard.cli.get_settings")
-@patch("devguard.cli.Guardian")
-@patch("devguard.cli.Reporter")
+@patch("devguard.core.Guardian")
+@patch("devguard.reporting.Reporter")
 def test_check_command_json_output(
     mock_reporter_class,
     mock_guardian_class,
