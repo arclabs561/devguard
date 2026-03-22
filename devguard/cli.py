@@ -675,7 +675,7 @@ def discover(
         "devguard.spec.yaml", "--spec", "-s", help="Path to monitoring spec file"
     ),
     base_path: str = typer.Option(
-        None, "--base-path", "-b", help="Base path for file scanning (default: ~/Documents/dev)"
+        None, "--base-path", "-b", help="Base path for file scanning (default: \ or current directory)"
     ),
     json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
     update_env: bool = typer.Option(
@@ -1085,6 +1085,12 @@ def _sweep_body(
     from devguard.sweeps.public_github_secrets import write_report as write_json
 
     stderr_console = Console(stderr=True)
+
+    def _resolve_root(spec_dev_root: str | None) -> Path:
+        """Resolve sweep root, respecting single-repo override."""
+        if _single_repo is not None:
+            return _single_repo
+        return Path(spec_dev_root).expanduser() if spec_dev_root else default_dev_root()
     spec_path = Path(spec_file)
     if not spec_path.exists():
         stderr_console.print(
@@ -1107,7 +1113,7 @@ def _sweep_body(
     # local-dev sweep
     local = spec.sweeps.local_dev
     if local.enabled and (not wanted or "local_dev" in wanted):
-        root = Path(dev_root).expanduser() if dev_root else default_dev_root()
+        root = _resolve_root(dev_root)
         deny = list(DEFAULT_DENY_GLOBS) + list(local.deny_globs or [])
         hits, meta = sweep_dev_repos(
             root,
@@ -1181,7 +1187,7 @@ def _sweep_body(
     # local dirty worktree secret sweep
     dirty = spec.sweeps.local_dirty_worktree_secrets
     if dirty.enabled and (not wanted or "local_dirty_worktree_secrets" in wanted):
-        root = Path(dirty.dev_root).expanduser() if dirty.dev_root else default_dev_root()
+        root = _resolve_root(dirty.dev_root)
         report, errors = scan_dirty_worktrees(
             dev_root=root,
             max_depth=dirty.max_depth,
@@ -1215,7 +1221,7 @@ def _sweep_body(
         from devguard.sweeps.project_flaudit import scan_project_flaudit
         from devguard.sweeps.project_flaudit import write_report as write_flaudit
 
-        root = Path(flaudit.dev_root).expanduser() if flaudit.dev_root else default_dev_root()
+        root = _resolve_root(flaudit.dev_root)
         settings = get_settings()
         wr_path = None
         if flaudit.workspace_rules_path:
@@ -1269,7 +1275,7 @@ def _sweep_body(
         from devguard.sweeps.gitignore_audit import audit_gitignores
         from devguard.sweeps.gitignore_audit import write_report as write_gi
 
-        root = Path(gi.dev_root).expanduser() if gi.dev_root else default_dev_root()
+        root = _resolve_root(gi.dev_root)
         report, errors = audit_gitignores(
             dev_root=root,
             max_depth=gi.max_depth,
@@ -1303,7 +1309,7 @@ def _sweep_body(
         from devguard.sweeps.dependency_audit import audit_dependencies
         from devguard.sweeps.dependency_audit import write_report as write_depaudit
 
-        root = Path(depaudit.dev_root).expanduser() if depaudit.dev_root else default_dev_root()
+        root = _resolve_root(depaudit.dev_root)
         report, errors = audit_dependencies(
             dev_root=root,
             max_depth=depaudit.max_depth,
@@ -1370,7 +1376,7 @@ def _sweep_body(
         from devguard.sweeps.cargo_publish_audit import audit_cargo_publish
         from devguard.sweeps.cargo_publish_audit import write_report as write_cpub
 
-        root = Path(cpub.dev_root).expanduser() if cpub.dev_root else default_dev_root()
+        root = _resolve_root(cpub.dev_root)
         report, errors = audit_cargo_publish(
             dev_root=root,
             max_depth=cpub.max_depth,
@@ -1409,7 +1415,7 @@ def _sweep_body(
         from devguard.sweeps.ai_editor_config_audit import audit_ai_editor_configs
         from devguard.sweeps.ai_editor_config_audit import write_report as write_aicfg
 
-        root = Path(aicfg.dev_root).expanduser() if aicfg.dev_root else default_dev_root()
+        root = _resolve_root(aicfg.dev_root)
         report, errors = audit_ai_editor_configs(
             dev_root=root,
             max_depth=aicfg.max_depth,
@@ -1447,7 +1453,7 @@ def _sweep_body(
         from devguard.sweeps.publish_audit import audit_publish
         from devguard.sweeps.publish_audit import write_report as write_puba
 
-        root = Path(puba.dev_root).expanduser() if puba.dev_root else default_dev_root()
+        root = _resolve_root(puba.dev_root)
         report, errors = audit_publish(
             dev_root=root,
             max_depth=puba.max_depth,
@@ -1476,7 +1482,7 @@ def _sweep_body(
         from devguard.sweeps.pre_commit_audit import audit_pre_commit
         from devguard.sweeps.pre_commit_audit import write_report as write_pca
 
-        root = Path(pca.dev_root).expanduser() if pca.dev_root else default_dev_root()
+        root = _resolve_root(pca.dev_root)
         report, errors = audit_pre_commit(
             dev_root=root,
             max_depth=pca.max_depth,
@@ -1546,7 +1552,7 @@ def _sweep_body(
         from devguard.sweeps.mcp_security_audit import audit_mcp_security
         from devguard.sweeps.mcp_security_audit import write_report as write_mcps
 
-        root = Path(mcps.dev_root).expanduser() if mcps.dev_root else default_dev_root()
+        root = _resolve_root(mcps.dev_root)
         report, errors = audit_mcp_security(
             dev_root=root,
             max_depth=mcps.max_depth,

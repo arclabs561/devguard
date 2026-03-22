@@ -62,7 +62,7 @@ class LocalDirtyWorktreeSecretsSweepSpec(BaseModel):
     enabled: bool = Field(False, description="Whether this sweep is enabled")
     dev_root: str | None = Field(
         None,
-        description="Workspace root to discover git repos under (default: $DEV_DIR or ~/Documents/dev).",
+        description="Workspace root to discover git repos under (default: \ or current directory).",
     )
     max_depth: int = Field(
         2, description="How deep under dev_root to look for git repos (bounded)."
@@ -118,7 +118,7 @@ class ProjectFlauditSweepSpec(BaseModel):
     enabled: bool = Field(False, description="Whether this sweep is enabled")
     dev_root: str | None = Field(
         None,
-        description="Workspace root. Default: $DEV_DIR or ~/Documents/dev when unset.",
+        description="Workspace root. Default: \ or current directory when unset.",
     )
     k_recent: int = Field(
         5,
@@ -230,7 +230,7 @@ class GitignoreAuditSweepSpec(BaseModel):
     enabled: bool = Field(True, description="Whether this sweep is enabled (on by default)")
     dev_root: str | None = Field(
         None,
-        description="Workspace root. Default: $DEV_DIR or ~/Documents/dev when unset.",
+        description="Workspace root. Default: \ or current directory when unset.",
     )
     max_depth: int = Field(2, description="How deep under dev_root to look for git repos.")
     exclude_repo_globs: list[str] = Field(
@@ -260,7 +260,7 @@ class DependencyAuditSweepSpec(BaseModel):
     enabled: bool = Field(True, description="Whether this sweep is enabled (on by default)")
     dev_root: str | None = Field(
         None,
-        description="Workspace root. Default: $DEV_DIR or ~/Documents/dev when unset.",
+        description="Workspace root. Default: \ or current directory when unset.",
     )
     max_depth: int = Field(2, description="How deep under dev_root to look for git repos.")
     exclude_repo_globs: list[str] = Field(
@@ -339,7 +339,7 @@ class AIEditorConfigAuditSweepSpec(BaseModel):
     enabled: bool = Field(True, description="Whether this sweep is enabled (on by default)")
     dev_root: str | None = Field(
         None,
-        description="Workspace root. Default: $DEV_DIR or ~/Documents/dev when unset.",
+        description="Workspace root. Default: \ or current directory when unset.",
     )
     max_depth: int = Field(2, description="How deep under dev_root to look for git repos.")
     exclude_repo_globs: list[str] = Field(
@@ -372,7 +372,7 @@ class CargoPublishAuditSweepSpec(BaseModel):
     enabled: bool = Field(False, description="Whether this sweep is enabled")
     dev_root: str | None = Field(
         None,
-        description="Workspace root. Default: $DEV_DIR or ~/Documents/dev when unset.",
+        description="Workspace root. Default: \ or current directory when unset.",
     )
     max_depth: int = Field(2, description="How deep under dev_root to look for git repos.")
     exclude_repo_globs: list[str] = Field(
@@ -411,7 +411,7 @@ class PublishAuditSweepSpec(BaseModel):
     enabled: bool = Field(False, description="Whether this sweep is enabled")
     dev_root: str | None = Field(
         None,
-        description="Workspace root. Default: $DEV_DIR or ~/Documents/dev when unset.",
+        description="Workspace root. Default: \ or current directory when unset.",
     )
     max_depth: int = Field(2, description="How deep under dev_root to look for git repos.")
     exclude_repo_globs: list[str] = Field(
@@ -440,7 +440,7 @@ class PreCommitAuditSweepSpec(BaseModel):
     enabled: bool = Field(False, description="Whether this sweep is enabled")
     dev_root: str | None = Field(
         None,
-        description="Workspace root. Default: $DEV_DIR or ~/Documents/dev when unset.",
+        description="Workspace root. Default: \ or current directory when unset.",
     )
     max_depth: int = Field(2, description="How deep under dev_root to look for git repos.")
     exclude_repo_globs: list[str] = Field(
@@ -499,7 +499,7 @@ class MCPSecurityAuditSweepSpec(BaseModel):
     enabled: bool = Field(True, description="Whether this sweep is enabled")
     dev_root: str | None = Field(
         None,
-        description="Workspace root. Default: $DEV_DIR or ~/Documents/dev when unset.",
+        description="Workspace root. Default: \ or current directory when unset.",
     )
     max_depth: int = Field(2, description="How deep under dev_root to look for git repos.")
     exclude_repo_globs: list[str] = Field(
