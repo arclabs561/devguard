@@ -44,13 +44,23 @@ def iter_git_repos(
     root: Path,
     max_depth: int = 3,
     exclude_globs: list[str] | None = None,
+    single_repo: Path | None = None,
 ) -> Iterator[Path]:
     """Discover git repos under *root*, bounded by *max_depth*.
+
+    If *single_repo* is given, yield only that path (if it is a git repo)
+    and skip the full discovery walk.  This enables single-repo mode for CI.
 
     Skips known junk directories and hidden directories (except at depth 0
     where only junk dirs are skipped). Repos matching any of *exclude_globs*
     are omitted.
     """
+    if single_repo is not None:
+        single = single_repo.resolve()
+        if (single / ".git").exists():
+            yield single
+        return
+
     root = root.resolve()
     max_depth = max(0, min(int(max_depth), 6))
     globs = exclude_globs or []

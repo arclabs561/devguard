@@ -434,6 +434,61 @@ class PublishAuditSweepSpec(BaseModel):
     )
 
 
+class PreCommitAuditSweepSpec(BaseModel):
+    """Audit pre-commit hook configs across local repos for secret scanning coverage."""
+
+    enabled: bool = Field(False, description="Whether this sweep is enabled")
+    dev_root: str | None = Field(
+        None,
+        description="Workspace root. Default: $DEV_DIR or ~/Documents/dev when unset.",
+    )
+    max_depth: int = Field(2, description="How deep under dev_root to look for git repos.")
+    exclude_repo_globs: list[str] = Field(
+        default_factory=lambda: [
+            "*/_trash/*",
+            "*/_scratch/*",
+            "*/_external/*",
+            "*/_archive/*",
+            "*/_forks/*",
+        ],
+        description="Glob patterns to exclude repos from the audit.",
+    )
+    required_hooks: list[str] = Field(
+        default_factory=lambda: ["detect-secrets", "gitleaks", "trufflehog"],
+        description="Secret scanning hook IDs; at least one must be present per repo.",
+    )
+    output: str = Field(
+        ".state/devguard/pre-commit-audit.json",
+        description="Where to write the JSON report.",
+    )
+
+
+class CredentialFileAuditSweepSpec(BaseModel):
+    """Audit credential files for permission issues and plaintext secrets.
+
+    Machine-scoped sweep checking well-known dotfiles (~/.aws/credentials,
+    ~/.npmrc, ~/.netrc, ~/.docker/config.json, ~/.kube/config, ~/.pypirc, ~/.ssh/).
+    """
+
+    enabled: bool = Field(True, description="Whether this sweep is enabled (on by default)")
+    home_dir: str | None = Field(
+        None,
+        description="Home directory to scan. Default: $HOME.",
+    )
+    extra_paths: list[str] = Field(
+        default_factory=list,
+        description="Additional credential file paths to check.",
+    )
+    skip_missing: bool = Field(
+        True,
+        description="Skip files/dirs that don't exist instead of reporting errors.",
+    )
+    output: str = Field(
+        ".state/devguard/credential-file-audit.json",
+        description="Where to write the JSON report.",
+    )
+
+
 class SweepSpec(BaseModel):
     """Spec for all sweeps (policy checks)."""
 
@@ -476,6 +531,14 @@ class SweepSpec(BaseModel):
     publish_audit: PublishAuditSweepSpec = Field(
         default_factory=lambda: PublishAuditSweepSpec(),
         description="Audit PyPI and npm repos for correct publish CI pipelines",
+    )
+    pre_commit_audit: PreCommitAuditSweepSpec = Field(
+        default_factory=lambda: PreCommitAuditSweepSpec(),
+        description="Audit pre-commit configs for secret scanning hooks",
+    )
+    credential_file_audit: CredentialFileAuditSweepSpec = Field(
+        default_factory=lambda: CredentialFileAuditSweepSpec(),
+        description="Audit credential files for permission issues and plaintext secrets",
     )
 
 
