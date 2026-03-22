@@ -1,6 +1,6 @@
 [project]
 name = "devguard"
-version = "0.2.2"
+version = "0.2.3"
 description = "Developer workstation security and hygiene sweeps -- secrets, deps, gitignore, SSH keys, AI editor configs, cargo publish CI, and more"
 readme = "README.md"
 requires-python = ">=3.11"
