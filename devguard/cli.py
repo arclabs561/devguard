@@ -14,8 +14,6 @@ from rich.prompt import Prompt
 from rich.table import Table
 
 from devguard.config import get_settings
-from devguard.core import Guardian
-from devguard.reporting import Reporter
 
 app = typer.Typer(help="devguard - Security and hygiene scanning for developer workstations")
 console = Console()
@@ -297,6 +295,9 @@ def check(
 ) -> None:
     """Run monitoring checks."""
     _configure_logging(json_output)
+    from devguard.core import Guardian
+    from devguard.reporting import Reporter
+
     settings = get_settings(env_file=env_file)
     guardian = Guardian(settings)
     reporter = Reporter(settings)
@@ -675,7 +676,7 @@ def discover(
         "devguard.spec.yaml", "--spec", "-s", help="Path to monitoring spec file"
     ),
     base_path: str = typer.Option(
-        None, "--base-path", "-b", help="Base path for file scanning (default: \ or current directory)"
+        None, "--base-path", "-b", help="Base path for file scanning (default: $DEV_DIR or current directory)"
     ),
     json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
     update_env: bool = typer.Option(
@@ -807,6 +808,8 @@ def stats(
 
     def generate_stats() -> Layout:
         """Generate the stats layout."""
+        from devguard.core import Guardian
+
         settings = get_settings()
         guardian = Guardian(settings)
 
