@@ -489,6 +489,43 @@ class CredentialFileAuditSweepSpec(BaseModel):
     )
 
 
+class MCPSecurityAuditSweepSpec(BaseModel):
+    """Deep MCP config security scanning.
+
+    Checks hardcoded secrets, command injection, untrusted URLs, lethal trifecta
+    servers, env literal hygiene, and git-tracking of secret-bearing configs.
+    """
+
+    enabled: bool = Field(True, description="Whether this sweep is enabled")
+    dev_root: str | None = Field(
+        None,
+        description="Workspace root. Default: $DEV_DIR or ~/Documents/dev when unset.",
+    )
+    max_depth: int = Field(2, description="How deep under dev_root to look for git repos.")
+    exclude_repo_globs: list[str] = Field(
+        default_factory=lambda: [
+            "*/_trash/*",
+            "*/_scratch/*",
+            "*/_external/*",
+            "*/_archive/*",
+            "*/_forks/*",
+        ],
+        description="Glob patterns to exclude repos from scanning.",
+    )
+    check_user_configs: bool = Field(
+        True,
+        description="Also scan user-level MCP configs (~/.claude/, ~/.cursor/, Claude desktop).",
+    )
+    trusted_domains: list[str] = Field(
+        default_factory=lambda: ["localhost", "127.0.0.1"],
+        description="Domains considered trusted for MCP server URLs.",
+    )
+    output: str = Field(
+        ".state/devguard/mcp-security-audit.json",
+        description="Where to write the JSON report.",
+    )
+
+
 class SweepSpec(BaseModel):
     """Spec for all sweeps (policy checks)."""
 
@@ -539,6 +576,10 @@ class SweepSpec(BaseModel):
     credential_file_audit: CredentialFileAuditSweepSpec = Field(
         default_factory=lambda: CredentialFileAuditSweepSpec(),
         description="Audit credential files for permission issues and plaintext secrets",
+    )
+    mcp_security_audit: MCPSecurityAuditSweepSpec = Field(
+        default_factory=lambda: MCPSecurityAuditSweepSpec(),
+        description="Deep MCP config security scanning (secrets, injection, trifecta)",
     )
 
 
