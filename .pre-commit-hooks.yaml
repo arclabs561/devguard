@@ -2,23 +2,23 @@
   name: devguard gitignore audit
   entry: devguard sweep --only gitignore_audit
   language: python
-  additional_dependencies: [devguard]
   pass_filenames: false
   always_run: true
+  require_serial: true
   stages: [pre-commit]
 - id: devguard-ai-config
   name: devguard AI editor config audit
   entry: devguard sweep --only ai_editor_config_audit
   language: python
-  additional_dependencies: [devguard]
   pass_filenames: false
   always_run: true
+  require_serial: true
   stages: [pre-commit]
 - id: devguard-secrets
   name: devguard dirty worktree secrets
   entry: devguard sweep --only local_dirty_worktree_secrets
   language: python
-  additional_dependencies: [devguard]
   pass_filenames: false
   always_run: true
+  require_serial: true
   stages: [pre-commit]

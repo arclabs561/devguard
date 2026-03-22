@@ -1,11 +1,12 @@
 """Tests for CLI interface."""
 
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
 
-from devguard.cli import app, main
+from devguard.cli import _clone_repo, _is_github_url, app, main
 
 
 @pytest.fixture
@@ -176,3 +177,80 @@ def test_main_function():
     with patch("devguard.cli.app") as mock_app:
         main()
         mock_app.assert_called_once()
+
+
+class TestGitHubUrlDetection:
+    """Tests for _is_github_url helper."""
+
+    def test_https_url(self):
+        assert _is_github_url("https://github.com/owner/repo") is True
+
+    def test_http_url(self):
+        assert _is_github_url("http://github.com/owner/repo") is True
+
+    def test_ssh_url(self):
+        assert _is_github_url("git@github.com:owner/repo") is True
+
+    def test_local_path(self):
+        assert _is_github_url("/some/local/path") is False
+
+    def test_relative_path(self):
+        assert _is_github_url("./my-repo") is False
+
+    def test_other_url(self):
+        assert _is_github_url("https://gitlab.com/owner/repo") is False
+
+
+class TestCloneRepo:
+    """Tests for _clone_repo helper."""
+
+    @patch("devguard.cli.subprocess.run")
+    @patch("devguard.cli.tempfile.mkdtemp")
+    def test_successful_clone(self, mock_mkdtemp, mock_run):
+        mock_mkdtemp.return_value = "/tmp/devguard-abc"
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+
+        path, cleanup = _clone_repo("https://github.com/owner/my-repo")
+
+        assert path == Path("/tmp/devguard-abc/my-repo")
+        assert cleanup == "/tmp/devguard-abc"
+        mock_run.assert_called_once_with(
+            ["git", "clone", "--depth", "1", "https://github.com/owner/my-repo",
+             "/tmp/devguard-abc/my-repo"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+    @patch("devguard.cli.subprocess.run")
+    @patch("devguard.cli.tempfile.mkdtemp")
+    @patch("devguard.cli.shutil.rmtree")
+    def test_failed_clone_cleans_up(self, mock_rmtree, mock_mkdtemp, mock_run):
+        mock_mkdtemp.return_value = "/tmp/devguard-abc"
+        mock_run.return_value = MagicMock(returncode=128, stdout="", stderr="fatal: repo not found")
+
+        import typer
+        with pytest.raises(typer.BadParameter, match="Failed to clone"):
+            _clone_repo("https://github.com/owner/nonexistent")
+
+        mock_rmtree.assert_called_once_with("/tmp/devguard-abc", ignore_errors=True)
+
+    @patch("devguard.cli.subprocess.run")
+    @patch("devguard.cli.tempfile.mkdtemp")
+    def test_strips_dotgit_suffix(self, mock_mkdtemp, mock_run):
+        mock_mkdtemp.return_value = "/tmp/devguard-xyz"
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+
+        path, _ = _clone_repo("https://github.com/owner/my-repo.git")
+
+        assert path == Path("/tmp/devguard-xyz/my-repo")
+
+    @patch("devguard.cli.subprocess.run")
+    @patch("devguard.cli.tempfile.mkdtemp")
+    def test_strips_trailing_slash(self, mock_mkdtemp, mock_run):
+        mock_mkdtemp.return_value = "/tmp/devguard-xyz"
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+
+        path, _ = _clone_repo("https://github.com/owner/my-repo/")
+
+        assert path == Path("/tmp/devguard-xyz/my-repo")

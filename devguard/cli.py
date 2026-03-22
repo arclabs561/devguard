@@ -3,6 +3,9 @@
 import asyncio
 import json
 import logging
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 import typer
@@ -969,6 +972,28 @@ def sweep_dev(
         raise typer.Exit(code=2)
 
 
+def _is_github_url(s: str) -> bool:
+    """Check if string is a GitHub URL."""
+    return s.startswith(("https://github.com/", "http://github.com/", "git@github.com:"))
+
+
+def _clone_repo(url: str) -> tuple[Path, str]:
+    """Shallow clone a GitHub repo to a temp dir. Returns (path, cleanup_dir)."""
+    tmpdir = tempfile.mkdtemp(prefix="devguard-")
+    repo_name = url.rstrip("/").split("/")[-1].removesuffix(".git")
+    clone_path = Path(tmpdir) / repo_name
+    result = subprocess.run(
+        ["git", "clone", "--depth", "1", url, str(clone_path)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if result.returncode != 0:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        raise typer.BadParameter(f"Failed to clone {url}: {result.stderr.strip()}")
+    return clone_path, tmpdir
+
+
 @app.command()
 def sweep(
     spec_file: str = typer.Option(
@@ -986,7 +1011,7 @@ def sweep(
         None,
         "--repo",
         "-r",
-        help="Scan a single repo (path). Overrides dev_root discovery.",
+        help="Scan a single repo (local path or GitHub URL). Overrides dev_root discovery.",
     ),
     only: list[str] = typer.Option(
         None,
@@ -1004,6 +1029,48 @@ def sweep(
 
     Today this runs the local dev repo sweep (and will expand over time).
     """
+    machine_output = format in ("json", "sarif")
+
+    # Single-repo mode: resolve path or clone URL, verify .git, override dev_root
+    _single_repo: Path | None = None
+    _cleanup_dir: str | None = None
+    if repo is not None and _is_github_url(repo):
+        if not machine_output:
+            console.print(f"Cloning {repo}...")
+        _single_repo, _cleanup_dir = _clone_repo(repo)
+        if not machine_output:
+            console.print(f"Scanning {_single_repo.name}")
+        dev_root = str(_single_repo)
+    elif repo is not None:
+        _single_repo = Path(repo).resolve()
+        if not (_single_repo / ".git").exists():
+            console.print(
+                f"[bold red]Error:[/bold red] {_single_repo} is not a git repo (.git not found)"
+            )
+            raise typer.Exit(code=1)
+        # Override dev_root so discovery functions find only this repo at depth 0
+        dev_root = str(_single_repo)
+    sweep_reports: list[tuple[str, dict]] = []
+
+    try:
+        _sweep_body(
+            spec_file, dev_root, _single_repo, only, format, machine_output, sweep_reports
+        )
+    finally:
+        if _cleanup_dir:
+            shutil.rmtree(_cleanup_dir, ignore_errors=True)
+
+
+def _sweep_body(
+    spec_file: str,
+    dev_root: str | None,
+    _single_repo: Path | None,
+    only: list[str] | None,
+    format: str,
+    machine_output: bool,
+    sweep_reports: list[tuple[str, dict]],
+) -> None:
+    """Inner body of sweep(), extracted to allow try/finally cleanup in caller."""
     import sys
 
     from devguard.spec import MonitorSpec, SweepSpec, load_spec
@@ -1016,21 +1083,6 @@ def sweep(
     )
     from devguard.sweeps.public_github_secrets import scan_public_github_repos
     from devguard.sweeps.public_github_secrets import write_report as write_json
-
-    machine_output = format in ("json", "sarif")
-
-    # Single-repo mode: resolve path, verify .git, override dev_root
-    _single_repo: Path | None = None
-    if repo is not None:
-        _single_repo = Path(repo).resolve()
-        if not (_single_repo / ".git").exists():
-            console.print(
-                f"[bold red]Error:[/bold red] {_single_repo} is not a git repo (.git not found)"
-            )
-            raise typer.Exit(code=1)
-        # Override dev_root so discovery functions find only this repo at depth 0
-        dev_root = str(_single_repo)
-    sweep_reports: list[tuple[str, dict]] = []
 
     stderr_console = Console(stderr=True)
     spec_path = Path(spec_file)
