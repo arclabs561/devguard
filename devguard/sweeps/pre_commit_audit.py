@@ -6,7 +6,6 @@ Scans git repos under a dev root and checks whether each repo has a
 
 from __future__ import annotations
 
-import fnmatch
 import json
 from pathlib import Path
 from typing import Any
@@ -61,10 +60,8 @@ def audit_pre_commit(
     root = dev_root if dev_root is not None else _default_dev_root()
     req_hooks = required_hooks if required_hooks is not None else _DEFAULT_REQUIRED_HOOKS
 
-    repos = sorted(iter_git_repos(root, max_depth=max_depth))
     globs = [g for g in (exclude_repo_globs or []) if isinstance(g, str) and g.strip()]
-    if globs:
-        repos = [r for r in repos if not any(fnmatch.fnmatch(str(r), g) for g in globs)]
+    repos = sorted(iter_git_repos(root, max_depth=max_depth, exclude_globs=globs))
 
     findings: list[dict[str, Any]] = []
     total_no_config = 0
@@ -134,7 +131,7 @@ def audit_pre_commit(
             "repos_hook_not_installed": total_not_installed,
             "repos_no_secret_scanning": total_no_secret_hook,
             "total_findings": total_no_config + total_not_installed + total_no_secret_hook,
-            "total_errors": total_no_secret_hook,
+            "repos_without_secret_hook": total_no_secret_hook,
         },
         "repos": findings[:200],
         "errors": errors,
