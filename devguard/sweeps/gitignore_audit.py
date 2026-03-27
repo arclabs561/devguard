@@ -15,8 +15,8 @@ from pathlib import Path
 from typing import Any
 
 from devguard.sweeps._common import default_dev_root as _default_dev_root
-from devguard.sweeps._common import iter_git_repos, utc_now as _utc_now
-
+from devguard.sweeps._common import iter_git_repos
+from devguard.sweeps._common import utc_now as _utc_now
 
 # Patterns to check, grouped by relevance.
 # Each tuple: (pattern_name, gitignore_lines_that_satisfy_it, languages_where_relevant)
@@ -142,14 +142,20 @@ def _check_case_sensitive_files(repo: Path) -> list[str]:
         try:
             res = _sp.run(
                 ["git", "ls-files", str(Path(parent_rel) / expected)],
-                cwd=str(repo), capture_output=True, text=True, timeout=5,
+                cwd=str(repo),
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             tracked = res.stdout.strip()
             if not tracked:
                 # Try lowercase
                 res2 = _sp.run(
                     ["git", "ls-files", str(Path(parent_rel) / expected.lower())],
-                    cwd=str(repo), capture_output=True, text=True, timeout=5,
+                    cwd=str(repo),
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
                 )
                 tracked = res2.stdout.strip()
             if tracked and tracked != str(Path(parent_rel) / expected):
@@ -168,7 +174,9 @@ def _read_global_gitignore_lines() -> list[str]:
     try:
         res = _sp.run(
             ["git", "config", "--global", "core.excludesFile"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         path_str = res.stdout.strip()
         if not path_str:

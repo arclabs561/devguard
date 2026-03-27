@@ -4,7 +4,6 @@ These tests verify that data models maintain their invariants across
 various inputs and edge cases.
 """
 
-
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
@@ -67,9 +66,7 @@ def test_api_usage_percentage_bounds(
     package_version=st.text(min_size=1, max_size=50),
     severity=st.sampled_from(list(Severity)),
 )
-def test_vulnerability_required_fields(
-    package_name: str, package_version: str, severity: Severity
-):
+def test_vulnerability_required_fields(package_name: str, package_version: str, severity: Severity):
     """Vulnerability requires package_name, package_version, severity, and source."""
     vuln = Vulnerability(
         package_name=package_name,
@@ -89,9 +86,7 @@ def test_vulnerability_required_fields(
     description=st.text(min_size=1, max_size=1000),
     resource=st.text(min_size=1, max_size=100),
 )
-def test_finding_required_fields(
-    severity: Severity, title: str, description: str, resource: str
-):
+def test_finding_required_fields(severity: Severity, title: str, description: str, resource: str):
     """Finding requires severity, title, description, and resource."""
     finding = Finding(
         severity=severity,
@@ -230,4 +225,3 @@ def test_check_status_health_ordering():
     assert CheckStatus.HEALTHY != CheckStatus.UNHEALTHY
     assert CheckStatus.HEALTHY != CheckStatus.UNKNOWN
     assert CheckStatus.HEALTHY != CheckStatus.DEGRADED
-

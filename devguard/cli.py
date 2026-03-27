@@ -676,7 +676,10 @@ def discover(
         "devguard.spec.yaml", "--spec", "-s", help="Path to monitoring spec file"
     ),
     base_path: str = typer.Option(
-        None, "--base-path", "-b", help="Base path for file scanning (default: $DEV_DIR or current directory)"
+        None,
+        "--base-path",
+        "-b",
+        help="Base path for file scanning (default: $DEV_DIR or current directory)",
     ),
     json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
     update_env: bool = typer.Option(
@@ -931,7 +934,7 @@ def sweep_dev(
     dev_root: str = typer.Option(
         None,
         "--dev-root",
-        help="Dev workspace root (default: $DEV_DIR or ~/Documents/dev).",
+        help="Dev workspace root (default: $DEV_DIR or current directory).",
     ),
     output: str = typer.Option(
         "devguard_sweep_dev.json",
@@ -951,7 +954,8 @@ def sweep_dev(
     ),
 ) -> None:
     """Sweep local dev repos for likely accidental committed artifacts."""
-    from devguard.sweeps.local_dev import default_dev_root, sweep_dev_repos, write_report
+    from devguard.sweeps import default_dev_root
+    from devguard.sweeps.local_dev import sweep_dev_repos, write_report
 
     root = Path(dev_root).expanduser() if dev_root else default_dev_root()
     report_path = Path(output).expanduser()
@@ -1008,7 +1012,7 @@ def sweep(
     dev_root: str = typer.Option(
         None,
         "--dev-root",
-        help="Dev workspace root (default: $DEV_DIR or ~/Documents/dev).",
+        help="Dev workspace root (default: $DEV_DIR or current directory).",
     ),
     repo: str = typer.Option(
         None,
@@ -1056,9 +1060,7 @@ def sweep(
     sweep_reports: list[tuple[str, dict]] = []
 
     try:
-        _sweep_body(
-            spec_file, dev_root, _single_repo, only, format, machine_output, sweep_reports
-        )
+        _sweep_body(spec_file, dev_root, _single_repo, only, format, machine_output, sweep_reports)
     finally:
         if _cleanup_dir:
             shutil.rmtree(_cleanup_dir, ignore_errors=True)
@@ -1077,7 +1079,8 @@ def _sweep_body(
     import sys
 
     from devguard.spec import MonitorSpec, SweepSpec, load_spec
-    from devguard.sweeps.local_dev import DEFAULT_DENY_GLOBS, default_dev_root, sweep_dev_repos
+    from devguard.sweeps import default_dev_root
+    from devguard.sweeps.local_dev import DEFAULT_DENY_GLOBS, sweep_dev_repos
     from devguard.sweeps.local_dirty_worktree_secrets import (
         scan_dirty_worktrees,
     )
@@ -1094,6 +1097,7 @@ def _sweep_body(
         if _single_repo is not None:
             return _single_repo
         return Path(spec_dev_root).expanduser() if spec_dev_root else default_dev_root()
+
     spec_path = Path(spec_file)
     if not spec_path.exists():
         stderr_console.print(
@@ -1220,7 +1224,7 @@ def _sweep_body(
     # project_flaudit sweep (files-to-prompt + OpenRouter/Gemini)
     flaudit = spec.sweeps.project_flaudit
     if flaudit.enabled and (not wanted or "project_flaudit" in wanted):
-        from devguard.sweeps.local_dev import default_dev_root
+        from devguard.sweeps import default_dev_root
         from devguard.sweeps.project_flaudit import scan_project_flaudit
         from devguard.sweeps.project_flaudit import write_report as write_flaudit
 

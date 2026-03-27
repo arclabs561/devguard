@@ -7,7 +7,6 @@ from pathlib import Path
 
 from devguard.sweeps.credential_file_audit import audit_credential_files
 
-
 # ---------------------------------------------------------------------------
 # AWS credentials
 # ---------------------------------------------------------------------------
@@ -79,9 +78,13 @@ def test_docker_config_auth(tmp_path: Path) -> None:
     docker_dir = tmp_path / ".docker"
     docker_dir.mkdir()
     cfg = docker_dir / "config.json"
-    cfg.write_text(json.dumps({
-        "auths": {"https://index.docker.io/v1/": {"auth": "dXNlcjpwYXNz"}},
-    }))
+    cfg.write_text(
+        json.dumps(
+            {
+                "auths": {"https://index.docker.io/v1/": {"auth": "dXNlcjpwYXNz"}},
+            }
+        )
+    )
     cfg.chmod(0o600)
 
     report, _ = audit_credential_files(home_dir=tmp_path)

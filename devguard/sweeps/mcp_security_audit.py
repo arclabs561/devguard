@@ -19,7 +19,8 @@ from pathlib import Path
 from typing import Any
 
 from devguard.sweeps._common import default_dev_root as _default_dev_root
-from devguard.sweeps._common import iter_git_repos, utc_now as _utc_now
+from devguard.sweeps._common import iter_git_repos
+from devguard.sweeps._common import utc_now as _utc_now
 
 # ---------------------------------------------------------------------------
 # Secret detection patterns
@@ -27,24 +28,24 @@ from devguard.sweeps._common import iter_git_repos, utc_now as _utc_now
 
 # Provider-specific prefixes that are sufficient to flag on their own.
 _PROVIDER_SECRET_PREFIXES: list[str] = [
-    "ghp_",       # GitHub PAT (fine-grained)
-    "gho_",       # GitHub OAuth
-    "ghu_",       # GitHub user-to-server
-    "ghs_",       # GitHub server-to-server
+    "ghp_",  # GitHub PAT (fine-grained)
+    "gho_",  # GitHub OAuth
+    "ghu_",  # GitHub user-to-server
+    "ghs_",  # GitHub server-to-server
     "github_pat_",  # GitHub PAT (new format)
-    "sk-ant-",    # Anthropic
-    "sk-proj-",   # OpenAI project key
-    "sk-",        # OpenAI (legacy; 20+ chars after prefix)
-    "AKIA",       # AWS access key ID
-    "xoxb-",      # Slack bot token
-    "xoxp-",      # Slack user token
-    "xoxa-",      # Slack app token
-    "sk_live_",   # Stripe live key
-    "rk_live_",   # Stripe restricted key
-    "npm_",       # npm token
-    "pypi-",      # PyPI token
-    "glpat-",     # GitLab PAT
-    "hf_",        # HuggingFace
+    "sk-ant-",  # Anthropic
+    "sk-proj-",  # OpenAI project key
+    "sk-",  # OpenAI (legacy; 20+ chars after prefix)
+    "AKIA",  # AWS access key ID
+    "xoxb-",  # Slack bot token
+    "xoxp-",  # Slack user token
+    "xoxa-",  # Slack app token
+    "sk_live_",  # Stripe live key
+    "rk_live_",  # Stripe restricted key
+    "npm_",  # npm token
+    "pypi-",  # PyPI token
+    "glpat-",  # GitLab PAT
+    "hf_",  # HuggingFace
 ]
 
 # Compiled prefix regex (match at start of value).
@@ -82,12 +83,12 @@ _PLACEHOLDER_RES: list[re.Pattern[str]] = [
 # ---------------------------------------------------------------------------
 
 _SHELL_META_PATTERNS: list[re.Pattern[str]] = [
-    re.compile(r"\$\("),       # command substitution
-    re.compile(r"`"),          # backtick substitution
-    re.compile(r"\|"),         # pipe
-    re.compile(r";"),          # command separator
-    re.compile(r"&&"),         # logical AND
-    re.compile(r">>"),         # append redirect
+    re.compile(r"\$\("),  # command substitution
+    re.compile(r"`"),  # backtick substitution
+    re.compile(r"\|"),  # pipe
+    re.compile(r";"),  # command separator
+    re.compile(r"&&"),  # logical AND
+    re.compile(r">>"),  # append redirect
 ]
 
 # ---------------------------------------------------------------------------
@@ -118,6 +119,7 @@ _REPO_MCP_FILES: list[str] = [
     "mcp-manifest.json",
 ]
 
+
 # User-level config files (absolute, expanded at runtime).
 def _user_mcp_files() -> list[Path]:
     home = Path.home()
@@ -134,6 +136,7 @@ def _user_mcp_files() -> list[Path]:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _is_env_ref(value: str) -> bool:
     """True if the value is an env var reference like ${FOO}."""
@@ -206,6 +209,7 @@ def _is_trifecta_server(name: str) -> bool:
 # Per-config analysis
 # ---------------------------------------------------------------------------
 
+
 def _audit_mcp_config(
     config_path: Path,
     *,
@@ -256,30 +260,34 @@ def _audit_mcp_config(
                     continue
                 check = _check_value_for_secret(env_key, env_val)
                 if check and not has_any_secret:
-                    findings.append({
-                        "check_id": "mcp_hardcoded_secret",
-                        "severity": "error",
-                        "file": rel_label,
-                        "server": server_name,
-                        "message": (
-                            f"Hardcoded secret in env.{env_key} for server '{server_name}' "
-                            f"-- use ${{VAR}} env var reference instead"
-                        ),
-                    })
+                    findings.append(
+                        {
+                            "check_id": "mcp_hardcoded_secret",
+                            "severity": "error",
+                            "file": rel_label,
+                            "server": server_name,
+                            "message": (
+                                f"Hardcoded secret in env.{env_key} for server '{server_name}' "
+                                f"-- use ${{VAR}} env var reference instead"
+                            ),
+                        }
+                    )
                     has_any_secret = True
 
                 # --- mcp_env_literal: literal string instead of ${VAR} ---
                 if not _is_env_ref(env_val) and not _is_placeholder(env_val):
-                    findings.append({
-                        "check_id": "mcp_env_literal",
-                        "severity": "warning",
-                        "file": rel_label,
-                        "server": server_name,
-                        "message": (
-                            f"env.{env_key} for server '{server_name}' is a literal "
-                            f"string, not a ${{VAR}} reference"
-                        ),
-                    })
+                    findings.append(
+                        {
+                            "check_id": "mcp_env_literal",
+                            "severity": "warning",
+                            "file": rel_label,
+                            "server": server_name,
+                            "message": (
+                                f"env.{env_key} for server '{server_name}' is a literal "
+                                f"string, not a ${{VAR}} reference"
+                            ),
+                        }
+                    )
 
         # --- mcp_hardcoded_secret: check args for secrets ---
         args = server_cfg.get("args", [])
@@ -289,16 +297,18 @@ def _audit_mcp_config(
                     continue
                 check = _check_value_for_secret("arg", arg)
                 if check and not has_any_secret:
-                    findings.append({
-                        "check_id": "mcp_hardcoded_secret",
-                        "severity": "error",
-                        "file": rel_label,
-                        "server": server_name,
-                        "message": (
-                            f"Hardcoded secret in args for server '{server_name}' "
-                            f"-- use env var reference instead"
-                        ),
-                    })
+                    findings.append(
+                        {
+                            "check_id": "mcp_hardcoded_secret",
+                            "severity": "error",
+                            "file": rel_label,
+                            "server": server_name,
+                            "message": (
+                                f"Hardcoded secret in args for server '{server_name}' "
+                                f"-- use env var reference instead"
+                            ),
+                        }
+                    )
                     has_any_secret = True
 
         # --- mcp_command_injection ---
@@ -309,60 +319,68 @@ def _audit_mcp_config(
         if isinstance(args, list):
             cmd_parts.extend(str(a) for a in args if isinstance(a, str))
         if cmd_parts and _check_command_injection(cmd_parts):
-            findings.append({
-                "check_id": "mcp_command_injection",
-                "severity": "error",
-                "file": rel_label,
-                "server": server_name,
-                "message": (
-                    f"Shell metacharacters in command/args for server '{server_name}' "
-                    f"-- possible command injection"
-                ),
-            })
+            findings.append(
+                {
+                    "check_id": "mcp_command_injection",
+                    "severity": "error",
+                    "file": rel_label,
+                    "server": server_name,
+                    "message": (
+                        f"Shell metacharacters in command/args for server '{server_name}' "
+                        f"-- possible command injection"
+                    ),
+                }
+            )
 
         # --- mcp_untrusted_url ---
         url = server_cfg.get("url")
         if isinstance(url, str):
             domain = _extract_url_domain(url)
             if domain and domain not in trusted_domains:
-                findings.append({
-                    "check_id": "mcp_untrusted_url",
-                    "severity": "warning",
-                    "file": rel_label,
-                    "server": server_name,
-                    "message": (
-                        f"Server '{server_name}' URL points to '{domain}' "
-                        f"which is not in trusted_domains"
-                    ),
-                })
+                findings.append(
+                    {
+                        "check_id": "mcp_untrusted_url",
+                        "severity": "warning",
+                        "file": rel_label,
+                        "server": server_name,
+                        "message": (
+                            f"Server '{server_name}' URL points to '{domain}' "
+                            f"which is not in trusted_domains"
+                        ),
+                    }
+                )
 
         # --- mcp_lethal_trifecta ---
         if _is_trifecta_server(server_name):
-            findings.append({
-                "check_id": "mcp_lethal_trifecta",
-                "severity": "error",
-                "file": rel_label,
-                "server": server_name,
-                "message": (
-                    f"Server '{server_name}' matches a known trifecta-capable service "
-                    f"(private data + untrusted input + external communication)"
-                ),
-            })
+            findings.append(
+                {
+                    "check_id": "mcp_lethal_trifecta",
+                    "severity": "error",
+                    "file": rel_label,
+                    "server": server_name,
+                    "message": (
+                        f"Server '{server_name}' matches a known trifecta-capable service "
+                        f"(private data + untrusted input + external communication)"
+                    ),
+                }
+            )
 
     # --- mcp_config_in_git: check if this config is tracked ---
     if repo_root and has_any_secret:
         try:
             rel_to_repo = str(config_path.relative_to(repo_root))
             if _is_tracked_by_git(repo_root, rel_to_repo):
-                findings.append({
-                    "check_id": "mcp_config_in_git",
-                    "severity": "warning",
-                    "file": rel_label,
-                    "server": "(all)",
-                    "message": (
-                        f"MCP config '{rel_to_repo}' containing secrets is tracked by git"
-                    ),
-                })
+                findings.append(
+                    {
+                        "check_id": "mcp_config_in_git",
+                        "severity": "warning",
+                        "file": rel_label,
+                        "server": "(all)",
+                        "message": (
+                            f"MCP config '{rel_to_repo}' containing secrets is tracked by git"
+                        ),
+                    }
+                )
         except ValueError:
             pass
 
@@ -372,6 +390,7 @@ def _audit_mcp_config(
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def audit_mcp_security(
     *,

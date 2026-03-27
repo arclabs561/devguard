@@ -5,7 +5,6 @@ import json
 import os
 import subprocess
 from collections import Counter
-from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,22 +12,24 @@ from threading import Lock
 from typing import Any
 
 from devguard.sweeps._common import default_dev_root as _default_dev_root
-from devguard.sweeps._common import iter_git_repos, utc_now as _utc_now
-
+from devguard.sweeps._common import iter_git_repos
+from devguard.sweeps._common import utc_now as _utc_now
 
 # Files where hash-like strings routinely trigger false positives (e.g. SentryToken on uv.lock).
-LOCK_FILE_BASENAMES: frozenset[str] = frozenset({
-    "uv.lock",
-    "Cargo.lock",
-    "package-lock.json",
-    "pnpm-lock.yaml",
-    "yarn.lock",
-    "poetry.lock",
-    "Gemfile.lock",
-    "composer.lock",
-    "Pipfile.lock",
-    "requirements.lock",
-})
+LOCK_FILE_BASENAMES: frozenset[str] = frozenset(
+    {
+        "uv.lock",
+        "Cargo.lock",
+        "package-lock.json",
+        "pnpm-lock.yaml",
+        "yarn.lock",
+        "poetry.lock",
+        "Gemfile.lock",
+        "composer.lock",
+        "Pipfile.lock",
+        "requirements.lock",
+    }
+)
 
 
 def _dirty_paths(repo: Path, timeout_s: int = 8) -> tuple[list[str], str | None]:
@@ -116,7 +117,9 @@ def _parse_trufflehog_filesystem_json(stdout: str, repo_path: str) -> list[Local
             continue
         if not isinstance(obj, dict):
             continue
-        detector = obj.get("DetectorName") or obj.get("Detector") or obj.get("DetectorType") or "unknown"
+        detector = (
+            obj.get("DetectorName") or obj.get("Detector") or obj.get("DetectorType") or "unknown"
+        )
 
         file_path = None
         line_no = None
@@ -195,7 +198,11 @@ def scan_dirty_worktrees(
     def _classify(
         repo: Path, repo_path: str, abs_path: str
     ) -> tuple[bool | None, bool | None, str | None, str]:
-        rel = abs_path[len(repo_path.rstrip("/") + "/") :] if abs_path.startswith(repo_path.rstrip("/") + "/") else ""
+        rel = (
+            abs_path[len(repo_path.rstrip("/") + "/") :]
+            if abs_path.startswith(repo_path.rstrip("/") + "/")
+            else ""
+        )
         tracked = _git_check_tracked(repo, rel) if rel else None
         ignored = _git_check_ignored(repo, rel) if rel else None
         exposure = None
@@ -283,7 +290,11 @@ def scan_dirty_worktrees(
                 env=os.environ.copy(),
             )
             if cnt.returncode != 0:
-                return None, None, (cnt.stderr or "").strip()[:200] or f"rev-list exit={cnt.returncode}"
+                return (
+                    None,
+                    None,
+                    (cnt.stderr or "").strip()[:200] or f"rev-list exit={cnt.returncode}",
+                )
             # output: "<left>\t<right>" where left=behind? Actually for HEAD...@{u}, left=commits unique to HEAD, right=unique to upstream.
             parts = (cnt.stdout or "").strip().split()
             if len(parts) >= 2:
@@ -377,7 +388,9 @@ def scan_dirty_worktrees(
         if res.returncode not in (0, 183):
             stderr = (res.stderr or "").strip()
             if stderr:
-                repo_errors.append(f"trufflehog filesystem error for {repo_path}: exit={res.returncode} stderr={stderr[:600]}")
+                repo_errors.append(
+                    f"trufflehog filesystem error for {repo_path}: exit={res.returncode} stderr={stderr[:600]}"
+                )
 
         if res.stdout:
             parsed = _parse_trufflehog_filesystem_json(res.stdout, repo_path=repo_path)
