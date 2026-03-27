@@ -199,4 +199,3 @@ class GuardianReport(BaseModel):
         for check in self.checks:
             high.extend([f for f in check.findings if f.severity == Severity.HIGH])
         return high
-

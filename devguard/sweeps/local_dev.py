@@ -21,7 +21,7 @@ from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from devguard.sweeps._common import default_dev_root, utc_now
+from devguard.sweeps._common import utc_now
 
 DEFAULT_DENY_GLOBS: list[str] = [
     "**/.env",
@@ -251,7 +251,6 @@ def write_report(path: Path, hits: Iterable[Hit], meta: dict) -> None:
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
 
 
 # default_dev_root is imported from _common and re-exported via __init__.py

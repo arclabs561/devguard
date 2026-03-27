@@ -139,7 +139,9 @@ def test_passphrase_no_passphrase(tmp_path: Path) -> None:
         args=[], returncode=0, stdout="ssh-ed25519 AAAA...\n", stderr=""
     )
     with patch("devguard.sweeps.ssh_key_audit.subprocess.run", return_value=result):
-        with patch("devguard.sweeps.ssh_key_audit.shutil.which", return_value="/usr/bin/ssh-keygen"):
+        with patch(
+            "devguard.sweeps.ssh_key_audit.shutil.which", return_value="/usr/bin/ssh-keygen"
+        ):
             has_pp, errors = _check_passphrase(key)
     assert has_pp is False
     assert errors == []
@@ -151,10 +153,15 @@ def test_passphrase_has_passphrase(tmp_path: Path) -> None:
     key.write_text("fake")
 
     result = subprocess.CompletedProcess(
-        args=[], returncode=255, stdout="", stderr="incorrect passphrase supplied to decrypt private key"
+        args=[],
+        returncode=255,
+        stdout="",
+        stderr="incorrect passphrase supplied to decrypt private key",
     )
     with patch("devguard.sweeps.ssh_key_audit.subprocess.run", return_value=result):
-        with patch("devguard.sweeps.ssh_key_audit.shutil.which", return_value="/usr/bin/ssh-keygen"):
+        with patch(
+            "devguard.sweeps.ssh_key_audit.shutil.which", return_value="/usr/bin/ssh-keygen"
+        ):
             has_pp, errors = _check_passphrase(key)
     assert has_pp is True
     assert errors == []
@@ -169,7 +176,9 @@ def test_passphrase_bad_passphrase_message(tmp_path: Path) -> None:
         args=[], returncode=255, stdout="", stderr="bad passphrase"
     )
     with patch("devguard.sweeps.ssh_key_audit.subprocess.run", return_value=result):
-        with patch("devguard.sweeps.ssh_key_audit.shutil.which", return_value="/usr/bin/ssh-keygen"):
+        with patch(
+            "devguard.sweeps.ssh_key_audit.shutil.which", return_value="/usr/bin/ssh-keygen"
+        ):
             has_pp, errors = _check_passphrase(key)
     assert has_pp is True
 
@@ -217,12 +226,14 @@ def test_audit_ssh_keys_basic(tmp_path: Path) -> None:
     cfg.write_text("Host *\n  ForwardAgent no\n")
 
     keygen_l_result = subprocess.CompletedProcess(
-        args=[], returncode=0,
+        args=[],
+        returncode=0,
         stdout="256 SHA256:testfp1234567890abcdefghijklmnopqrstuvw user@host (ED25519)",
         stderr="",
     )
     keygen_y_result = subprocess.CompletedProcess(
-        args=[], returncode=0,
+        args=[],
+        returncode=0,
         stdout="ssh-ed25519 AAAA...\n",
         stderr="",
     )
@@ -235,7 +246,9 @@ def test_audit_ssh_keys_basic(tmp_path: Path) -> None:
         return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="")
 
     with patch("devguard.sweeps.ssh_key_audit.subprocess.run", side_effect=mock_run):
-        with patch("devguard.sweeps.ssh_key_audit.shutil.which", return_value="/usr/bin/ssh-keygen"):
+        with patch(
+            "devguard.sweeps.ssh_key_audit.shutil.which", return_value="/usr/bin/ssh-keygen"
+        ):
             report, errors = audit_ssh_keys(ssh_dir=ssh_dir, check_github=False)
 
     assert report["summary"]["keys_scanned"] == 1
@@ -258,12 +271,15 @@ def test_audit_ssh_keys_weak_rsa(tmp_path: Path) -> None:
     key.chmod(0o600)
 
     keygen_l_result = subprocess.CompletedProcess(
-        args=[], returncode=0,
+        args=[],
+        returncode=0,
         stdout="2048 SHA256:rsafp1234567890abcdefghijklmnopqrstuvwxy user@host (RSA)",
         stderr="",
     )
     keygen_y_result = subprocess.CompletedProcess(
-        args=[], returncode=255, stdout="",
+        args=[],
+        returncode=255,
+        stdout="",
         stderr="incorrect passphrase supplied to decrypt private key",
     )
 
@@ -275,7 +291,9 @@ def test_audit_ssh_keys_weak_rsa(tmp_path: Path) -> None:
         return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="")
 
     with patch("devguard.sweeps.ssh_key_audit.subprocess.run", side_effect=mock_run):
-        with patch("devguard.sweeps.ssh_key_audit.shutil.which", return_value="/usr/bin/ssh-keygen"):
+        with patch(
+            "devguard.sweeps.ssh_key_audit.shutil.which", return_value="/usr/bin/ssh-keygen"
+        ):
             report, _ = audit_ssh_keys(ssh_dir=ssh_dir, check_github=False, min_rsa_bits=3072)
 
     kr = report["keys"][0]
@@ -294,12 +312,15 @@ def test_audit_ssh_keys_dsa_flagged(tmp_path: Path) -> None:
     key.chmod(0o600)
 
     keygen_l_result = subprocess.CompletedProcess(
-        args=[], returncode=0,
+        args=[],
+        returncode=0,
         stdout="1024 SHA256:dsafp1234567890abcdefghijklmnopqrstuvwxy user@host (DSA)",
         stderr="",
     )
     keygen_y_result = subprocess.CompletedProcess(
-        args=[], returncode=255, stdout="",
+        args=[],
+        returncode=255,
+        stdout="",
         stderr="incorrect passphrase supplied to decrypt private key",
     )
 
@@ -311,7 +332,9 @@ def test_audit_ssh_keys_dsa_flagged(tmp_path: Path) -> None:
         return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="")
 
     with patch("devguard.sweeps.ssh_key_audit.subprocess.run", side_effect=mock_run):
-        with patch("devguard.sweeps.ssh_key_audit.shutil.which", return_value="/usr/bin/ssh-keygen"):
+        with patch(
+            "devguard.sweeps.ssh_key_audit.shutil.which", return_value="/usr/bin/ssh-keygen"
+        ):
             report, _ = audit_ssh_keys(ssh_dir=ssh_dir, check_github=False)
 
     kr = report["keys"][0]
@@ -329,12 +352,15 @@ def test_audit_ssh_keys_bad_permissions(tmp_path: Path) -> None:
     key.chmod(0o644)
 
     keygen_l_result = subprocess.CompletedProcess(
-        args=[], returncode=0,
+        args=[],
+        returncode=0,
         stdout="256 SHA256:fp12345678901234567890abcdefghijklmnopqr user@host (ED25519)",
         stderr="",
     )
     keygen_y_result = subprocess.CompletedProcess(
-        args=[], returncode=255, stdout="",
+        args=[],
+        returncode=255,
+        stdout="",
         stderr="incorrect passphrase supplied to decrypt private key",
     )
 
@@ -346,7 +372,9 @@ def test_audit_ssh_keys_bad_permissions(tmp_path: Path) -> None:
         return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="")
 
     with patch("devguard.sweeps.ssh_key_audit.subprocess.run", side_effect=mock_run):
-        with patch("devguard.sweeps.ssh_key_audit.shutil.which", return_value="/usr/bin/ssh-keygen"):
+        with patch(
+            "devguard.sweeps.ssh_key_audit.shutil.which", return_value="/usr/bin/ssh-keygen"
+        ):
             report, _ = audit_ssh_keys(ssh_dir=ssh_dir, check_github=False)
 
     kr = report["keys"][0]
@@ -365,12 +393,15 @@ def test_audit_ssh_keys_github_cross_ref(tmp_path: Path) -> None:
 
     local_fp = "SHA256:localkey1234567890abcdefghijklmnopqrstuv"
     keygen_l_result = subprocess.CompletedProcess(
-        args=[], returncode=0,
+        args=[],
+        returncode=0,
         stdout=f"256 {local_fp} user@host (ED25519)",
         stderr="",
     )
     keygen_y_result = subprocess.CompletedProcess(
-        args=[], returncode=255, stdout="",
+        args=[],
+        returncode=255,
+        stdout="",
         stderr="incorrect passphrase supplied to decrypt private key",
     )
 
@@ -382,9 +413,7 @@ def test_audit_ssh_keys_github_cross_ref(tmp_path: Path) -> None:
         if cmd[0] == "ssh-keygen" and cmd[1] == "-y":
             return keygen_y_result
         if cmd[0] == "gh":
-            return subprocess.CompletedProcess(
-                args=cmd, returncode=0, stdout=gh_output, stderr=""
-            )
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=gh_output, stderr="")
         return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="")
 
     with patch("devguard.sweeps.ssh_key_audit.subprocess.run", side_effect=mock_run):
@@ -414,5 +443,6 @@ def test_write_report(tmp_path: Path) -> None:
     write_report(out, report)
     assert out.exists()
     import json
+
     loaded = json.loads(out.read_text())
     assert loaded["test"] is True

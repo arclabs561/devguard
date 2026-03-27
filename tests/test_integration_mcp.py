@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+pytest.importorskip("mcp", reason="mcp not installed (monitoring extra)")
+
 from devguard.config import Settings
 from devguard.models import CheckResult, GuardianReport
 
@@ -156,4 +158,3 @@ async def test_mcp_get_unified_alert_history_without_smart_email(mock_settings):
     assert isinstance(result, str)
     data = json.loads(result)
     assert "error" in data
-

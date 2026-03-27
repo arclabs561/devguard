@@ -13,7 +13,8 @@ from typing import Any
 import yaml  # type: ignore[import-untyped]
 
 from devguard.sweeps._common import default_dev_root as _default_dev_root
-from devguard.sweeps._common import iter_git_repos, utc_now as _utc_now
+from devguard.sweeps._common import iter_git_repos
+from devguard.sweeps._common import utc_now as _utc_now
 
 _DEFAULT_REQUIRED_HOOKS: list[str] = ["detect-secrets", "gitleaks", "trufflehog"]
 
@@ -75,44 +76,52 @@ def audit_pre_commit(
 
             if not config_path.is_file():
                 total_no_config += 1
-                repo_findings.append({
-                    "check_id": "no_pre_commit_config",
-                    "severity": "warning",
-                    "message": "Repo has no .pre-commit-config.yaml",
-                })
+                repo_findings.append(
+                    {
+                        "check_id": "no_pre_commit_config",
+                        "severity": "warning",
+                        "message": "Repo has no .pre-commit-config.yaml",
+                    }
+                )
             else:
                 # Check if hook is installed in .git/hooks
                 if not _has_pre_commit_hook_installed(repo):
                     total_not_installed += 1
-                    repo_findings.append({
-                        "check_id": "hook_not_installed",
-                        "severity": "warning",
-                        "message": (
-                            "Config exists but .git/hooks/pre-commit is missing "
-                            "or doesn't contain 'pre-commit'"
-                        ),
-                    })
+                    repo_findings.append(
+                        {
+                            "check_id": "hook_not_installed",
+                            "severity": "warning",
+                            "message": (
+                                "Config exists but .git/hooks/pre-commit is missing "
+                                "or doesn't contain 'pre-commit'"
+                            ),
+                        }
+                    )
 
                 # Check for secret scanning hooks
                 hook_ids = _find_hook_ids(config_path)
                 has_secret_hook = any(h in hook_ids for h in req_hooks)
                 if not has_secret_hook:
                     total_no_secret_hook += 1
-                    repo_findings.append({
-                        "check_id": "no_secret_scanning_hook",
-                        "severity": "error",
-                        "message": (
-                            f"No secret scanning hook found. "
-                            f"Expected at least one of: {req_hooks}. "
-                            f"Found hooks: {sorted(hook_ids) if hook_ids else '(none)'}"
-                        ),
-                    })
+                    repo_findings.append(
+                        {
+                            "check_id": "no_secret_scanning_hook",
+                            "severity": "error",
+                            "message": (
+                                f"No secret scanning hook found. "
+                                f"Expected at least one of: {req_hooks}. "
+                                f"Found hooks: {sorted(hook_ids) if hook_ids else '(none)'}"
+                            ),
+                        }
+                    )
 
             if repo_findings:
-                findings.append({
-                    "repo_path": str(repo),
-                    "findings": repo_findings,
-                })
+                findings.append(
+                    {
+                        "repo_path": str(repo),
+                        "findings": repo_findings,
+                    }
+                )
 
         except Exception as exc:
             errors.append(f"failed to audit {repo}: {exc}")

@@ -10,6 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+pytest.importorskip("aiosmtplib", reason="aiosmtplib not installed (monitoring extra)")
+
 from devguard.config import Settings
 from devguard.models import CheckResult, GuardianReport, Severity, Vulnerability
 from devguard.reporting import Reporter
@@ -137,9 +139,7 @@ async def test_email_smtp_sends_when_issues_present(mock_settings_smtp, sample_r
 
 
 @pytest.mark.asyncio
-async def test_email_smtp_skips_when_no_issues(
-    mock_settings_smtp, sample_report_no_issues
-):
+async def test_email_smtp_skips_when_no_issues(mock_settings_smtp, sample_report_no_issues):
     """Test that SMTP email is skipped when no issues and email_only_on_issues=True."""
     reporter = Reporter(mock_settings_smtp)
 
@@ -235,4 +235,3 @@ def test_email_history_retrieval(mock_settings_smtp, temp_env_file):
     # Test limit
     limited = reporter.get_email_history(limit=1)
     assert len(limited) == 1
-
