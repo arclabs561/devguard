@@ -1,17 +1,12 @@
 name: devguard-self-scan
-
 on:
   pull_request:
   push:
     branches: [main]
   workflow_dispatch:
-  schedule:
-    - cron: "0 6 * * *"
-
 permissions:
   contents: read
   security-events: write
-
 jobs:
   devguard-sweep:
     runs-on: ubuntu-latest
@@ -19,23 +14,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - uses: astral-sh/setup-uv@v4
-
       - name: Install devguard
         run: uv pip install --system -e .
-
       - name: Run devguard sweep
         run: devguard sweep --repo . --only local_dev,gitignore_audit,dependency_audit,ai_editor_config_audit --format sarif > devguard-results.sarif
         continue-on-error: true
-
       - name: Upload SARIF
         if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: devguard-results.sarif
           category: devguard
-
   trufflehog:
     runs-on: ubuntu-latest
     steps:
@@ -46,4 +36,4 @@ jobs:
         uses: trufflesecurity/trufflehog@main
         with:
           path: ./
-          extra_args: --results=verified,unknown --no-update
+          extra_args: --results=verified,unknown
