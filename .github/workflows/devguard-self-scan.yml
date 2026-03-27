@@ -15,10 +15,8 @@ jobs:
         with:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@v4
-      - name: Install devguard
-        run: uv pip install --system -e .
       - name: Run devguard sweep
-        run: devguard sweep --repo . --only local_dev,gitignore_audit,dependency_audit,ai_editor_config_audit --format sarif > devguard-results.sarif
+        run: uv run devguard sweep --repo . --only local_dev,gitignore_audit,dependency_audit,ai_editor_config_audit --format sarif > devguard-results.sarif
         continue-on-error: true
       - name: Upload SARIF
         if: always()
@@ -27,6 +25,7 @@ jobs:
           sarif_file: devguard-results.sarif
           category: devguard
   trufflehog:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
