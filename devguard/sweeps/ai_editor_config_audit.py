@@ -21,7 +21,8 @@ from pathlib import Path
 from typing import Any
 
 from devguard.sweeps._common import default_dev_root as _default_dev_root
-from devguard.sweeps._common import iter_git_repos, utc_now as _utc_now
+from devguard.sweeps._common import iter_git_repos
+from devguard.sweeps._common import utc_now as _utc_now
 
 
 def _is_likely_public(repo: Path) -> bool:

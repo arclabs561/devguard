@@ -3,6 +3,9 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+pytest.importorskip("fastapi", reason="fastapi not installed (monitoring extra)")
+
 from fastapi.testclient import TestClient
 
 from devguard.config import Settings
@@ -83,4 +86,3 @@ def test_dashboard_report_endpoint_requires_auth(client):
     response = client.get("/api/report")
     # Endpoint exists (may be public or require auth depending on implementation)
     assert response.status_code in [200, 401, 403, 404]
-

@@ -17,11 +17,20 @@ from devguard.sweeps._common import utc_now as _utc_now
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
-_LOCK_FILE_BASENAMES: frozenset[str] = frozenset({
-    "uv.lock", "Cargo.lock", "package-lock.json", "pnpm-lock.yaml",
-    "yarn.lock", "poetry.lock", "Gemfile.lock", "composer.lock",
-    "Pipfile.lock", "requirements.lock",
-})
+_LOCK_FILE_BASENAMES: frozenset[str] = frozenset(
+    {
+        "uv.lock",
+        "Cargo.lock",
+        "package-lock.json",
+        "pnpm-lock.yaml",
+        "yarn.lock",
+        "poetry.lock",
+        "Gemfile.lock",
+        "composer.lock",
+        "Pipfile.lock",
+        "requirements.lock",
+    }
+)
 
 
 def _run(cmd: list[str], timeout_s: int) -> subprocess.CompletedProcess[str]:
@@ -38,7 +47,9 @@ def _match_any(name: str, patterns: list[str]) -> bool:
     return any(fnmatch.fnmatch(name, p) for p in patterns)
 
 
-def _list_public_repos(owner: str, include_forks: bool, timeout_s: int = 30) -> tuple[list[str], list[str]]:
+def _list_public_repos(
+    owner: str, include_forks: bool, timeout_s: int = 30
+) -> tuple[list[str], list[str]]:
     """List public repos for a GitHub owner via `gh repo list`."""
     errors: list[str] = []
     cmd = [
@@ -59,7 +70,9 @@ def _list_public_repos(owner: str, include_forks: bool, timeout_s: int = 30) -> 
         return [], [f"gh repo list failed for {owner}: {e}"]
 
     if res.returncode != 0:
-        errors.append(f"gh repo list failed for {owner}: exit={res.returncode} stderr={res.stderr.strip()[:300]}")
+        errors.append(
+            f"gh repo list failed for {owner}: exit={res.returncode} stderr={res.stderr.strip()[:300]}"
+        )
         return [], errors
 
     try:
@@ -84,7 +97,9 @@ def _list_public_repos(owner: str, include_forks: bool, timeout_s: int = 30) -> 
     return sorted(set(repos)), errors
 
 
-def _list_public_repos_via_api(owner: str, include_forks: bool, token: str | None) -> tuple[list[str], list[str]]:
+def _list_public_repos_via_api(
+    owner: str, include_forks: bool, token: str | None
+) -> tuple[list[str], list[str]]:
     """List public repos via GitHub REST API (token-only; no gh required)."""
     errors: list[str] = []
     headers = {"Accept": "application/vnd.github+json"}
@@ -158,13 +173,16 @@ def _get_github_token() -> tuple[str | None, list[str]]:
 
     # Best effort: derive from gh if logged in.
     try:
-        if subprocess.run(
-            ["gh", "auth", "status"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            env=os.environ.copy(),
-        ).returncode == 0:
+        if (
+            subprocess.run(
+                ["gh", "auth", "status"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                env=os.environ.copy(),
+            ).returncode
+            == 0
+        ):
             res = subprocess.run(
                 ["gh", "auth", "token"],
                 capture_output=True,
@@ -248,7 +266,9 @@ def _expand_owners(owners: list[str], token: str | None) -> tuple[list[str], lis
         ) as client:
             while True:
                 try:
-                    r = client.get("https://api.github.com/user/orgs", params={"per_page": 100, "page": page})
+                    r = client.get(
+                        "https://api.github.com/user/orgs", params={"per_page": 100, "page": page}
+                    )
                     r.raise_for_status()
                     data = r.json()
                     if not isinstance(data, list) or not data:
@@ -295,7 +315,9 @@ def _extract_finding(obj: dict[str, Any], repo: str) -> RedactedFinding | None:
     if not isinstance(obj, dict):
         return None
 
-    detector = obj.get("DetectorName") or obj.get("Detector") or obj.get("DetectorType") or "unknown"
+    detector = (
+        obj.get("DetectorName") or obj.get("Detector") or obj.get("DetectorType") or "unknown"
+    )
     verified = obj.get("Verified")
     if verified is not None:
         verified = bool(verified)
@@ -424,7 +446,9 @@ def scan_public_github_repos(
         # but clamp it so CI doesn't get stuck.
         per_repo_timeout = max(30, min(int(timeout_s), 600))
 
-        def _scan_one_repo_trufflehog(repo_full: str) -> tuple[str, list[RedactedFinding], list[str]]:
+        def _scan_one_repo_trufflehog(
+            repo_full: str,
+        ) -> tuple[str, list[RedactedFinding], list[str]]:
             repo_errors: list[str] = []
             repo_findings: list[RedactedFinding] = []
 
@@ -524,7 +548,9 @@ def scan_public_github_repos(
 
             return repo_full, repo_findings, repo_errors
 
-        def _scan_one_repo_kingfisher(repo_full: str) -> tuple[str, list[RedactedFinding], list[str]]:
+        def _scan_one_repo_kingfisher(
+            repo_full: str,
+        ) -> tuple[str, list[RedactedFinding], list[str]]:
             repo_errors: list[str] = []
             repo_findings: list[RedactedFinding] = []
 

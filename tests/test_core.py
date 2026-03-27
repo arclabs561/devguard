@@ -4,6 +4,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+pytest.importorskip("github", reason="pygithub not installed (monitoring extra)")
+
 from devguard.core import Guardian
 from devguard.models import CheckResult, CheckStatus, DeploymentStatus, Severity, Vulnerability
 

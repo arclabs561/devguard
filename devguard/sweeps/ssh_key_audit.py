@@ -19,7 +19,6 @@ from typing import Any
 
 from devguard.sweeps._common import utc_now as _utc_now
 
-
 # Well-known private key filenames (without path).
 _WELL_KNOWN_NAMES = {"id_rsa", "id_ecdsa", "id_ed25519", "id_dsa"}
 
@@ -234,16 +233,18 @@ def audit_ssh_keys(
         if not perms_ok:
             issues.append(f"permissions too open: {perms_octal} (should be 0600 or 0400)")
 
-        key_results.append({
-            "key_path": str(key_path),
-            "algorithm": algo,
-            "bits": bits,
-            "fingerprint": fingerprint,
-            "has_passphrase": has_passphrase,
-            "permissions": perms_octal,
-            "permissions_ok": perms_ok,
-            "issues": issues,
-        })
+        key_results.append(
+            {
+                "key_path": str(key_path),
+                "algorithm": algo,
+                "bits": bits,
+                "fingerprint": fingerprint,
+                "has_passphrase": has_passphrase,
+                "permissions": perms_octal,
+                "permissions_ok": perms_ok,
+                "issues": issues,
+            }
+        )
 
     # GitHub cross-reference
     github_cross_ref: dict[str, Any] | None = None
@@ -301,16 +302,13 @@ def audit_ssh_keys(
         "summary": {
             "keys_scanned": len(key_results),
             "issues_total": total_issues,
-            "keys_without_passphrase": sum(
-                1 for k in key_results if k["has_passphrase"] is False
-            ),
+            "keys_without_passphrase": sum(1 for k in key_results if k["has_passphrase"] is False),
             "keys_with_weak_algorithm": sum(
-                1 for k in key_results
+                1
+                for k in key_results
                 if any("deprecated" in i or "bit" in i or "NIST" in i for i in k["issues"])
             ),
-            "keys_with_bad_permissions": sum(
-                1 for k in key_results if not k["permissions_ok"]
-            ),
+            "keys_with_bad_permissions": sum(1 for k in key_results if not k["permissions_ok"]),
         },
         "keys": key_results,
         "github_cross_reference": github_cross_ref,

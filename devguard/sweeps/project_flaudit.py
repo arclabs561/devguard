@@ -24,12 +24,26 @@ logger = logging.getLogger(__name__)
 README_GLOBS = ["README*", "readme*", "Readme*"]
 IMPL_EXTENSIONS = {".py", ".rs", ".ts", ".tsx", ".js", ".jsx", ".go", ".java", ".kt"}
 IMPL_EXCLUDE_DIRS = {
-    ".git", "node_modules", "target", ".venv", "venv", "__pycache__",
-    ".pytest_cache", ".ruff_cache", "dist", "build", ".next",
+    ".git",
+    "node_modules",
+    "target",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".pytest_cache",
+    ".ruff_cache",
+    "dist",
+    "build",
+    ".next",
 }
 TEST_PATTERNS = [
-    "**/test_*.py", "**/tests/**/*.py", "**/*_test.py", "**/*.test.ts",
-    "**/*.spec.ts", "**/__tests__/**/*", "**/test/**/*",
+    "**/test_*.py",
+    "**/tests/**/*.py",
+    "**/*_test.py",
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "**/__tests__/**/*",
+    "**/test/**/*",
 ]
 RULES_GLOBS = [".cursor/rules/**/*.mdc", ".cursor/rules/**/*.md"]
 
@@ -91,7 +105,16 @@ def _discover_git_repos(
             if not child.is_dir():
                 continue
             name = child.name
-            if name in {".git", ".venv", "venv", "node_modules", "target", ".cache", ".pytest_cache", ".ruff_cache"}:
+            if name in {
+                ".git",
+                ".venv",
+                "venv",
+                "node_modules",
+                "target",
+                ".cache",
+                ".pytest_cache",
+                ".ruff_cache",
+            }:
                 continue
             if depth == 0 and skip_prefixes:
                 if any(name.startswith(p) for p in skip_prefixes) and name not in allow_names:
@@ -241,6 +264,7 @@ def files_to_prompt(
 
     Returns (prompt_text, total_char_count).
     """
+
     def in_scope(rel: str) -> bool:
         if scope_files is None:
             return True
@@ -336,9 +360,7 @@ def files_to_prompt(
                         ws_rules_text.append(f"### {fname}\n\n{text}")
                         ws_chars += len(text)
             if ws_rules_text:
-                parts.append(
-                    "## Workspace Rules (shared)\n\n" + "\n\n".join(ws_rules_text)
-                )
+                parts.append("## Workspace Rules (shared)\n\n" + "\n\n".join(ws_rules_text))
                 total += ws_chars
 
     header = f"# Project: {repo.name}\n\nPath: {repo}\n\n"
@@ -498,7 +520,11 @@ def scan_project_flaudit(
     and stricter_public_prompt is used. Otherwise k_recent applies. Returns (results, metadata).
     """
     exclude_globs = exclude_repo_globs or [
-        "*/_trash/*", "*/_scratch/*", "*/_external/*", "*/_archive/*", "*/_forks/*",
+        "*/_trash/*",
+        "*/_scratch/*",
+        "*/_external/*",
+        "*/_archive/*",
+        "*/_forks/*",
     ]
     repos = _discover_git_repos(
         dev_root,
@@ -531,6 +557,7 @@ def scan_project_flaudit(
     llm_service = None
     if settings and getattr(settings, "openrouter_api_key", None):
         from devguard.llm_service import LLMService
+
         llm_service = LLMService(settings)
 
     # Phase 1: build prompts (CPU/IO-bound git work, no async needed).
@@ -539,7 +566,9 @@ def scan_project_flaudit(
         tracked = _git_ls_files(repo)
         if not tracked:
             results.append(
-                ProjectFlauditResult(repo_path=str(repo), prompt_char_count=0, error="no tracked files")
+                ProjectFlauditResult(
+                    repo_path=str(repo), prompt_char_count=0, error="no tracked files"
+                )
             )
             continue
 
@@ -583,8 +612,10 @@ def scan_project_flaudit(
 
     # Phase 2: send all LLM calls concurrently in a single event loop.
     if pending and llm_service:
+
         async def _run_all() -> list[tuple[Path, int, str | Exception]]:
             """Fire all LLM calls concurrently; return (repo, char_count, raw_response | Exception)."""
+
             async def _one(repo: Path, prompt: str, cc: int) -> tuple[Path, int, str | Exception]:
                 try:
                     raw = await llm_service.analyze_project_flaudit(
@@ -603,12 +634,16 @@ def scan_project_flaudit(
         for repo, char_count, raw_or_err in llm_results:
             if isinstance(raw_or_err, Exception):
                 results.append(
-                    ProjectFlauditResult(repo_path=str(repo), prompt_char_count=char_count, error=str(raw_or_err))
+                    ProjectFlauditResult(
+                        repo_path=str(repo), prompt_char_count=char_count, error=str(raw_or_err)
+                    )
                 )
             else:
                 findings = _parse_llm_findings(raw_or_err)
                 results.append(
-                    ProjectFlauditResult(repo_path=str(repo), prompt_char_count=char_count, findings=findings)
+                    ProjectFlauditResult(
+                        repo_path=str(repo), prompt_char_count=char_count, findings=findings
+                    )
                 )
 
     meta = {

@@ -3,9 +3,9 @@
 from pathlib import Path
 
 from devguard.sweeps.ai_editor_config_audit import (
+    RepoAuditResult,
     _check_unicode_injection,
     _check_unicode_injection_repo,
-    RepoAuditResult,
 )
 
 

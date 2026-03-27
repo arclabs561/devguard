@@ -19,9 +19,7 @@ def temp_project_dir():
 
         # Create a package.json
         package_json = project_path / "package.json"
-        package_json.write_text(
-            json.dumps({"name": "test-package", "version": "1.0.0"})
-        )
+        package_json.write_text(json.dumps({"name": "test-package", "version": "1.0.0"}))
 
         # Create a .git directory
         git_dir = project_path / ".git"
@@ -118,4 +116,3 @@ def test_discovery_result_to_dict():
     assert "npm" in result_dict["resources"]
     assert len(result_dict["resources"]["npm"]) == 2
     assert len(result_dict["errors"]) == 1
-

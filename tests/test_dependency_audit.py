@@ -35,21 +35,23 @@ class TestParseCargoAuditJson:
         assert parse_cargo_audit_json(data) == []
 
     def test_single_vuln(self):
-        data = json.dumps({
-            "vulnerabilities": {
-                "list": [
-                    {
-                        "advisory": {
-                            "id": "RUSTSEC-2024-0001",
-                            "title": "Use after free in foo",
-                            "severity": "high",
-                            "cvss": None,
-                        },
-                        "package": {"name": "foo", "version": "1.0.0"},
-                    }
-                ]
+        data = json.dumps(
+            {
+                "vulnerabilities": {
+                    "list": [
+                        {
+                            "advisory": {
+                                "id": "RUSTSEC-2024-0001",
+                                "title": "Use after free in foo",
+                                "severity": "high",
+                                "cvss": None,
+                            },
+                            "package": {"name": "foo", "version": "1.0.0"},
+                        }
+                    ]
+                }
             }
-        })
+        )
         result = parse_cargo_audit_json(data)
         assert len(result) == 1
         assert result[0].id == "RUSTSEC-2024-0001"
@@ -58,20 +60,26 @@ class TestParseCargoAuditJson:
         assert result[0].title == "Use after free in foo"
 
     def test_multiple_vulns(self):
-        data = json.dumps({
-            "vulnerabilities": {
-                "list": [
-                    {
-                        "advisory": {"id": "RUSTSEC-0001", "title": "a", "severity": "critical"},
-                        "package": {"name": "bar"},
-                    },
-                    {
-                        "advisory": {"id": "RUSTSEC-0002", "title": "b", "severity": "low"},
-                        "package": {"name": "baz"},
-                    },
-                ]
+        data = json.dumps(
+            {
+                "vulnerabilities": {
+                    "list": [
+                        {
+                            "advisory": {
+                                "id": "RUSTSEC-0001",
+                                "title": "a",
+                                "severity": "critical",
+                            },
+                            "package": {"name": "bar"},
+                        },
+                        {
+                            "advisory": {"id": "RUSTSEC-0002", "title": "b", "severity": "low"},
+                            "package": {"name": "baz"},
+                        },
+                    ]
+                }
             }
-        })
+        )
         result = parse_cargo_audit_json(data)
         assert len(result) == 2
         assert result[0].severity == "critical"
@@ -90,31 +98,35 @@ class TestParseNpmAuditJson:
         assert parse_npm_audit_json(data) == []
 
     def test_single_vuln(self):
-        data = json.dumps({
-            "vulnerabilities": {
-                "lodash": {
-                    "name": "lodash",
-                    "severity": "high",
-                    "title": "Prototype pollution",
-                    "fixAvailable": {"name": "lodash", "version": "4.17.21"},
+        data = json.dumps(
+            {
+                "vulnerabilities": {
+                    "lodash": {
+                        "name": "lodash",
+                        "severity": "high",
+                        "title": "Prototype pollution",
+                        "fixAvailable": {"name": "lodash", "version": "4.17.21"},
+                    }
                 }
             }
-        })
+        )
         result = parse_npm_audit_json(data)
         assert len(result) == 1
         assert result[0].package == "lodash"
         assert result[0].severity == "high"
 
     def test_moderate_maps_to_medium(self):
-        data = json.dumps({
-            "vulnerabilities": {
-                "express": {
-                    "name": "express",
-                    "severity": "moderate",
-                    "title": "Open redirect",
+        data = json.dumps(
+            {
+                "vulnerabilities": {
+                    "express": {
+                        "name": "express",
+                        "severity": "moderate",
+                        "title": "Open redirect",
+                    }
                 }
             }
-        })
+        )
         result = parse_npm_audit_json(data)
         assert result[0].severity == "medium"
 
@@ -131,21 +143,23 @@ class TestParsePipAuditJson:
         assert parse_pip_audit_json(data) == []
 
     def test_single_vuln(self):
-        data = json.dumps([
-            {
-                "name": "urllib3",
-                "version": "1.26.0",
-                "vulns": [
-                    {
-                        "id": "PYSEC-2023-001",
-                        "description": "Request smuggling via CRLF",
-                        "severity": "high",
-                        "fix_versions": ["1.26.18"],
-                        "aliases": [],
-                    }
-                ],
-            }
-        ])
+        data = json.dumps(
+            [
+                {
+                    "name": "urllib3",
+                    "version": "1.26.0",
+                    "vulns": [
+                        {
+                            "id": "PYSEC-2023-001",
+                            "description": "Request smuggling via CRLF",
+                            "severity": "high",
+                            "fix_versions": ["1.26.18"],
+                            "aliases": [],
+                        }
+                    ],
+                }
+            ]
+        )
         result = parse_pip_audit_json(data)
         assert len(result) == 1
         assert result[0].id == "PYSEC-2023-001"
@@ -154,20 +168,23 @@ class TestParsePipAuditJson:
 
 
 class TestNormalizeSeverity:
-    @pytest.mark.parametrize("raw,expected", [
-        ("critical", "critical"),
-        ("HIGH", "high"),
-        ("Medium", "medium"),
-        ("low", "low"),
-        ("moderate", "medium"),
-        ("informational", "low"),
-        ("info", "low"),
-        ("none", "low"),
-        ("negligible", "low"),
-        ("", "unknown"),
-        (None, "unknown"),
-        ("banana", "unknown"),
-    ])
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            ("critical", "critical"),
+            ("HIGH", "high"),
+            ("Medium", "medium"),
+            ("low", "low"),
+            ("moderate", "medium"),
+            ("informational", "low"),
+            ("info", "low"),
+            ("none", "low"),
+            ("negligible", "low"),
+            ("", "unknown"),
+            (None, "unknown"),
+            ("banana", "unknown"),
+        ],
+    )
     def test_mapping(self, raw, expected):
         assert _normalize_severity(raw) == expected
 

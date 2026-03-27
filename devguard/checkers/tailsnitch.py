@@ -14,10 +14,10 @@ logger = logging.getLogger(__name__)
 
 class TailsnitchChecker(BaseChecker):
     """Check Tailscale ACL security using Tailsnitch.
-    
+
     Tailsnitch scans Tailscale ACL policies for 50+ security misconfigurations,
     overly permissive access controls, and best practice violations.
-    
+
     Requires:
     - Tailsnitch binary installed (see https://github.com/Adversis/tailsnitch)
     - Tailscale authentication (TSKEY or OAuth credentials)
@@ -105,7 +105,9 @@ class TailsnitchChecker(BaseChecker):
                 "Add to .env file or export as environment variables"
             )
             errors.append(auth_instructions)
-            logger.warning("Tailscale authentication not configured", extra={"check_type": self.check_type})
+            logger.warning(
+                "Tailscale authentication not configured", extra={"check_type": self.check_type}
+            )
             return CheckResult(
                 check_type=self.check_type,
                 success=False,
@@ -226,7 +228,11 @@ class TailsnitchChecker(BaseChecker):
                     )
                 elif isinstance(resource, list) and resource:
                     # If resource is a list, use first item or join
-                    resource = str(resource[0]) if len(resource) == 1 else f"{tailnet_name} ({len(resource)} resources)"
+                    resource = (
+                        str(resource[0])
+                        if len(resource) == 1
+                        else f"{tailnet_name} ({len(resource)} resources)"
+                    )
                 elif not resource or resource == "tailnet":
                     resource = tailnet_name
 
@@ -300,4 +306,3 @@ class TailsnitchChecker(BaseChecker):
                 success=False,
                 errors=errors,
             )
-

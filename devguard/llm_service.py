@@ -42,7 +42,10 @@ class LLMService:
             try:
                 import openai
 
-                self._client = ("openai", openai.OpenAI(api_key=self.settings.openai_api_key.get_secret_value()))
+                self._client = (
+                    "openai",
+                    openai.OpenAI(api_key=self.settings.openai_api_key.get_secret_value()),
+                )
                 return self._client
             except ImportError:
                 logger.debug("openai package not installed")

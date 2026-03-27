@@ -18,8 +18,8 @@ from pathlib import Path
 from typing import Any
 
 from devguard.sweeps._common import default_dev_root as _default_dev_root
-from devguard.sweeps._common import iter_git_repos, utc_now as _utc_now
-
+from devguard.sweeps._common import iter_git_repos
+from devguard.sweeps._common import utc_now as _utc_now
 
 # ---------------------------------------------------------------------------
 # Language / engine detection
@@ -103,12 +103,14 @@ def parse_cargo_audit_json(raw: str) -> list[VulnSummary]:
         # Informational advisories (unmaintained, etc.) are low severity
         if advisory.get("informational") is not None:
             sev_str = "low"
-        vulns.append(VulnSummary(
-            id=advisory.get("id", "UNKNOWN"),
-            severity=sev_str,
-            package=pkg.get("name", "unknown"),
-            title=advisory.get("title", ""),
-        ))
+        vulns.append(
+            VulnSummary(
+                id=advisory.get("id", "UNKNOWN"),
+                severity=sev_str,
+                package=pkg.get("name", "unknown"),
+                title=advisory.get("title", ""),
+            )
+        )
     return vulns
 
 
@@ -133,12 +135,14 @@ def parse_npm_audit_json(raw: str) -> list[VulnSummary]:
                 if isinstance(v_item, dict) and v_item.get("title"):
                     title = v_item["title"]
                     break
-            vulns.append(VulnSummary(
-                id=info.get("name", pkg_name),
-                severity=sev_str,
-                package=pkg_name,
-                title=title or pkg_name,
-            ))
+            vulns.append(
+                VulnSummary(
+                    id=info.get("name", pkg_name),
+                    severity=sev_str,
+                    package=pkg_name,
+                    title=title or pkg_name,
+                )
+            )
     return vulns
 
 
@@ -154,19 +158,23 @@ def parse_pip_audit_json(raw: str) -> list[VulnSummary]:
         for entry in data:
             pkg = entry.get("name", "unknown")
             for v in entry.get("vulns", []):
-                sev_str = _normalize_severity(v.get("fix_versions", [""])[0] if v.get("fix_versions") else "")
+                sev_str = _normalize_severity(
+                    v.get("fix_versions", [""])[0] if v.get("fix_versions") else ""
+                )
                 # pip-audit doesn't always include severity; use id-based lookup
                 vuln_id = v.get("id", "UNKNOWN")
                 desc = v.get("description", "")
                 # Attempt to extract severity from aliases or description
                 aliases = v.get("aliases", [])
                 sev_str = _normalize_severity(v.get("severity", "unknown"))
-                vulns.append(VulnSummary(
-                    id=vuln_id,
-                    severity=sev_str,
-                    package=pkg,
-                    title=desc[:120] if desc else vuln_id,
-                ))
+                vulns.append(
+                    VulnSummary(
+                        id=vuln_id,
+                        severity=sev_str,
+                        package=pkg,
+                        title=desc[:120] if desc else vuln_id,
+                    )
+                )
     return vulns
 
 
@@ -263,13 +271,15 @@ def _audit_repo(
         vulns = parser(raw)
         result.engines_run.append(det.engine)
         for v in vulns:
-            result.vulns.append({
-                "id": v.id,
-                "severity": v.severity,
-                "package": v.package,
-                "title": v.title,
-                "engine": det.engine,
-            })
+            result.vulns.append(
+                {
+                    "id": v.id,
+                    "severity": v.severity,
+                    "package": v.package,
+                    "title": v.title,
+                    "engine": det.engine,
+                }
+            )
             counts[v.severity] += 1
 
     result.severity_counts = dict(counts)
@@ -279,6 +289,7 @@ def _audit_repo(
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 def audit_dependencies(
     *,

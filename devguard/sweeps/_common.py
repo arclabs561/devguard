@@ -9,25 +9,27 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 # Comprehensive set of directories to skip during repo discovery.
-_JUNK_DIRS: frozenset[str] = frozenset({
-    "node_modules",
-    ".venv",
-    "venv",
-    "dist",
-    "build",
-    ".git",
-    ".cache",
-    ".state",
-    "__pycache__",
-    "_trash",
-    "_scratch",
-    "_external",
-    "_archive",
-    "_forks",
-    "target",
-    ".pytest_cache",
-    ".ruff_cache",
-})
+_JUNK_DIRS: frozenset[str] = frozenset(
+    {
+        "node_modules",
+        ".venv",
+        "venv",
+        "dist",
+        "build",
+        ".git",
+        ".cache",
+        ".state",
+        "__pycache__",
+        "_trash",
+        "_scratch",
+        "_external",
+        "_archive",
+        "_forks",
+        "target",
+        ".pytest_cache",
+        ".ruff_cache",
+    }
+)
 
 
 def default_dev_root() -> Path:

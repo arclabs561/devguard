@@ -309,9 +309,7 @@ def report_to_sarif(
             "level": level,
             "message": {"text": message},
             "partialFingerprints": {
-                "primaryLocationLineHash": _partial_fingerprint(
-                    rule_id, uri_str, message
-                ),
+                "primaryLocationLineHash": _partial_fingerprint(rule_id, uri_str, message),
             },
         }
         loc: dict[str, Any] = {
@@ -384,9 +382,7 @@ def reports_to_sarif(
             "level": level,
             "message": {"text": message},
             "partialFingerprints": {
-                "primaryLocationLineHash": _partial_fingerprint(
-                    rule_id, uri_str, message
-                ),
+                "primaryLocationLineHash": _partial_fingerprint(rule_id, uri_str, message),
             },
         }
         if uri:

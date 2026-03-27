@@ -215,8 +215,14 @@ class TestCloneRepo:
         assert path == Path("/tmp/devguard-abc/my-repo")
         assert cleanup == "/tmp/devguard-abc"
         mock_run.assert_called_once_with(
-            ["git", "clone", "--depth", "1", "https://github.com/owner/my-repo",
-             "/tmp/devguard-abc/my-repo"],
+            [
+                "git",
+                "clone",
+                "--depth",
+                "1",
+                "https://github.com/owner/my-repo",
+                "/tmp/devguard-abc/my-repo",
+            ],
             capture_output=True,
             text=True,
             timeout=120,
@@ -230,6 +236,7 @@ class TestCloneRepo:
         mock_run.return_value = MagicMock(returncode=128, stdout="", stderr="fatal: repo not found")
 
         import typer
+
         with pytest.raises(typer.BadParameter, match="Failed to clone"):
             _clone_repo("https://github.com/owner/nonexistent")
 

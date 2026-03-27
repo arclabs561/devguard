@@ -30,7 +30,8 @@ def test_hardcoded_github_pat(tmp_path: Path) -> None:
     }
     repo = _make_repo(tmp_path, config)
     report, errors = audit_mcp_security(
-        dev_root=tmp_path, check_user_configs=False,
+        dev_root=tmp_path,
+        check_user_configs=False,
     )
     assert not errors
     secret_findings = [f for f in report["findings"] if f["check_id"] == "mcp_hardcoded_secret"]
@@ -54,7 +55,8 @@ def test_env_var_refs_clean(tmp_path: Path) -> None:
     }
     repo = _make_repo(tmp_path, config)
     report, errors = audit_mcp_security(
-        dev_root=tmp_path, check_user_configs=False,
+        dev_root=tmp_path,
+        check_user_configs=False,
     )
     assert not errors
     secret_findings = [f for f in report["findings"] if f["check_id"] == "mcp_hardcoded_secret"]
@@ -75,7 +77,8 @@ def test_command_injection_in_args(tmp_path: Path) -> None:
     }
     repo = _make_repo(tmp_path, config)
     report, errors = audit_mcp_security(
-        dev_root=tmp_path, check_user_configs=False,
+        dev_root=tmp_path,
+        check_user_configs=False,
     )
     injection_findings = [f for f in report["findings"] if f["check_id"] == "mcp_command_injection"]
     assert len(injection_findings) >= 1
@@ -92,7 +95,8 @@ def test_command_injection_pipe(tmp_path: Path) -> None:
     }
     repo = _make_repo(tmp_path, config)
     report, _ = audit_mcp_security(
-        dev_root=tmp_path, check_user_configs=False,
+        dev_root=tmp_path,
+        check_user_configs=False,
     )
     injection_findings = [f for f in report["findings"] if f["check_id"] == "mcp_command_injection"]
     assert len(injection_findings) >= 1
@@ -151,7 +155,8 @@ def test_env_literals_flagged(tmp_path: Path) -> None:
     }
     repo = _make_repo(tmp_path, config)
     report, _ = audit_mcp_security(
-        dev_root=tmp_path, check_user_configs=False,
+        dev_root=tmp_path,
+        check_user_configs=False,
     )
     lit_findings = [f for f in report["findings"] if f["check_id"] == "mcp_env_literal"]
     assert len(lit_findings) >= 1
@@ -173,7 +178,8 @@ def test_placeholder_exclusion(tmp_path: Path) -> None:
     }
     repo = _make_repo(tmp_path, config)
     report, _ = audit_mcp_security(
-        dev_root=tmp_path, check_user_configs=False,
+        dev_root=tmp_path,
+        check_user_configs=False,
     )
     secret_findings = [f for f in report["findings"] if f["check_id"] == "mcp_hardcoded_secret"]
     assert len(secret_findings) == 0
@@ -194,7 +200,8 @@ def test_lethal_trifecta(tmp_path: Path) -> None:
     }
     repo = _make_repo(tmp_path, config)
     report, _ = audit_mcp_security(
-        dev_root=tmp_path, check_user_configs=False,
+        dev_root=tmp_path,
+        check_user_configs=False,
     )
     trifecta_findings = [f for f in report["findings"] if f["check_id"] == "mcp_lethal_trifecta"]
     assert len(trifecta_findings) >= 1
@@ -215,7 +222,8 @@ def test_anthropic_key_detected(tmp_path: Path) -> None:
     }
     repo = _make_repo(tmp_path, config)
     report, _ = audit_mcp_security(
-        dev_root=tmp_path, check_user_configs=False,
+        dev_root=tmp_path,
+        check_user_configs=False,
     )
     secret_findings = [f for f in report["findings"] if f["check_id"] == "mcp_hardcoded_secret"]
     assert len(secret_findings) >= 1
@@ -227,7 +235,8 @@ def test_no_mcp_configs(tmp_path: Path) -> None:
     repo.mkdir()
     (repo / ".git").mkdir()
     report, errors = audit_mcp_security(
-        dev_root=tmp_path, check_user_configs=False,
+        dev_root=tmp_path,
+        check_user_configs=False,
     )
     assert not errors
     assert report["summary"]["total_findings"] == 0

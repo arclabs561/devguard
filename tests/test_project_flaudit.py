@@ -29,7 +29,7 @@ def test_files_to_prompt_includes_manifest(tmp_path: Path) -> None:
     tracked = ["pyproject.toml", "README.md"]
     prompt, _ = files_to_prompt(tmp_path, tracked, include_rules=False)
     assert "## Manifest: pyproject.toml" in prompt
-    assert "foo = \"foo:main\"" in prompt
+    assert 'foo = "foo:main"' in prompt
     assert "## README: README.md" in prompt
 
 
@@ -81,10 +81,10 @@ def test_parse_llm_findings_invalid_returns_empty() -> None:
 def test_parse_llm_findings_truncation_repair() -> None:
     """Truncated JSON recovers complete findings."""
     # Simulates max_tokens cutoff mid-response
-    truncated = '''{"findings": [
+    truncated = """{"findings": [
         {"severity": "medium", "category": "other", "description": "first"},
         {"severity": "low", "category": "readme_impl_drift", "description": "second"},
-        {"severity": "high", "category": "other", "description": "incomplete'''
+        {"severity": "high", "category": "other", "description": "incomplete"""
     out = _parse_llm_findings(truncated)
     assert len(out) == 2
     assert out[0].description == "first"
@@ -138,9 +138,9 @@ def test_parse_llm_findings_truncation_all_incomplete() -> None:
 
 def test_parse_llm_findings_truncation_with_nested_braces() -> None:
     """Truncation repair handles braces inside string values."""
-    raw = '''{"findings": [
+    raw = """{"findings": [
         {"severity": "low", "category": "other", "description": "missing { brace"},
-        {"severity": "high", "description": "cut off h'''
+        {"severity": "high", "description": "cut off h"""
     out = _parse_llm_findings(raw)
     assert len(out) == 1
     assert "brace" in out[0].description
@@ -156,13 +156,19 @@ def test_parse_llm_findings_findings_list_key() -> None:
 
 def test_parse_llm_findings_extra_fields_preserved() -> None:
     """file_ref, suggestion, rule_ref are captured when present."""
-    raw = json.dumps({"findings": [{
-        "severity": "high",
-        "description": "x",
-        "file_ref": "src/main.py:42",
-        "suggestion": "fix it",
-        "rule_ref": "no-unsafe",
-    }]})
+    raw = json.dumps(
+        {
+            "findings": [
+                {
+                    "severity": "high",
+                    "description": "x",
+                    "file_ref": "src/main.py:42",
+                    "suggestion": "fix it",
+                    "rule_ref": "no-unsafe",
+                }
+            ]
+        }
+    )
     out = _parse_llm_findings(raw)
     assert len(out) == 1
     assert out[0].file_ref == "src/main.py:42"
@@ -177,10 +183,12 @@ def test_parse_llm_findings_extra_fields_preserved() -> None:
 
 def _make_trufflehog_json(file_path: str, detector: str = "SentryToken") -> str:
     """Build a single TruffleHog JSONL line for testing."""
-    return json.dumps({
-        "DetectorName": detector,
-        "SourceMetadata": {"Data": {"Filesystem": {"file": file_path, "line": 1}}},
-    })
+    return json.dumps(
+        {
+            "DetectorName": detector,
+            "SourceMetadata": {"Data": {"Filesystem": {"file": file_path, "line": 1}}},
+        }
+    )
 
 
 def test_lock_file_basenames_contains_common_lock_files() -> None:
@@ -190,11 +198,13 @@ def test_lock_file_basenames_contains_common_lock_files() -> None:
 
 def test_parse_trufflehog_filters_lock_files() -> None:
     """Findings in lock files should be excluded from dirty worktree results."""
-    stdout = "\n".join([
-        _make_trufflehog_json("/repo/uv.lock"),
-        _make_trufflehog_json("/repo/src/main.py", "PrivateKey"),
-        _make_trufflehog_json("/repo/Cargo.lock", "AWS"),
-    ])
+    stdout = "\n".join(
+        [
+            _make_trufflehog_json("/repo/uv.lock"),
+            _make_trufflehog_json("/repo/src/main.py", "PrivateKey"),
+            _make_trufflehog_json("/repo/Cargo.lock", "AWS"),
+        ]
+    )
     findings = _parse_trufflehog_filesystem_json(stdout, repo_path="/repo")
     # Parser doesn't filter -- that happens in scan_dirty_worktrees. Parser returns all.
     assert len(findings) == 3
@@ -220,7 +230,9 @@ def test_extract_finding_returns_finding_for_normal_file() -> None:
     obj = {
         "DetectorName": "AWS",
         "Verified": True,
-        "SourceMetadata": {"Data": {"Git": {"file": "config.py", "commit": "abc123def456", "line": 10}}},
+        "SourceMetadata": {
+            "Data": {"Git": {"file": "config.py", "commit": "abc123def456", "line": 10}}
+        },
     }
     f = _extract_finding(obj, repo="owner/repo")
     assert f is not None
@@ -259,9 +271,9 @@ def test_kingfisher_rejects_log_line_without_rule_or_path() -> None:
 
 def test_parse_llm_findings_bare_list_truncation() -> None:
     """Truncation repair works on bare list format (no wrapping object)."""
-    raw = '''[
+    raw = """[
         {"severity": "medium", "description": "first"},
-        {"severity": "low", "description": "cut off'''
+        {"severity": "low", "description": "cut off"""
     out = _parse_llm_findings(raw)
     assert len(out) == 1
     assert out[0].description == "first"
@@ -269,9 +281,9 @@ def test_parse_llm_findings_bare_list_truncation() -> None:
 
 def test_parse_llm_findings_findings_list_key_truncation() -> None:
     """Truncation repair works with 'findings_list' key too."""
-    raw = '''{"findings_list": [
+    raw = """{"findings_list": [
         {"severity": "high", "description": "complete"},
-        {"severity": "low", "desc'''
+        {"severity": "low", "desc"""
     out = _parse_llm_findings(raw)
     assert len(out) == 1
     assert out[0].description == "complete"

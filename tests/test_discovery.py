@@ -1,6 +1,5 @@
 """Tests for discovery module."""
 
-
 from devguard.discovery import _parse_json_robustly
 
 
