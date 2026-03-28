@@ -33,14 +33,16 @@ _JUNK_DIRS: frozenset[str] = frozenset(
 
 
 def default_dev_root() -> Path:
-    """Return the dev workspace root from $DEV_DIR or CWD.
+    """Return the dev workspace root from $DEV_DIR, well-known path, or CWD.
 
-    Checks $DEV_DIR env var first.  Falls back to CWD -- the tool
-    should not assume a specific directory layout.
+    Priority: $DEV_DIR env var > ~/Documents/dev (if it exists) > CWD.
     """
     env = os.getenv("DEV_DIR")
     if env:
         return Path(env).expanduser()
+    well_known = Path.home() / "Documents" / "dev"
+    if well_known.is_dir():
+        return well_known
     return Path.cwd()
 
 
