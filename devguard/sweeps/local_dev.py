@@ -62,6 +62,18 @@ DEFAULT_DENY_GLOBS: list[str] = [
     # GCP / OAuth tokens
     "**/credentials.json",
     "**/token.json",
+    # ML model weights and data artifacts
+    "**/*.pkl",
+    "**/*.pickle",
+    "**/*.pt",
+    "**/*.pth",
+    "**/*.onnx",
+    "**/*.safetensors",
+    "**/*.npy",
+    "**/*.npz",
+    "**/*.parquet",
+    # Execution traces / run logs
+    "**/runs/*/trace.jsonl",
     # Known devguard "oops outputs"
     "**/.devguard-email-history.json",
     "**/.devguard-email-thread",
