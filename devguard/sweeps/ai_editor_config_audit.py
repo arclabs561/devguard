@@ -316,6 +316,24 @@ def _check_cursor_rules(repo: Path, result: RepoAuditResult) -> None:
             )
         )
 
+    # Check if .cursor/rules/ files are tracked by git (they shouldn't be)
+    if has_rules_dir:
+        tracked_cursor_files = []
+        for f in sorted(cursor_rules_dir.iterdir()):
+            if f.is_file() and _is_tracked_by_git(repo, f".cursor/rules/{f.name}"):
+                tracked_cursor_files.append(f.name)
+        if tracked_cursor_files:
+            result.findings.append(
+                Finding(
+                    check="cursor_rules_tracked",
+                    severity="error",
+                    message=f".cursor/rules/ has {len(tracked_cursor_files)} file(s) tracked by git",
+                    detail="Cursor rules are personal/machine-local and should not be committed. "
+                    f"Add .cursor/ to .gitignore and run: git rm -r --cached .cursor/rules/. "
+                    f"Files: {', '.join(tracked_cursor_files[:10])}",
+                )
+            )
+
     if has_rules_dir:
         for f in sorted(cursor_rules_dir.iterdir()):
             if not f.is_file():
