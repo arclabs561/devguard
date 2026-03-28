@@ -25,6 +25,8 @@ REQUIRED_PATTERNS: list[tuple[str, list[str], set[str] | None]] = [
     (".env files", [".env", ".env.*", ".env.local", ".env.*.local"], None),
     (".state/ dir", [".state", ".state/"], None),
     (".claude/ dir", [".claude", ".claude/"], None),
+    (".cursor/ dir", [".cursor", ".cursor/"], None),
+    (".cursorrules", [".cursorrules"], None),
     ("*.log files", ["*.log"], None),
     (".DS_Store", [".DS_Store"], None),
     ("*.sqlite/db", ["*.sqlite", "*.sqlite3", "*.db"], None),
