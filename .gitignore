@@ -72,3 +72,8 @@ archive/
 # Personal spec files (copy devguard.spec.example.yaml to get started)
 devguard.spec.yaml
 devguard.spec.fast.yaml
+
+# AI editor configs (machine-local)
+.cursor/
+.cursorrules
+.cursorignore
