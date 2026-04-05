@@ -609,6 +609,45 @@ def _check_unicode_injection_repo(repo: Path, result: RepoAuditResult) -> None:
                 )
 
 
+def _check_memory_dir(repo: Path, result: RepoAuditResult) -> None:
+    """Check for in-repo memory/ directories (should use ~/.claude/projects/ instead)."""
+    memory_dir = repo / "memory"
+    if not memory_dir.is_dir():
+        return
+    # Check if any files inside are tracked by git
+    try:
+        res = subprocess.run(
+            ["git", "ls-files", "memory/"],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        tracked = [f for f in res.stdout.strip().splitlines() if f]
+    except Exception:
+        tracked = []
+    if tracked:
+        result.findings.append(
+            Finding(
+                check="memory_dir_tracked",
+                severity="warning",
+                message=f"memory/ has {len(tracked)} file(s) tracked by git",
+                detail="Claude auto-memory belongs in ~/.claude/projects/, not inside repos. "
+                "Add memory/ to .gitignore and run: git rm -r --cached memory/",
+            )
+        )
+    elif any(memory_dir.iterdir()):
+        # Untracked but present -- info-level (gitignore should catch it)
+        result.findings.append(
+            Finding(
+                check="memory_dir_present",
+                severity="info",
+                message="memory/ directory exists (untracked)",
+                detail="Verify ~/.gitignore_global includes memory/ to prevent accidental commits",
+            )
+        )
+
+
 def _audit_repo(repo: Path) -> RepoAuditResult:
     """Run all AI editor config checks on a single repo."""
     result = RepoAuditResult(
@@ -625,6 +664,7 @@ def _audit_repo(repo: Path) -> RepoAuditResult:
     _check_cross_tool_consistency(repo, result)
     _check_gitignore_coverage(repo, result)
     _check_unicode_injection_repo(repo, result)
+    _check_memory_dir(repo, result)
 
     return result
 
