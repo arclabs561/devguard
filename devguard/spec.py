@@ -489,6 +489,36 @@ class CredentialFileAuditSweepSpec(BaseModel):
     )
 
 
+class RepoHygieneSweepSpec(BaseModel):
+    """Structural hygiene sweep across local git repos.
+
+    Checks for scattered doc dirs, committed generated data, hardcoded absolute
+    paths in shell scripts, stale .gitkeep files, tracked editor/cache
+    directories, internal documents in public repos, and stale rename references.
+    """
+
+    enabled: bool = Field(True, description="Whether this sweep is enabled (on by default)")
+    dev_root: str | None = Field(
+        None,
+        description="Workspace root. Default: $DEV_DIR or current directory when unset.",
+    )
+    max_depth: int = Field(2, description="How deep under dev_root to look for git repos.")
+    exclude_repo_globs: list[str] = Field(
+        default_factory=lambda: [
+            "*/_trash/*",
+            "*/_scratch/*",
+            "*/_external/*",
+            "*/_archive/*",
+            "*/_forks/*",
+        ],
+        description="Glob patterns to exclude repos from the sweep.",
+    )
+    output: str = Field(
+        ".state/devguard/repo-hygiene.json",
+        description="Where to write the JSON report.",
+    )
+
+
 class MCPSecurityAuditSweepSpec(BaseModel):
     """Deep MCP config security scanning.
 
@@ -580,6 +610,10 @@ class SweepSpec(BaseModel):
     mcp_security_audit: MCPSecurityAuditSweepSpec = Field(
         default_factory=lambda: MCPSecurityAuditSweepSpec(),
         description="Deep MCP config security scanning (secrets, injection, trifecta)",
+    )
+    repo_hygiene: RepoHygieneSweepSpec = Field(
+        default_factory=lambda: RepoHygieneSweepSpec(),
+        description="Structural hygiene sweep (scattered docs, committed data, stale renames, etc.)",
     )
 
 

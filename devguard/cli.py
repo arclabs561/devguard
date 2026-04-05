@@ -235,6 +235,36 @@ def _print_cargo_publish_audit_table(report: dict) -> None:
     console.print(table)
 
 
+def _print_repo_hygiene_table(report: dict) -> None:
+    repos = [r for r in report.get("repos", []) if r.get("findings")]
+    if not repos:
+        return
+    table = Table(title="repo_hygiene findings", title_style="bold")
+    table.add_column("repo_name", style="cyan")
+    table.add_column("check")
+    table.add_column("severity")
+    table.add_column("message", max_width=55)
+    row_count = 0
+    for r in repos:
+        for f in r.get("findings", []):
+            if row_count >= _MAX_TABLE_ROWS:
+                break
+            sev = f.get("severity", "low")
+            table.add_row(
+                Path(r["repo_path"]).name,
+                f.get("check", ""),
+                f"[{_sev_style(sev)}]{sev}[/]",
+                f.get("message", ""),
+            )
+            row_count += 1
+        if row_count >= _MAX_TABLE_ROWS:
+            break
+    total = sum(len(r.get("findings", [])) for r in repos)
+    if total > _MAX_TABLE_ROWS:
+        table.add_row("...", "", "", f"+{total - _MAX_TABLE_ROWS} more", style="dim")
+    console.print(table)
+
+
 def _print_ai_editor_config_table(report: dict) -> None:
     repos = [r for r in report.get("repos", []) if r.get("findings")]
     if not repos:
@@ -1023,7 +1053,7 @@ def sweep(
     only: list[str] = typer.Option(
         None,
         "--only",
-        help="Run only these sweeps (repeatable). Known: local_dev, public_github_secrets, local_dirty_worktree_secrets, project_flaudit, gitignore_audit, dependency_audit, ssh_key_audit, cargo_publish_audit, ai_editor_config_audit, pre_commit_audit, credential_file_audit, mcp_security_audit",
+        help="Run only these sweeps (repeatable). Known: local_dev, public_github_secrets, local_dirty_worktree_secrets, project_flaudit, gitignore_audit, repo_hygiene, dependency_audit, ssh_key_audit, cargo_publish_audit, ai_editor_config_audit, pre_commit_audit, credential_file_audit, mcp_security_audit",
     ),
     format: str = typer.Option(
         "text",
@@ -1308,6 +1338,35 @@ def _sweep_body(
                 console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
             _print_gitignore_audit_table(report)
         if report["summary"]["public_repos_with_gaps"] > 0:
+            exit_code = max(exit_code, 2)
+
+    # repo hygiene sweep
+    rh = spec.sweeps.repo_hygiene
+    if rh.enabled and (not wanted or "repo_hygiene" in wanted):
+        from devguard.sweeps.repo_hygiene import sweep_repo_hygiene
+        from devguard.sweeps.repo_hygiene import write_report as write_rh
+
+        root = _resolve_root(rh.dev_root)
+        report, errors = sweep_repo_hygiene(
+            dev_root=root,
+            max_depth=rh.max_depth,
+            exclude_repo_globs=rh.exclude_repo_globs,
+        )
+        out_path = Path(rh.output).expanduser()
+        write_rh(out_path, report)
+        if machine_output:
+            sweep_reports.append(("repo_hygiene", report))
+        else:
+            console.print(f"[bold]repo_hygiene report:[/bold] {out_path}")
+            console.print(f"[bold]Repos scanned:[/bold] {report['scope']['repos_scanned']}")
+            console.print(
+                f"[bold]Repos with findings:[/bold] {report['summary']['repos_with_findings']}"
+            )
+            console.print(f"[bold]Total findings:[/bold] {report['summary']['total_findings']}")
+            if errors:
+                console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+            _print_repo_hygiene_table(report)
+        if report["summary"]["total_findings"] > 0:
             exit_code = max(exit_code, 2)
 
     # dependency audit sweep
@@ -1598,6 +1657,7 @@ def _sweep_body(
         or spec.sweeps.pre_commit_audit.enabled
         or spec.sweeps.credential_file_audit.enabled
         or spec.sweeps.mcp_security_audit.enabled
+        or spec.sweeps.repo_hygiene.enabled
     )
     if not wanted and not any_enabled:
         if not machine_output:
