@@ -648,6 +648,111 @@ def _check_memory_dir(repo: Path, result: RepoAuditResult) -> None:
         )
 
 
+def _check_aider_artifacts(repo: Path, result: RepoAuditResult) -> None:
+    """Check if .aider* files are tracked by git."""
+    try:
+        res = subprocess.run(
+            ["git", "ls-files", ".aider*"],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        tracked = [f for f in res.stdout.strip().splitlines() if f]
+    except Exception:
+        tracked = []
+    if tracked:
+        result.findings.append(
+            Finding(
+                check="aider_artifacts_tracked",
+                severity="warning",
+                message=f"{len(tracked)} .aider* file(s) tracked by git -- add .aider* to .gitignore",
+                detail=f"Files: {', '.join(tracked[:10])}",
+            )
+        )
+
+
+def _check_skill_case(repo: Path, result: RepoAuditResult) -> None:
+    """Check that skills use SKILL.md (uppercase) not skill.md (lowercase)."""
+    skills_dir = repo / ".claude" / "skills"
+    if not skills_dir.is_dir():
+        return
+    for subdir in sorted(skills_dir.iterdir()):
+        if not subdir.is_dir():
+            continue
+        has_upper = (subdir / "SKILL.md").exists()
+        has_lower = (subdir / "skill.md").exists()
+        if has_lower and not has_upper:
+            result.findings.append(
+                Finding(
+                    check="skill_md_case",
+                    severity="error",
+                    message=f".claude/skills/{subdir.name}/skill.md (lowercase) is not discovered by Claude Code -- rename to SKILL.md",
+                )
+            )
+
+
+def _check_dangling_at_refs(repo: Path, result: RepoAuditResult) -> None:
+    """Check CLAUDE.md for @path references that point to non-existent files."""
+    claude_md = repo / "CLAUDE.md"
+    if not claude_md.is_file():
+        claude_md = repo / ".claude" / "CLAUDE.md"
+        if not claude_md.is_file():
+            return
+    try:
+        text = claude_md.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return
+
+    at_ref_re = re.compile(r"^@(\S+)", re.MULTILINE)
+    for match in at_ref_re.finditer(text):
+        raw_path = match.group(1)
+        expanded = Path(raw_path).expanduser()
+        if not expanded.is_absolute():
+            expanded = repo / expanded
+        if not expanded.exists():
+            result.findings.append(
+                Finding(
+                    check="claude_md_dangling_ref",
+                    severity="warning",
+                    message=f"CLAUDE.md references @{raw_path} but file does not exist",
+                )
+            )
+
+
+def _check_mcp_in_settings(repo: Path, result: RepoAuditResult) -> None:
+    """Check if .claude/settings.json contains mcpServers (silently ignored)."""
+    settings = repo / ".claude" / "settings.json"
+    if not settings.is_file():
+        return
+    try:
+        data = json.loads(settings.read_text(encoding="utf-8", errors="replace"))
+    except Exception:
+        return
+    if "mcpServers" in data:
+        result.findings.append(
+            Finding(
+                check="mcp_in_settings_json",
+                severity="warning",
+                message=".claude/settings.json has mcpServers -- these are silently ignored. Move to .mcp.json or ~/.claude.json",
+            )
+        )
+
+
+def _check_cursorrules_public(repo: Path, result: RepoAuditResult) -> None:
+    """Check if .cursorrules is tracked in a public repo."""
+    if not result.is_public:
+        return
+    if _is_tracked_by_git(repo, ".cursorrules"):
+        result.findings.append(
+            Finding(
+                check="cursorrules_tracked_public",
+                severity="warning",
+                message=".cursorrules is tracked in a public repo -- may leak internal coding instructions",
+            )
+        )
+
+
 def _audit_repo(repo: Path) -> RepoAuditResult:
     """Run all AI editor config checks on a single repo."""
     result = RepoAuditResult(
@@ -665,6 +770,11 @@ def _audit_repo(repo: Path) -> RepoAuditResult:
     _check_gitignore_coverage(repo, result)
     _check_unicode_injection_repo(repo, result)
     _check_memory_dir(repo, result)
+    _check_aider_artifacts(repo, result)
+    _check_skill_case(repo, result)
+    _check_dangling_at_refs(repo, result)
+    _check_mcp_in_settings(repo, result)
+    _check_cursorrules_public(repo, result)
 
     return result
 
