@@ -2,17 +2,40 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
 from devguard.sweeps.pre_commit_audit import audit_pre_commit
+
+
+@pytest.fixture(autouse=True)
+def _isolate_git_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mask user/system git config so tests don't inherit the running user's
+    `core.hooksPath` (or other settings) from a real dotfiles setup."""
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", "/dev/null")
 
 
 def _make_repo(tmp_path: Path, name: str = "repo") -> Path:
     """Create a minimal fake git repo directory."""
     repo = tmp_path / name
     (repo / ".git").mkdir(parents=True)
+    return repo
+
+
+def _init_real_repo(tmp_path: Path, name: str = "repo") -> Path:
+    """Create a real `git init` repo so `git config` works in tests."""
+    repo = tmp_path / name
+    repo.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["git", "init", "--quiet"],
+        cwd=str(repo),
+        check=True,
+        capture_output=True,
+    )
     return repo
 
 
@@ -176,3 +199,55 @@ def _repo_entry(report: dict, name: str) -> dict | None:
         if name in entry["repo_path"]:
             return entry
     return None
+
+
+# ---------------------------------------------------------------------------
+# core.hooksPath redirection (e.g. dotfiles-owned shared hooks dir)
+# ---------------------------------------------------------------------------
+
+
+def test_hooks_path_redirection_installed(tmp_path: Path) -> None:
+    """When core.hooksPath points elsewhere and a pre-commit file lives
+    there, audit should treat the hook as installed."""
+    repo = _init_real_repo(tmp_path, "repo")
+    _write_pre_commit_config(repo, [{"id": "gitleaks"}])
+
+    # Simulate a shared hooks dir outside .git/.
+    shared = tmp_path / "shared-hooks"
+    shared.mkdir()
+    hook = shared / "pre-commit"
+    hook.write_text("#!/bin/sh\nexec pre-commit run\n")
+    hook.chmod(0o755)
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "core.hooksPath", str(shared)],
+        check=True,
+        capture_output=True,
+    )
+
+    report, errors = audit_pre_commit(dev_root=tmp_path, max_depth=1)
+    assert errors == []
+    repo_entry = _repo_entry(report, "repo")
+    if repo_entry is not None:
+        check_ids = [f["check_id"] for f in repo_entry["findings"]]
+        assert "hook_not_installed" not in check_ids
+
+
+def test_hooks_path_redirection_missing(tmp_path: Path) -> None:
+    """When core.hooksPath points to a dir with no pre-commit file, audit
+    should correctly report the hook as not installed."""
+    repo = _init_real_repo(tmp_path, "repo")
+    _write_pre_commit_config(repo, [{"id": "gitleaks"}])
+
+    empty = tmp_path / "empty-hooks"
+    empty.mkdir()
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "core.hooksPath", str(empty)],
+        check=True,
+        capture_output=True,
+    )
+
+    report, _ = audit_pre_commit(dev_root=tmp_path, max_depth=1)
+    repo_entry = _repo_entry(report, "repo")
+    assert repo_entry is not None
+    check_ids = [f["check_id"] for f in repo_entry["findings"]]
+    assert "hook_not_installed" in check_ids
