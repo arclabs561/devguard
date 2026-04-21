@@ -7,6 +7,7 @@ Scans git repos under a dev root and checks whether each repo has a
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -19,15 +20,44 @@ from devguard.sweeps._common import utc_now as _utc_now
 _DEFAULT_REQUIRED_HOOKS: list[str] = ["detect-secrets", "gitleaks", "trufflehog"]
 
 
+def _resolve_hooks_dir(repo: Path) -> Path:
+    """Return the effective git hooks directory for this repo.
+
+    Respects core.hooksPath when set at any level (per-repo, user-global,
+    system). Falls back to `<repo>/.git/hooks` when unset or when git is
+    unavailable. The returned path is expanded for `~` but not canonicalized.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo), "config", "--get", "core.hooksPath"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return repo / ".git" / "hooks"
+    if result.returncode == 0:
+        raw = result.stdout.strip()
+        if raw:
+            return Path(raw).expanduser()
+    return repo / ".git" / "hooks"
+
+
 def _has_pre_commit_hook_installed(repo: Path) -> bool:
-    """Check if .git/hooks/pre-commit exists and references pre-commit."""
-    hook = repo / ".git" / "hooks" / "pre-commit"
+    """Check if the pre-commit hook is installed and references pre-commit.
+
+    Checks the effective hooks directory (honors `core.hooksPath`), so
+    setups that route hooks through a shared dotfiles-owned dir are not
+    falsely flagged as uninstalled.
+    """
+    hook = _resolve_hooks_dir(repo) / "pre-commit"
     if not hook.is_file():
         return False
     try:
         text = hook.read_text(encoding="utf-8", errors="replace")
         return "pre-commit" in text
-    except Exception:
+    except OSError:
         return False
 
 
