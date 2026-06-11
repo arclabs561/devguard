@@ -494,7 +494,8 @@ class RepoHygieneSweepSpec(BaseModel):
 
     Checks for scattered doc dirs, committed generated data, hardcoded absolute
     paths in shell scripts, stale .gitkeep files, tracked editor/cache
-    directories, internal documents in public repos, and stale rename references.
+    directories, internal documents in public repos, stale rename references,
+    and declaration-only [workspace.dependencies] entries.
     """
 
     enabled: bool = Field(True, description="Whether this sweep is enabled (on by default)")
