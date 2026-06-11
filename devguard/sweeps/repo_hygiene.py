@@ -2,7 +2,8 @@
 
 Checks each repo for scattered doc dirs, committed generated data, hardcoded
 absolute paths in shell scripts, stale .gitkeep files, tracked editor/cache
-directories, internal documents in public repos, and stale rename references.
+directories, internal documents in public repos, stale rename references,
+and declaration-only [workspace.dependencies] entries.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import fnmatch
 import json
 import re
 import subprocess
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -18,7 +20,6 @@ from typing import Any
 from devguard.sweeps._common import default_dev_root as _default_dev_root
 from devguard.sweeps._common import iter_git_repos
 from devguard.sweeps._common import utc_now as _utc_now
-
 
 # ---------------------------------------------------------------------------
 # Dataclasses
@@ -114,9 +115,7 @@ def _data_dir_is_intentional(repo: Path) -> bool:
     return False
 
 
-def _check_committed_generated_data(
-    repo: Path, tracked: list[str]
-) -> HygieneFinding | None:
+def _check_committed_generated_data(repo: Path, tracked: list[str]) -> HygieneFinding | None:
     """B: Tracked files matching generated-data patterns."""
     if _data_dir_is_intentional(repo):
         # data/ is a source tree; only check non-data patterns
@@ -270,9 +269,7 @@ def _check_internal_docs_in_public(
     )
 
 
-def _check_stale_rename_refs(
-    repo: Path, tracked: list[str]
-) -> HygieneFinding | None:
+def _check_stale_rename_refs(repo: Path, tracked: list[str]) -> HygieneFinding | None:
     """G: Cargo.toml name differs from directory name; old name still appears as env var prefix."""
     cargo = repo / "Cargo.toml"
     if not cargo.is_file():
@@ -337,6 +334,204 @@ def _check_stale_rename_refs(
     )
 
 
+_CARGO_DEP_TABLES: tuple[str, ...] = ("dependencies", "dev-dependencies", "build-dependencies")
+
+# Directory names skipped when walking a repo for Cargo.toml manifests.
+_MANIFEST_WALK_JUNK: frozenset[str] = frozenset(
+    {"target", "node_modules", ".venv", "venv", "dist", "build", "__pycache__"}
+)
+
+
+def _find_cargo_manifests(repo: Path, max_depth: int = 6) -> list[str]:
+    """Find Cargo.toml files under *repo* (relative paths), skipping junk dirs.
+
+    Walks the filesystem rather than `git ls-files` so that untracked member
+    manifests still count as consumers (cargo reads the filesystem, not git).
+    """
+    found: list[str] = []
+    stack: list[tuple[Path, int]] = [(repo, 0)]
+    while stack:
+        cur, depth = stack.pop()
+        manifest = cur / "Cargo.toml"
+        if manifest.is_file():
+            found.append(str(manifest.relative_to(repo)))
+        if depth >= max_depth:
+            continue
+        try:
+            for child in cur.iterdir():
+                if not child.is_dir():
+                    continue
+                name = child.name
+                if name in _MANIFEST_WALK_JUNK or name.startswith("."):
+                    continue
+                stack.append((child, depth + 1))
+        except Exception:
+            continue
+    return sorted(found)
+
+
+def _parse_toml(path: Path) -> dict[str, Any] | None:
+    try:
+        with path.open("rb") as fh:
+            return tomllib.load(fh)
+    except Exception:
+        return None
+
+
+def _dep_tables(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    """All dependency tables of one manifest, including [target.*] variants."""
+    tables: list[dict[str, Any]] = []
+    for tbl in _CARGO_DEP_TABLES:
+        val = manifest.get(tbl)
+        if isinstance(val, dict):
+            tables.append(val)
+    target = manifest.get("target")
+    if isinstance(target, dict):
+        for cfg in target.values():
+            if not isinstance(cfg, dict):
+                continue
+            for tbl in _CARGO_DEP_TABLES:
+                val = cfg.get(tbl)
+                if isinstance(val, dict):
+                    tables.append(val)
+    return tables
+
+
+def _workspace_dep_consumers(manifest: dict[str, Any]) -> set[str]:
+    """Keys a single manifest consumes with `workspace = true`.
+
+    Covers [dependencies]/[dev-dependencies]/[build-dependencies] plus the
+    [target.*.dependencies] variants. Both `key = { workspace = true, ... }`
+    and dotted `key.workspace = true` parse to the same dict shape. The key
+    is what matters: `foo = { workspace = true }` consumes the workspace
+    entry `foo` even when that entry renames via `package = "bar"`.
+    """
+    consumed: set[str] = set()
+    for table in _dep_tables(manifest):
+        for key, val in table.items():
+            if isinstance(val, dict) and val.get("workspace") is True:
+                consumed.add(key)
+    return consumed
+
+
+def _path_deps(manifest: dict[str, Any]) -> list[str]:
+    """Relative `path = "..."` dependency targets of one manifest."""
+    out: list[str] = []
+    for table in _dep_tables(manifest):
+        for val in table.values():
+            if isinstance(val, dict) and isinstance(val.get("path"), str):
+                out.append(val["path"])
+    return out
+
+
+def _resolve_member_manifests(
+    ws_dir: Path, root_data: dict[str, Any]
+) -> tuple[list[dict[str, Any]], bool]:
+    """Resolve a workspace's member manifests per cargo semantics.
+
+    Members = root package (if any) + glob-expanded `workspace.members` +
+    transitive in-tree path dependencies of members, minus `workspace.exclude`.
+    Returns (parsed member manifests, all_parsed); all_parsed is False when
+    any member manifest failed to parse.
+    """
+    ws_dir = ws_dir.resolve()
+    workspace = root_data.get("workspace")
+    workspace = workspace if isinstance(workspace, dict) else {}
+
+    raw_exclude = workspace.get("exclude")
+    exclude = (
+        [e for e in raw_exclude if isinstance(e, str)] if isinstance(raw_exclude, list) else []
+    )
+
+    def _is_excluded(d: Path) -> bool:
+        try:
+            rel = d.relative_to(ws_dir)
+        except ValueError:
+            return True  # outside the workspace dir -> never a member
+        return any(fnmatch.fnmatch(str(rel), pat) for pat in exclude)
+
+    pending: list[Path] = []
+    if isinstance(root_data.get("package"), dict):
+        pending.append(ws_dir)
+    raw_members = workspace.get("members")
+    if isinstance(raw_members, list):
+        for pat in raw_members:
+            if not isinstance(pat, str):
+                continue
+            for hit in sorted(ws_dir.glob(pat)):
+                if (hit / "Cargo.toml").is_file():
+                    pending.append(hit)
+
+    seen: set[Path] = set()
+    parsed: list[dict[str, Any]] = []
+    all_parsed = True
+    while pending:
+        d = pending.pop().resolve()
+        if d in seen or _is_excluded(d):
+            continue
+        seen.add(d)
+        data = _parse_toml(d / "Cargo.toml") if d != ws_dir else root_data
+        if data is None:
+            all_parsed = False
+            continue
+        parsed.append(data)
+        # Path dependencies of members are automatically members themselves.
+        for dep_path in _path_deps(data):
+            cand = d / dep_path
+            if (cand / "Cargo.toml").is_file():
+                pending.append(cand)
+    return parsed, all_parsed
+
+
+def _check_unused_workspace_deps(repo: Path) -> HygieneFinding | None:
+    """H: [workspace.dependencies] keys that no workspace member consumes.
+
+    Declaration-only keys read as real dependency edges to TOML-level
+    scanners (devpulse local_dependents, pkgrank) and cause phantom bump
+    commits. Consumers are the actual cargo member set (root package,
+    `members` globs, transitive in-tree path deps, minus `exclude`),
+    including the root manifest's own dep tables for single-crate
+    workspaces. A workspace with any unparseable member manifest is
+    skipped -- non-consumption can't be proven.
+    """
+    manifests = _find_cargo_manifests(repo)
+    if not manifests:
+        return None
+
+    dead: list[str] = []
+    for rel in manifests:
+        data = _parse_toml(repo / rel)
+        if data is None:
+            continue
+        workspace = data.get("workspace")
+        if not isinstance(workspace, dict):
+            continue
+        ws_deps = workspace.get("dependencies")
+        if not isinstance(ws_deps, dict) or not ws_deps:
+            continue
+        members, all_parsed = _resolve_member_manifests((repo / rel).parent, data)
+        if not all_parsed:
+            continue
+        consumed: set[str] = set()
+        for member in members:
+            consumed |= _workspace_dep_consumers(member)
+        dead.extend(f"{rel}: {key}" for key in sorted(set(ws_deps) - consumed))
+
+    if not dead:
+        return None
+    return HygieneFinding(
+        repo_path=str(repo),
+        check="unused_workspace_deps",
+        severity="low",
+        message=(
+            f"{len(dead)} [workspace.dependencies] key(s) with no `workspace = true` "
+            "consumer -- delete the entry, or consume it via "
+            "`<key> = { workspace = true }` in a member manifest."
+        ),
+        files=dead[:20],
+    )
+
+
 # ---------------------------------------------------------------------------
 # Main sweep function
 # ---------------------------------------------------------------------------
@@ -378,6 +573,7 @@ def sweep_repo_hygiene(
             lambda r: _check_tracked_editor_dirs(r, tracked),
             lambda r: _check_internal_docs_in_public(r, tracked, is_public),
             lambda r: _check_stale_rename_refs(r, tracked),
+            lambda r: _check_unused_workspace_deps(r),
         ):
             try:
                 finding = check_fn(repo)
