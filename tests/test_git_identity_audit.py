@@ -127,6 +127,29 @@ sweeps:
     assert audit.allowed_email_domains_env == "DEVGUARD_TEST_ALLOWED_DOMAINS"
 
 
+def test_loads_policy_values_from_dotenv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = _init_repo(tmp_path)
+    subprocess.run(
+        ["git", "config", "user.email", "person@oldcorp.example"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    (tmp_path / ".env").write_text("DEVGUARD_TEST_FORBIDDEN_DOMAINS=oldcorp.example\n")
+    monkeypatch.chdir(tmp_path)
+
+    report, errors = audit_git_identity(
+        dev_root=tmp_path,
+        max_depth=1,
+        forbidden_email_domains_env="DEVGUARD_TEST_FORBIDDEN_DOMAINS",
+        check_global_config=False,
+        check_environment=False,
+    )
+
+    assert errors == []
+    assert report["summary"]["repo_config_findings"] == 1
+
+
 def test_history_scan_flags_old_author_after_config_is_clean(tmp_path: Path) -> None:
     repo = _init_repo(tmp_path)
     subprocess.run(
