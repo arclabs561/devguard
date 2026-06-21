@@ -199,6 +199,7 @@ sweeps:
     check_repo_config: true
     check_environment: true
     check_history: false
+    redact_emails: true
     max_history_commits: 50000
     output: ".state/devguard/git-identity-audit.json"
   # Credential file audit: permissions and plaintext secrets in dotfiles.
