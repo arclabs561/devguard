@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from devguard.spec import load_spec
 from devguard.sweeps.git_identity_audit import audit_git_identity
 
 
@@ -77,6 +78,53 @@ def test_flags_forbidden_environment_email(tmp_path: Path) -> None:
     assert errors == []
     assert report["summary"]["environment_findings"] == 1
     assert report["findings"][0]["source"] == "GIT_AUTHOR_EMAIL"
+
+
+def test_loads_policy_values_from_environment(tmp_path: Path) -> None:
+    repo = _init_repo(tmp_path)
+    subprocess.run(
+        ["git", "config", "user.email", "person@oldcorp.example"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+
+    report, errors = audit_git_identity(
+        dev_root=tmp_path,
+        max_depth=1,
+        forbidden_email_domains_env="DEVGUARD_TEST_FORBIDDEN_DOMAINS",
+        check_global_config=False,
+        check_environment=False,
+        env={"DEVGUARD_TEST_FORBIDDEN_DOMAINS": "oldcorp.example"},
+    )
+
+    assert errors == []
+    assert report["summary"]["repo_config_findings"] == 1
+    assert report["scope"]["forbidden_email_domains_count"] == 1
+    assert report["scope"]["forbidden_email_domains_env"] == "DEVGUARD_TEST_FORBIDDEN_DOMAINS"
+    assert "forbidden_email_domains" not in report["scope"]
+
+
+def test_spec_loads_git_identity_env_fields(tmp_path: Path) -> None:
+    spec_path = tmp_path / "devguard.spec.yaml"
+    spec_path.write_text(
+        """
+name: test
+sweeps:
+  git_identity_audit:
+    enabled: true
+    forbidden_email_domains_env: DEVGUARD_TEST_FORBIDDEN_DOMAINS
+    forbidden_email_patterns_env: DEVGUARD_TEST_FORBIDDEN_PATTERNS
+    allowed_email_domains_env: DEVGUARD_TEST_ALLOWED_DOMAINS
+""".lstrip()
+    )
+
+    spec = load_spec(spec_path)
+    audit = spec.sweeps.git_identity_audit
+
+    assert audit.forbidden_email_domains_env == "DEVGUARD_TEST_FORBIDDEN_DOMAINS"
+    assert audit.forbidden_email_patterns_env == "DEVGUARD_TEST_FORBIDDEN_PATTERNS"
+    assert audit.allowed_email_domains_env == "DEVGUARD_TEST_ALLOWED_DOMAINS"
 
 
 def test_history_scan_flags_old_author_after_config_is_clean(tmp_path: Path) -> None:

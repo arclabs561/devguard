@@ -190,8 +190,11 @@ sweeps:
     max_depth: 2
     exclude_repo_globs: ["*/_trash/*", "*/_scratch/*", "*/_external/*", "*/_archive/*", "*/_forks/*"]
     forbidden_email_domains: []
+    forbidden_email_domains_env: null
     forbidden_email_patterns: []
+    forbidden_email_patterns_env: null
     allowed_email_domains: []
+    allowed_email_domains_env: null
     check_global_config: true
     check_repo_config: true
     check_environment: true

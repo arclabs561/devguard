@@ -486,13 +486,25 @@ class GitIdentityAuditSweepSpec(BaseModel):
         default_factory=list,
         description="Email domains that must not appear in git identity settings or scanned history.",
     )
+    forbidden_email_domains_env: str | None = Field(
+        None,
+        description="Environment variable containing additional forbidden email domains.",
+    )
     forbidden_email_patterns: list[str] = Field(
         default_factory=list,
         description="Regex patterns for forbidden git identity emails.",
     )
+    forbidden_email_patterns_env: str | None = Field(
+        None,
+        description="Environment variable containing additional forbidden email regex patterns.",
+    )
     allowed_email_domains: list[str] = Field(
         default_factory=list,
         description="When set, flag git identity emails outside these domains.",
+    )
+    allowed_email_domains_env: str | None = Field(
+        None,
+        description="Environment variable containing additional allowed email domains.",
     )
     check_global_config: bool = Field(True, description="Check global git user.email.")
     check_repo_config: bool = Field(True, description="Check per-repo local git user.email.")
