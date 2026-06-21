@@ -60,6 +60,7 @@ def _finding(
     severity: str,
     message: str,
     repo_path: Path | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     data: dict[str, Any] = {
         "check_id": check_id,
@@ -71,6 +72,8 @@ def _finding(
     }
     if repo_path is not None:
         data["repo_path"] = str(repo_path)
+    if extra:
+        data.update(extra)
     return data
 
 
@@ -82,6 +85,7 @@ def _check_email(
     forbidden_domains: set[str],
     forbidden_patterns: list[re.Pattern[str]],
     allowed_domains: set[str],
+    extra: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     findings: list[dict[str, Any]] = []
     domain = _email_domain(email)
@@ -97,6 +101,7 @@ def _check_email(
                 severity="error",
                 message=f"Git identity uses forbidden email domain: {domain}",
                 repo_path=repo_path,
+                extra=extra,
             )
         )
     elif allowed_domains and domain not in allowed_domains:
@@ -108,9 +113,32 @@ def _check_email(
                 severity="warning",
                 message=f"Git identity domain is outside the allowlist: {domain}",
                 repo_path=repo_path,
+                extra=extra,
             )
         )
     return findings
+
+
+def _refs_containing_commit(repo: Path, commit: str) -> list[str]:
+    value = _git_output(
+        ["git", "-C", str(repo), "for-each-ref", "--contains", commit, "--format=%(refname)"],
+        timeout=15,
+    )
+    if not value:
+        return []
+    return sorted(line for line in value.splitlines() if line.strip())
+
+
+def _history_email_samples(value: str) -> dict[str, str]:
+    samples: dict[str, str] = {}
+    for line in value.splitlines():
+        parts = line.split("\0")
+        if len(parts) != 3:
+            continue
+        commit, author_email, committer_email = parts
+        for email in _extract_emails(f"{author_email} {committer_email}"):
+            samples.setdefault(email, commit)
+    return samples
 
 
 def audit_git_identity(
@@ -160,6 +188,7 @@ def audit_git_identity(
                         forbidden_domains=forbidden_domains,
                         forbidden_patterns=compiled_patterns,
                         allowed_domains=allowed_domains,
+                        extra=None,
                     )
                 )
 
@@ -175,6 +204,7 @@ def audit_git_identity(
                         forbidden_domains=forbidden_domains,
                         forbidden_patterns=compiled_patterns,
                         allowed_domains=allowed_domains,
+                        extra=None,
                     )
                 )
 
@@ -196,22 +226,21 @@ def audit_git_identity(
                             forbidden_domains=forbidden_domains,
                             forbidden_patterns=compiled_patterns,
                             allowed_domains=allowed_domains,
+                            extra=None,
                         )
                     )
 
         if check_history:
-            cmd = ["git", "-C", str(repo), "log", "--all", "--format=%aE%x00%cE"]
+            cmd = ["git", "-C", str(repo), "log", "--all", "--format=%H%x00%aE%x00%cE"]
             if history_limit:
                 cmd.insert(4, f"--max-count={history_limit}")
             value = _git_output(cmd, timeout=60)
             if value is None:
                 errors.append(f"failed to read git history for {repo}")
             else:
-                seen: set[str] = set()
-                for email in _extract_emails(value):
-                    if email in seen:
-                        continue
-                    seen.add(email)
+                samples = _history_email_samples(value)
+                for email, commit in samples.items():
+                    containing_refs = _refs_containing_commit(repo, commit)
                     repo_findings.extend(
                         _check_email(
                             email=email,
@@ -220,6 +249,10 @@ def audit_git_identity(
                             forbidden_domains=forbidden_domains,
                             forbidden_patterns=compiled_patterns,
                             allowed_domains=allowed_domains,
+                            extra={
+                                "sample_commit": commit,
+                                "containing_refs": containing_refs[:25],
+                            },
                         )
                     )
 
