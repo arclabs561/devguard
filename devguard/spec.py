@@ -463,6 +463,57 @@ class PreCommitAuditSweepSpec(BaseModel):
     )
 
 
+class GitIdentityAuditSweepSpec(BaseModel):
+    """Audit git identity settings and optional commit metadata."""
+
+    enabled: bool = Field(False, description="Whether this sweep is enabled")
+    dev_root: str | None = Field(
+        None,
+        description="Workspace root. Default: $DEV_DIR or current directory when unset.",
+    )
+    max_depth: int = Field(2, description="How deep under dev_root to look for git repos.")
+    exclude_repo_globs: list[str] = Field(
+        default_factory=lambda: [
+            "*/_trash/*",
+            "*/_scratch/*",
+            "*/_external/*",
+            "*/_archive/*",
+            "*/_forks/*",
+        ],
+        description="Glob patterns to exclude repos from the audit.",
+    )
+    forbidden_email_domains: list[str] = Field(
+        default_factory=list,
+        description="Email domains that must not appear in git identity settings or scanned history.",
+    )
+    forbidden_email_patterns: list[str] = Field(
+        default_factory=list,
+        description="Regex patterns for forbidden git identity emails.",
+    )
+    allowed_email_domains: list[str] = Field(
+        default_factory=list,
+        description="When set, flag git identity emails outside these domains.",
+    )
+    check_global_config: bool = Field(True, description="Check global git user.email.")
+    check_repo_config: bool = Field(True, description="Check per-repo local git user.email.")
+    check_environment: bool = Field(
+        True,
+        description="Check GIT_AUTHOR_EMAIL and GIT_COMMITTER_EMAIL.",
+    )
+    check_history: bool = Field(
+        False,
+        description="Scan commit author/committer emails in local branch/tag history.",
+    )
+    max_history_commits: int = Field(
+        50_000,
+        description="Maximum commits per repo to scan when check_history is enabled.",
+    )
+    output: str = Field(
+        ".state/devguard/git-identity-audit.json",
+        description="Where to write the JSON report.",
+    )
+
+
 class CredentialFileAuditSweepSpec(BaseModel):
     """Audit credential files for permission issues and plaintext secrets.
 
@@ -603,6 +654,10 @@ class SweepSpec(BaseModel):
     pre_commit_audit: PreCommitAuditSweepSpec = Field(
         default_factory=lambda: PreCommitAuditSweepSpec(),
         description="Audit pre-commit configs for secret scanning hooks",
+    )
+    git_identity_audit: GitIdentityAuditSweepSpec = Field(
+        default_factory=lambda: GitIdentityAuditSweepSpec(),
+        description="Audit git identity settings and optional commit metadata",
     )
     credential_file_audit: CredentialFileAuditSweepSpec = Field(
         default_factory=lambda: CredentialFileAuditSweepSpec(),

@@ -183,6 +183,21 @@ sweeps:
     exclude_repo_globs: ["*/_trash/*", "*/_scratch/*", "*/_external/*", "*/_archive/*", "*/_forks/*"]
     required_hooks: ["detect-secrets", "gitleaks", "trufflehog"]
     output: ".state/devguard/pre-commit-audit.json"
+  # Git identity audit: configured author emails and optional commit history.
+  git_identity_audit:
+    enabled: false
+    dev_root: null
+    max_depth: 2
+    exclude_repo_globs: ["*/_trash/*", "*/_scratch/*", "*/_external/*", "*/_archive/*", "*/_forks/*"]
+    forbidden_email_domains: []
+    forbidden_email_patterns: []
+    allowed_email_domains: []
+    check_global_config: true
+    check_repo_config: true
+    check_environment: true
+    check_history: false
+    max_history_commits: 50000
+    output: ".state/devguard/git-identity-audit.json"
   # Credential file audit: permissions and plaintext secrets in dotfiles.
   credential_file_audit:
     enabled: true
