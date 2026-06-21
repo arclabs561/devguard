@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -59,7 +60,10 @@ def test_flags_forbidden_repo_config_email(tmp_path: Path) -> None:
     findings = repo_entry["findings"]
     assert findings[0]["check_id"] == "forbidden_git_email"
     assert findings[0]["source"] == "git config --local user.email"
-    assert findings[0]["email"] == "person@oldcorp.example"
+    assert findings[0]["email"] == "<redacted>"
+    assert findings[0]["domain"] == "<redacted>"
+    assert findings[0]["email_hash"].startswith("sha256:")
+    assert "oldcorp.example" not in json.dumps(report)
 
 
 def test_flags_forbidden_environment_email(tmp_path: Path) -> None:
@@ -190,7 +194,7 @@ def test_history_scan_flags_old_author_after_config_is_clean(tmp_path: Path) -> 
         f for f in repo_entry["findings"] if f["source"] == "git log --all author/committer email"
     ]
     assert len(history_findings) == 1
-    assert history_findings[0]["email"] == "person@oldcorp.example"
+    assert history_findings[0]["email"] == "<redacted>"
     assert history_findings[0]["sample_commit"]
     assert "refs/heads/main" in history_findings[0]["containing_refs"]
 
@@ -216,7 +220,33 @@ def test_allowed_domains_flag_unexpected_current_config(tmp_path: Path) -> None:
     assert repo_entry is not None
     findings = repo_entry["findings"]
     assert findings[0]["check_id"] == "unexpected_git_email_domain"
-    assert findings[0]["domain"] == "other.example"
+    assert findings[0]["domain"] == "<redacted>"
+
+
+def test_can_emit_unredacted_identity_findings_when_requested(tmp_path: Path) -> None:
+    repo = _init_repo(tmp_path)
+    subprocess.run(
+        ["git", "config", "user.email", "person@oldcorp.example"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+
+    report, errors = audit_git_identity(
+        dev_root=tmp_path,
+        max_depth=1,
+        forbidden_email_domains=["oldcorp.example"],
+        check_global_config=False,
+        check_environment=False,
+        redact_emails=False,
+    )
+
+    assert errors == []
+    repo_entry = _repo_entry(report, "repo")
+    assert repo_entry is not None
+    finding = repo_entry["findings"][0]
+    assert finding["email"] == "person@oldcorp.example"
+    assert finding["domain"] == "oldcorp.example"
 
 
 def _repo_entry(report: dict, name: str) -> dict | None:

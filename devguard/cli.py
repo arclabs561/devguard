@@ -1632,6 +1632,7 @@ def _sweep_body(
             check_repo_config=gia.check_repo_config,
             check_environment=gia.check_environment,
             check_history=gia.check_history,
+            redact_emails=gia.redact_emails,
             max_history_commits=gia.max_history_commits,
         )
         out_path = Path(gia.output).expanduser()

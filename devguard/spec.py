@@ -516,6 +516,10 @@ class GitIdentityAuditSweepSpec(BaseModel):
         False,
         description="Scan commit author/committer emails in local branch/tag history.",
     )
+    redact_emails: bool = Field(
+        True,
+        description="Redact matched emails and domains in reports.",
+    )
     max_history_commits: int = Field(
         50_000,
         description="Maximum commits per repo to scan when check_history is enabled.",

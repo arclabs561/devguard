@@ -11,6 +11,7 @@ import os
 import re
 import subprocess
 from collections.abc import Mapping
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,10 @@ def _email_domain(email: str) -> str:
     if "@" not in email:
         return ""
     return email.rsplit("@", 1)[1].strip().lower()
+
+
+def _email_hash(email: str) -> str:
+    return "sha256:" + sha256(email.lower().encode("utf-8")).hexdigest()[:16]
 
 
 def _extract_emails(value: str) -> list[str]:
@@ -90,13 +95,15 @@ def _finding(
     severity: str,
     message: str,
     repo_path: Path | None = None,
+    redact_email: bool = True,
     extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     data: dict[str, Any] = {
         "check_id": check_id,
         "source": source,
-        "email": email,
-        "domain": _email_domain(email),
+        "email": "<redacted>" if redact_email else email,
+        "domain": "<redacted>" if redact_email else _email_domain(email),
+        "email_hash": _email_hash(email),
         "severity": severity,
         "message": message,
     }
@@ -115,6 +122,7 @@ def _check_email(
     forbidden_domains: set[str],
     forbidden_patterns: list[re.Pattern[str]],
     allowed_domains: set[str],
+    redact_emails: bool,
     extra: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     findings: list[dict[str, Any]] = []
@@ -129,8 +137,9 @@ def _check_email(
                 source=source,
                 email=email,
                 severity="error",
-                message=f"Git identity uses forbidden email domain: {domain}",
+                message="Git identity matches forbidden email policy",
                 repo_path=repo_path,
+                redact_email=redact_emails,
                 extra=extra,
             )
         )
@@ -141,8 +150,9 @@ def _check_email(
                 source=source,
                 email=email,
                 severity="warning",
-                message=f"Git identity domain is outside the allowlist: {domain}",
+                message="Git identity domain is outside the allowlist",
                 repo_path=repo_path,
+                redact_email=redact_emails,
                 extra=extra,
             )
         )
@@ -186,6 +196,7 @@ def audit_git_identity(
     check_repo_config: bool = True,
     check_environment: bool = True,
     check_history: bool = False,
+    redact_emails: bool = True,
     max_history_commits: int = 50_000,
     env: Mapping[str, str] | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
@@ -218,7 +229,7 @@ def audit_git_identity(
         try:
             compiled_patterns.append(re.compile(pattern, re.IGNORECASE))
         except re.error as exc:
-            errors.append(f"invalid forbidden_email_pattern {pattern!r}: {exc}")
+            errors.append(f"invalid forbidden_email_pattern: {exc}")
 
     findings: list[dict[str, Any]] = []
 
@@ -234,6 +245,7 @@ def audit_git_identity(
                         forbidden_domains=forbidden_domains,
                         forbidden_patterns=compiled_patterns,
                         allowed_domains=allowed_domains,
+                        redact_emails=redact_emails,
                         extra=None,
                     )
                 )
@@ -250,6 +262,7 @@ def audit_git_identity(
                         forbidden_domains=forbidden_domains,
                         forbidden_patterns=compiled_patterns,
                         allowed_domains=allowed_domains,
+                        redact_emails=redact_emails,
                         extra=None,
                     )
                 )
@@ -272,6 +285,7 @@ def audit_git_identity(
                             forbidden_domains=forbidden_domains,
                             forbidden_patterns=compiled_patterns,
                             allowed_domains=allowed_domains,
+                            redact_emails=redact_emails,
                             extra=None,
                         )
                     )
@@ -295,6 +309,7 @@ def audit_git_identity(
                             forbidden_domains=forbidden_domains,
                             forbidden_patterns=compiled_patterns,
                             allowed_domains=allowed_domains,
+                            redact_emails=redact_emails,
                             extra={
                                 "sample_commit": commit,
                                 "containing_refs": containing_refs[:25],
@@ -328,6 +343,7 @@ def audit_git_identity(
             "check_repo_config": check_repo_config,
             "check_environment": check_environment,
             "check_history": check_history,
+            "redact_emails": redact_emails,
             "max_history_commits": history_limit,
         },
         "summary": {
