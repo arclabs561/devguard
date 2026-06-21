@@ -14,6 +14,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from dotenv import dotenv_values
+
 from devguard.sweeps._common import default_dev_root as _default_dev_root
 from devguard.sweeps._common import iter_git_repos
 from devguard.sweeps._common import utc_now as _utc_now
@@ -50,6 +52,17 @@ def _env_values(
     if not env_var:
         return []
     return _split_env_values(environment.get(env_var, ""), split_whitespace=split_whitespace)
+
+
+def _environment_with_dotenv() -> dict[str, str]:
+    dotenv_env: dict[str, str] = {}
+    for path in (Path("../.env"), Path(".env")):
+        if not path.exists():
+            continue
+        for key, value in dotenv_values(path).items():
+            if value is not None:
+                dotenv_env[key] = value
+    return {**dotenv_env, **os.environ}
 
 
 def _git_output(args: list[str], *, cwd: Path | None = None, timeout: int = 10) -> str | None:
@@ -180,7 +193,7 @@ def audit_git_identity(
     root = dev_root if dev_root is not None else _default_dev_root()
     globs = [g for g in (exclude_repo_globs or []) if isinstance(g, str) and g.strip()]
     repos = sorted(iter_git_repos(root, max_depth=max_depth, exclude_globs=globs))
-    environment = env if env is not None else os.environ
+    environment = env if env is not None else _environment_with_dotenv()
 
     configured_forbidden_domains = [
         *(forbidden_email_domains or []),
