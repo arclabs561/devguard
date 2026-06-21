@@ -1,7 +1,7 @@
 """Git identity audit sweep.
 
-Checks configured git author emails and, optionally, commit metadata for
-domains that should not appear in this workspace.
+Checks configured git author emails and, optionally, commit metadata against
+the email policy supplied by the sweep spec.
 """
 
 from __future__ import annotations
@@ -33,6 +33,23 @@ def _email_domain(email: str) -> str:
 
 def _extract_emails(value: str) -> list[str]:
     return [m.group("email").lower() for m in _EMAIL_RE.finditer(value or "")]
+
+
+def _split_env_values(value: str, *, split_whitespace: bool) -> list[str]:
+    if split_whitespace:
+        return [item for item in re.split(r"[\s,]+", value) if item]
+    return [item.strip() for item in re.split(r"[\n,]+", value) if item.strip()]
+
+
+def _env_values(
+    environment: Mapping[str, str],
+    env_var: str | None,
+    *,
+    split_whitespace: bool = True,
+) -> list[str]:
+    if not env_var:
+        return []
+    return _split_env_values(environment.get(env_var, ""), split_whitespace=split_whitespace)
 
 
 def _git_output(args: list[str], *, cwd: Path | None = None, timeout: int = 10) -> str | None:
@@ -147,8 +164,11 @@ def audit_git_identity(
     max_depth: int = 2,
     exclude_repo_globs: list[str] | None = None,
     forbidden_email_domains: list[str] | None = None,
+    forbidden_email_domains_env: str | None = None,
     forbidden_email_patterns: list[str] | None = None,
+    forbidden_email_patterns_env: str | None = None,
     allowed_email_domains: list[str] | None = None,
+    allowed_email_domains_env: str | None = None,
     check_global_config: bool = True,
     check_repo_config: bool = True,
     check_environment: bool = True,
@@ -162,11 +182,24 @@ def audit_git_identity(
     repos = sorted(iter_git_repos(root, max_depth=max_depth, exclude_globs=globs))
     environment = env if env is not None else os.environ
 
-    forbidden_domains = {_normalize_domain(d) for d in (forbidden_email_domains or []) if d.strip()}
-    allowed_domains = {_normalize_domain(d) for d in (allowed_email_domains or []) if d.strip()}
+    configured_forbidden_domains = [
+        *(forbidden_email_domains or []),
+        *_env_values(environment, forbidden_email_domains_env),
+    ]
+    configured_forbidden_patterns = [
+        *(forbidden_email_patterns or []),
+        *_env_values(environment, forbidden_email_patterns_env, split_whitespace=False),
+    ]
+    configured_allowed_domains = [
+        *(allowed_email_domains or []),
+        *_env_values(environment, allowed_email_domains_env),
+    ]
+
+    forbidden_domains = {_normalize_domain(d) for d in configured_forbidden_domains if d.strip()}
+    allowed_domains = {_normalize_domain(d) for d in configured_allowed_domains if d.strip()}
     compiled_patterns: list[re.Pattern[str]] = []
     errors: list[str] = []
-    for pattern in forbidden_email_patterns or []:
+    for pattern in configured_forbidden_patterns:
         if not pattern.strip():
             continue
         try:
@@ -272,9 +305,12 @@ def audit_git_identity(
             "repos_scanned": len(repos),
             "max_depth": max_depth,
             "exclude_repo_globs": globs,
-            "forbidden_email_domains": sorted(forbidden_domains),
-            "forbidden_email_patterns": forbidden_email_patterns or [],
-            "allowed_email_domains": sorted(allowed_domains),
+            "forbidden_email_domains_count": len(forbidden_domains),
+            "forbidden_email_patterns_count": len(compiled_patterns),
+            "allowed_email_domains_count": len(allowed_domains),
+            "forbidden_email_domains_env": forbidden_email_domains_env,
+            "forbidden_email_patterns_env": forbidden_email_patterns_env,
+            "allowed_email_domains_env": allowed_email_domains_env,
             "check_global_config": check_global_config,
             "check_repo_config": check_repo_config,
             "check_environment": check_environment,

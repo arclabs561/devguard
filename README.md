@@ -73,8 +73,10 @@ Environment variables can be set in `.env` or exported in your shell.
 
 `git_identity_audit` requires an explicit policy. Set
 `forbidden_email_domains`, `forbidden_email_patterns`, or
-`allowed_email_domains` in `devguard.spec.yaml`. Leave `check_history: false`
-for fast current-config checks; set it to `true` when auditing old commits.
+`allowed_email_domains` in `devguard.spec.yaml`, or set the matching
+`*_env` field to load values from an environment variable. Leave
+`check_history: false` for fast current-config checks; set it to `true` when
+auditing old commits.
 
 ## Pre-commit hooks
 
