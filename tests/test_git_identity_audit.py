@@ -120,6 +120,8 @@ def test_history_scan_flags_old_author_after_config_is_clean(tmp_path: Path) -> 
     ]
     assert len(history_findings) == 1
     assert history_findings[0]["email"] == "person@oldcorp.example"
+    assert history_findings[0]["sample_commit"]
+    assert "refs/heads/main" in history_findings[0]["containing_refs"]
 
 
 def test_allowed_domains_flag_unexpected_current_config(tmp_path: Path) -> None:
