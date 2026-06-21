@@ -229,10 +229,31 @@ def _extract_project_flaudit(report: dict) -> list[_Finding]:
     return results
 
 
+def _extract_git_identity_audit(report: dict) -> list[_Finding]:
+    results: list[_Finding] = []
+    for f in report.get("findings", []):
+        sev = f.get("severity", "warning")
+        source = f.get("source", "git identity")
+        email = f.get("email", "")
+        repo_path = f.get("repo_path")
+        msg = f.get("message") or f"{source}: {email}"
+        results.append(
+            (
+                f.get("check_id", "git_identity_issue"),
+                _sarif_level(sev),
+                msg,
+                repo_path,
+                sev,
+            )
+        )
+    return results
+
+
 _EXTRACTORS: dict[str, Any] = {
     "ai_editor_config_audit": _extract_ai_editor_config,
     "cargo_publish_audit": _extract_cargo_publish,
     "gitignore_audit": _extract_gitignore_audit,
+    "git_identity_audit": _extract_git_identity_audit,
     "dependency_audit": _extract_dependency_audit,
     "ssh_key_audit": _extract_ssh_key_audit,
     "public_github_secrets": _extract_public_github_secrets,

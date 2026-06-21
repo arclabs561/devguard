@@ -265,6 +265,39 @@ def _print_repo_hygiene_table(report: dict) -> None:
     console.print(table)
 
 
+def _print_git_identity_audit_table(report: dict) -> None:
+    findings = report.get("findings", [])
+    if not findings:
+        return
+    table = Table(title="git_identity_audit findings", title_style="bold")
+    table.add_column("repo_name", style="cyan")
+    table.add_column("check")
+    table.add_column("severity")
+    table.add_column("email", max_width=36)
+    table.add_column("source", max_width=42)
+    for f in findings[:_MAX_TABLE_ROWS]:
+        repo_path = f.get("repo_path")
+        repo_name = Path(repo_path).name if repo_path else "(global)"
+        sev = f.get("severity", "warning")
+        table.add_row(
+            repo_name,
+            f.get("check_id", ""),
+            f"[{_sev_style(sev)}]{sev}[/]",
+            f.get("email", ""),
+            f.get("source", ""),
+        )
+    if len(findings) > _MAX_TABLE_ROWS:
+        table.add_row(
+            "...",
+            "",
+            "",
+            f"+{len(findings) - _MAX_TABLE_ROWS} more",
+            "",
+            style="dim",
+        )
+    console.print(table)
+
+
 def _print_ai_editor_config_table(report: dict) -> None:
     repos = [r for r in report.get("repos", []) if r.get("findings")]
     if not repos:
@@ -1053,7 +1086,7 @@ def sweep(
     only: list[str] = typer.Option(
         None,
         "--only",
-        help="Run only these sweeps (repeatable). Known: local_dev, public_github_secrets, local_dirty_worktree_secrets, project_flaudit, gitignore_audit, repo_hygiene, dependency_audit, ssh_key_audit, cargo_publish_audit, ai_editor_config_audit, pre_commit_audit, credential_file_audit, mcp_security_audit",
+        help="Run only these sweeps (repeatable). Known: local_dev, public_github_secrets, local_dirty_worktree_secrets, project_flaudit, gitignore_audit, repo_hygiene, dependency_audit, ssh_key_audit, cargo_publish_audit, ai_editor_config_audit, pre_commit_audit, git_identity_audit, credential_file_audit, mcp_security_audit",
     ),
     format: str = typer.Option(
         "text",
@@ -1578,6 +1611,41 @@ def _sweep_body(
         if report["summary"]["total_errors"] > 0:
             exit_code = max(exit_code, 2)
 
+    # git identity audit sweep
+    gia = spec.sweeps.git_identity_audit
+    if gia.enabled and (not wanted or "git_identity_audit" in wanted):
+        from devguard.sweeps.git_identity_audit import audit_git_identity
+        from devguard.sweeps.git_identity_audit import write_report as write_gia
+
+        root = _resolve_root(gia.dev_root)
+        report, errors = audit_git_identity(
+            dev_root=root,
+            max_depth=gia.max_depth,
+            exclude_repo_globs=gia.exclude_repo_globs,
+            forbidden_email_domains=gia.forbidden_email_domains,
+            forbidden_email_patterns=gia.forbidden_email_patterns,
+            allowed_email_domains=gia.allowed_email_domains,
+            check_global_config=gia.check_global_config,
+            check_repo_config=gia.check_repo_config,
+            check_environment=gia.check_environment,
+            check_history=gia.check_history,
+            max_history_commits=gia.max_history_commits,
+        )
+        out_path = Path(gia.output).expanduser()
+        write_gia(out_path, report)
+        if machine_output:
+            sweep_reports.append(("git_identity_audit", report))
+        else:
+            console.print(f"[bold]git_identity_audit report:[/bold] {out_path}")
+            console.print(f"[bold]Repos scanned:[/bold] {report['scope']['repos_scanned']}")
+            console.print(f"[bold]Findings:[/bold] {report['summary']['total_findings']}")
+            console.print(f"[bold]History findings:[/bold] {report['summary']['history_findings']}")
+            if errors:
+                console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+            _print_git_identity_audit_table(report)
+        if report["summary"]["total_findings"] > 0 or report["summary"]["errors_count"] > 0:
+            exit_code = max(exit_code, 2)
+
     # credential file audit sweep (machine-scoped, skip in single-repo mode)
     cfa = spec.sweeps.credential_file_audit
     if (
@@ -1655,6 +1723,7 @@ def _sweep_body(
         or spec.sweeps.ai_editor_config_audit.enabled
         or spec.sweeps.publish_audit.enabled
         or spec.sweeps.pre_commit_audit.enabled
+        or spec.sweeps.git_identity_audit.enabled
         or spec.sweeps.credential_file_audit.enabled
         or spec.sweeps.mcp_security_audit.enabled
         or spec.sweeps.repo_hygiene.enabled

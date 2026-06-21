@@ -41,6 +41,7 @@ No spec file is required. Without one, devguard uses built-in defaults. Create `
 | Sweep | Description |
 |-------|-------------|
 | `gitignore_audit` | Find repos missing `.gitignore` or lacking expected ignore patterns for their language. |
+| `git_identity_audit` | Check git author emails in config, environment variables, and optional history. |
 | `ai_editor_config_audit` | Check AI editor configs (Cursor rules, Claude settings) for consistency across repos. |
 | `cargo_publish_audit` | Verify Rust crates have publish CI, correct metadata, and no publish blockers. |
 | `publish_audit` | Audit PyPI and npm repos for correct CI publish pipelines, OIDC trusted publishing, and version/license consistency. |
@@ -69,6 +70,11 @@ Most sweeps work with zero configuration. Sweeps that need external access:
 - `dependency_audit`: requires audit tools installed (`npm`, `pip-audit`, `cargo-audit`).
 
 Environment variables can be set in `.env` or exported in your shell.
+
+`git_identity_audit` requires an explicit policy. Set
+`forbidden_email_domains`, `forbidden_email_patterns`, or
+`allowed_email_domains` in `devguard.spec.yaml`. Leave `check_history: false`
+for fast current-config checks; set it to `true` when auditing old commits.
 
 ## Pre-commit hooks
 
