@@ -5,6 +5,7 @@ import logging
 import httpx
 
 from devguard.checkers.base import BaseChecker
+from devguard.config import secret_value
 from devguard.http_client import create_client, retry_with_backoff
 from devguard.models import CheckResult, CheckStatus, DeploymentStatus
 
@@ -29,10 +30,7 @@ class FlyChecker(BaseChecker):
                 errors=["Fly.io API token not configured"],
             )
 
-        # Handle SecretStr
-        fly_token = self.settings.fly_api_token
-        if hasattr(fly_token, "get_secret_value"):
-            fly_token = fly_token.get_secret_value()
+        fly_token = secret_value(self.settings.fly_api_token)
 
         headers = {
             "Authorization": f"Bearer {fly_token}",

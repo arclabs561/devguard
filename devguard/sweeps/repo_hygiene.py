@@ -10,12 +10,15 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import os
 import re
 import subprocess
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from dotenv import dotenv_values
 
 from devguard.sweeps._common import default_dev_root as _default_dev_root
 from devguard.sweeps._common import iter_git_repos
@@ -266,6 +269,109 @@ def _check_internal_docs_in_public(
         severity="low",
         message=f"{len(matched)} internal document(s) committed in a public repo.",
         files=matched,
+    )
+
+
+_TEXT_POLICY_BINARY_SUFFIXES: frozenset[str] = frozenset(
+    {
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".bin",
+        ".wasm",
+        ".so",
+        ".dylib",
+        ".pdf",
+        ".zip",
+        ".gz",
+    }
+)
+
+
+def _split_env_patterns(value: str) -> list[str]:
+    """Split newline/comma-separated regex policy values."""
+    return [item.strip() for item in re.split(r"[\n,]+", value) if item.strip()]
+
+
+def _environment_with_dotenv() -> dict[str, str]:
+    dotenv_env: dict[str, str] = {}
+    for path in (Path("../.env"), Path(".env")):
+        if not path.exists():
+            continue
+        for key, value in dotenv_values(path).items():
+            if value is not None:
+                dotenv_env[key] = value
+    return {**dotenv_env, **os.environ}
+
+
+def _configured_public_text_patterns(
+    patterns: list[str] | None,
+    patterns_env: str | None,
+) -> tuple[list[re.Pattern[str]], list[str]]:
+    """Compile public text policy regexes without exposing their source values."""
+    raw_patterns = [p for p in (patterns or []) if isinstance(p, str) and p.strip()]
+    if patterns_env:
+        raw_patterns.extend(_split_env_patterns(_environment_with_dotenv().get(patterns_env, "")))
+
+    compiled: list[re.Pattern[str]] = []
+    errors: list[str] = []
+    for idx, pattern in enumerate(raw_patterns, 1):
+        try:
+            compiled.append(re.compile(pattern))
+        except re.error as exc:
+            errors.append(f"public_text_patterns[{idx}] failed to compile: {exc}")
+    return compiled, errors
+
+
+def _text_policy_file_selected(rel: str, file_globs: list[str]) -> bool:
+    if not file_globs:
+        return True
+    return any(
+        fnmatch.fnmatch(rel, glob) or fnmatch.fnmatch(Path(rel).name, glob) for glob in file_globs
+    )
+
+
+def _check_public_text_patterns(
+    repo: Path,
+    tracked: list[str],
+    is_public: bool,
+    patterns: list[re.Pattern[str]],
+    file_globs: list[str],
+) -> HygieneFinding | None:
+    """Flag configured private/workspace terms in tracked public-repo text."""
+    if not is_public or not patterns:
+        return None
+
+    hits: list[str] = []
+    total = 0
+    for rel in tracked:
+        if not _text_policy_file_selected(rel, file_globs):
+            continue
+        path = repo / rel
+        if not path.is_file() or path.suffix.lower() in _TEXT_POLICY_BINARY_SUFFIXES:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+        for lineno, line in enumerate(text.splitlines(), 1):
+            if any(pattern.search(line) for pattern in patterns):
+                total += 1
+                hits.append(f"{rel}:{lineno}")
+                if len(hits) >= 20:
+                    break
+        if len(hits) >= 20:
+            break
+
+    if not hits:
+        return None
+    return HygieneFinding(
+        repo_path=str(repo),
+        check="public_text_policy",
+        severity="medium",
+        message=f"{total} tracked public text location(s) matched the configured leak policy.",
+        files=hits,
     )
 
 
@@ -542,10 +648,21 @@ def sweep_repo_hygiene(
     dev_root: Path | None = None,
     max_depth: int = 2,
     exclude_repo_globs: list[str] | None = None,
+    public_text_patterns: list[str] | None = None,
+    public_text_patterns_env: str | None = None,
+    public_text_file_globs: list[str] | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """Check repos for structural hygiene problems and return a report."""
     errors: list[str] = []
     root = dev_root if dev_root is not None else _default_dev_root()
+    text_patterns, pattern_errors = _configured_public_text_patterns(
+        public_text_patterns,
+        public_text_patterns_env,
+    )
+    errors.extend(pattern_errors)
+    text_file_globs = [
+        g for g in (public_text_file_globs or []) if isinstance(g, str) and g.strip()
+    ]
 
     repos = sorted(iter_git_repos(root, max_depth=max_depth))
     globs = [g for g in (exclude_repo_globs or []) if isinstance(g, str) and g.strip()]
@@ -572,6 +689,13 @@ def sweep_repo_hygiene(
             lambda r: _check_stale_gitkeep(r, tracked),
             lambda r: _check_tracked_editor_dirs(r, tracked),
             lambda r: _check_internal_docs_in_public(r, tracked, is_public),
+            lambda r: _check_public_text_patterns(
+                r,
+                tracked,
+                is_public,
+                text_patterns,
+                text_file_globs,
+            ),
             lambda r: _check_stale_rename_refs(r, tracked),
             lambda r: _check_unused_workspace_deps(r),
         ):

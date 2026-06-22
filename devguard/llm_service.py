@@ -2,9 +2,9 @@
 
 import json
 import logging
-from typing import Any
+from typing import Any, cast
 
-from devguard.config import Settings
+from devguard.config import Settings, secret_value
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ class LLMService:
 
                 self._client = (
                     "anthropic",
-                    anthropic.Anthropic(api_key=self.settings.anthropic_api_key.get_secret_value()),
+                    anthropic.Anthropic(api_key=secret_value(self.settings.anthropic_api_key)),
                 )
                 return self._client
             except ImportError:
@@ -44,7 +44,7 @@ class LLMService:
 
                 self._client = (
                     "openai",
-                    openai.OpenAI(api_key=self.settings.openai_api_key.get_secret_value()),
+                    openai.OpenAI(api_key=secret_value(self.settings.openai_api_key)),
                 )
                 return self._client
             except ImportError:
@@ -60,7 +60,7 @@ class LLMService:
                 self._client = (
                     "openrouter",
                     openai.OpenAI(
-                        api_key=self.settings.openrouter_api_key.get_secret_value(),
+                        api_key=secret_value(self.settings.openrouter_api_key),
                         base_url="https://openrouter.ai/api/v1",
                     ),
                 )
@@ -159,9 +159,11 @@ Respond with JSON:
                 raise ValueError(f"Unknown provider: {provider}")
 
             # Parse JSON response
-            result = json.loads(content)
+            result = json.loads(content or "{}")
+            if not isinstance(result, dict):
+                result = {}
             return {
-                "should_send": result.get("should_send", True),
+                "should_send": bool(result.get("should_send", True)),
                 "reasoning": result.get("reasoning", "LLM analysis"),
                 "priority": result.get("priority", "medium"),
                 "summary": result.get("summary", ""),
@@ -180,7 +182,9 @@ Respond with JSON:
     def _rule_based_should_send(self, report: dict[str, Any]) -> bool:
         """Fallback rule-based decision."""
         summary = report.get("summary", {})
-        return (
+        if not isinstance(summary, dict):
+            return False
+        return bool(
             summary.get("critical_vulnerabilities", 0) > 0
             or summary.get("critical_findings", 0) > 0
             or summary.get("high_findings", 0) > 0
@@ -229,7 +233,8 @@ Respond with ONLY the subject line, no quotes or explanation."""
                 response = client.chat.completions.create(
                     model=model, messages=[{"role": "user", "content": prompt}], max_tokens=100
                 )
-                subject = response.choices[0].message.content.strip().strip('"').strip("'")
+                subject_content = response.choices[0].message.content or ""
+                subject = subject_content.strip().strip('"').strip("'")
             else:
                 raise ValueError(f"Unknown provider: {provider}")
 
@@ -237,7 +242,7 @@ Respond with ONLY the subject line, no quotes or explanation."""
             if not subject.startswith("devguard Security Report"):
                 subject = f"devguard Security Report - {subject}"
 
-            return subject[:120]  # Safety limit
+            return str(subject[:120])  # Safety limit
         except Exception as e:
             logger.warning(f"LLM subject generation failed: {e}, using fallback")
             return self._generate_subject_fallback(report)
@@ -349,7 +354,7 @@ Be concrete: cite specific file paths and line references when possible."""
                 import openai
 
                 client = openai.OpenAI(
-                    api_key=str(self.settings.openrouter_api_key.get_secret_value()),
+                    api_key=secret_value(self.settings.openrouter_api_key),
                     base_url="https://openrouter.ai/api/v1",
                 )
                 kwargs = {
@@ -362,12 +367,12 @@ Be concrete: cite specific file paths and line references when possible."""
                 }
                 # Try JSON mode first; fallback if model doesn't support it
                 try:
-                    response = client.chat.completions.create(
+                    response = cast(Any, client.chat.completions).create(
                         **kwargs,
                         response_format={"type": "json_object"},
                     )
                 except Exception:
-                    response = client.chat.completions.create(**kwargs)
+                    response = cast(Any, client.chat.completions).create(**kwargs)
                 return response.choices[0].message.content or "{}"
             except Exception as e:
                 logger.warning(f"OpenRouter flaudit call failed: {e}")

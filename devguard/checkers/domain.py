@@ -5,6 +5,7 @@ import logging
 import socket
 import ssl
 from datetime import UTC, datetime
+from typing import Any, cast
 
 import httpx
 
@@ -145,9 +146,10 @@ class DomainChecker(BaseChecker):
             with socket.create_connection((domain, 443), timeout=10) as sock:
                 with context.wrap_socket(sock, server_hostname=domain) as ssock:
                     cert = ssock.getpeercert()
+                    cert_dict = cast(dict[str, Any], cert)
 
                     # Parse expiry date
-                    expiry_str = cert.get("notAfter", "")
+                    expiry_str = str(cert_dict.get("notAfter", ""))
                     # Format: 'Dec 25 23:59:59 2025 GMT'
                     expiry = datetime.strptime(expiry_str, "%b %d %H:%M:%S %Y %Z")
                     expiry = expiry.replace(tzinfo=UTC)
@@ -156,7 +158,7 @@ class DomainChecker(BaseChecker):
                     days_until_expiry = (expiry - now).days
 
                     # Get issuer
-                    issuer_dict = dict(x[0] for x in cert.get("issuer", []))
+                    issuer_dict = dict(x[0] for x in cert_dict.get("issuer", []))
                     issuer = issuer_dict.get("organizationName", "Unknown")
 
                     return {

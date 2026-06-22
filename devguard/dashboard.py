@@ -7,6 +7,7 @@ import os
 import secrets
 import time
 from contextlib import asynccontextmanager
+from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException, Request, Security, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -69,10 +70,12 @@ api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 # Session configuration
 SESSION_TIMEOUT_SECONDS = 24 * 60 * 60  # 24 hours
 SESSION_COOKIE_NAME = "devguard_session"
+_DEV_SESSION_SECRET: bytes | None = None
 
 
 def _get_session_secret() -> bytes:
     """Get or derive the session signing secret."""
+    global _DEV_SESSION_SECRET
     settings = get_settings()
     # Use dashboard API key as base for session secret
     # If not set, use a per-process random secret (sessions won't survive restarts)
@@ -80,10 +83,10 @@ def _get_session_secret() -> bytes:
         return hashlib.sha256(settings.dashboard_api_key.get_secret_value().encode()).digest()
     else:
         # Generate a random secret for development (not persistent)
-        if not hasattr(_get_session_secret, "_dev_secret"):
-            _get_session_secret._dev_secret = secrets.token_bytes(32)
+        if _DEV_SESSION_SECRET is None:
+            _DEV_SESSION_SECRET = secrets.token_bytes(32)
             logger.warning("Using ephemeral session secret (development mode)")
-        return _get_session_secret._dev_secret
+        return _DEV_SESSION_SECRET
 
 
 def _sign_session(data: str) -> str:
@@ -185,7 +188,7 @@ app = FastAPI(
 
 # Add rate limiting
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, cast(Any, _rate_limit_exceeded_handler))
 
 # CORS configuration
 settings = get_settings()

@@ -137,7 +137,7 @@ def parse_npm_audit_json(raw: str) -> list[VulnSummary]:
                     break
             vulns.append(
                 VulnSummary(
-                    id=info.get("name", pkg_name),
+                    id=str(info.get("name") or pkg_name),
                     severity=sev_str,
                     package=pkg_name,
                     title=title or pkg_name,
@@ -162,7 +162,7 @@ def parse_pip_audit_json(raw: str) -> list[VulnSummary]:
                     v.get("fix_versions", [""])[0] if v.get("fix_versions") else ""
                 )
                 # pip-audit doesn't always include severity; use id-based lookup
-                vuln_id = v.get("id", "UNKNOWN")
+                vuln_id = str(v.get("id") or "UNKNOWN")
                 desc = v.get("description", "")
                 # Attempt to extract severity from aliases or description
                 aliases = v.get("aliases", [])

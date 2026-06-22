@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 from devguard.checkers.base import BaseChecker
 from devguard.config import Settings
@@ -27,7 +27,9 @@ def load_iam_posture(path: Path | None = None) -> dict[str, Any]:
     if path.exists():
         try:
             with open(path) as f:
-                return yaml.safe_load(f)
+                data = yaml.safe_load(f)
+                if isinstance(data, dict):
+                    return data
         except Exception as e:
             logger.warning(f"Failed to load IAM posture config: {e}")
     return {}

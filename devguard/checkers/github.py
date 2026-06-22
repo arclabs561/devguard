@@ -14,7 +14,7 @@ except ImportError:
     GithubException = Exception  # type: ignore[assignment,misc]
 
 from devguard.checkers.base import BaseChecker
-from devguard.config import Settings
+from devguard.config import Settings, secret_value
 from devguard.http_client import create_client, retry_with_backoff
 from devguard.models import CheckResult, RepositoryAlert, Severity
 
@@ -29,10 +29,9 @@ class GitHubChecker(BaseChecker):
     def __init__(self, settings: Settings):
         """Initialize GitHub checker."""
         super().__init__(settings)
-        # Handle SecretStr if using newer pydantic settings
-        token = settings.github_token
-        if hasattr(token, "get_secret_value"):
-            token = token.get_secret_value()
+        token = secret_value(settings.github_token)
+        if not token:
+            raise ValueError("GitHub token not configured")
 
         auth = Auth.Token(token)
         self.github = Github(auth=auth)
@@ -125,7 +124,7 @@ class GitHubChecker(BaseChecker):
             # Using REST API directly as PyGithub doesn't fully support Dependabot alerts
             headers = {
                 "Accept": "application/vnd.github+json",
-                "Authorization": f"token {self.settings.github_token.get_secret_value()}",
+                "Authorization": f"token {secret_value(self.settings.github_token)}",
                 "X-GitHub-Api-Version": "2022-11-28",
             }
 

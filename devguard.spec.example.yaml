@@ -149,6 +149,15 @@ sweeps:
     max_depth: 2
     exclude_repo_globs: ["*/_trash/*", "*/_scratch/*", "*/_external/*", "*/_archive/*", "*/_forks/*"]
     output: ".state/devguard/gitignore-audit.json"
+  repo_hygiene:
+    enabled: true
+    dev_root: null
+    max_depth: 2
+    exclude_repo_globs: ["*/_trash/*", "*/_scratch/*", "*/_external/*", "*/_archive/*", "*/_forks/*"]
+    public_text_patterns: []
+    public_text_patterns_env: null
+    public_text_file_globs: ["*.md", "docs/**/*.md", "src/**/*.rs", "examples/**/*.rs", "*.toml", "*.yaml", "*.yml"]
+    output: ".state/devguard/repo-hygiene.json"
   # Dependency vulnerability audit: cargo-audit, npm audit, pip-audit.
   dependency_audit:
     enabled: true

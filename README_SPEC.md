@@ -147,6 +147,22 @@ discovery_rules:
       description: "Custom discovery for my tool"
 ```
 
+### Public text policy
+
+`repo_hygiene` can scan tracked text files in public repos for configured regex
+patterns:
+
+```yaml
+sweeps:
+  repo_hygiene:
+    enabled: true
+    public_text_patterns: []
+    public_text_patterns_env: DEVGUARD_PUBLIC_TEXT_PATTERNS
+```
+
+Use the environment field for private names or workspace-only policy terms. The
+report shows file locations and redacts the pattern text.
+
 ## Best Practices
 
 1. **Start simple**: Use `devguard spec --init` to get started
@@ -154,4 +170,3 @@ discovery_rules:
 3. **Customize gradually**: Edit the spec file to add/remove rules
 4. **Use timeouts**: Set reasonable timeouts to avoid hanging on slow commands
 5. **Combine methods**: Use both CLI and file_scan for comprehensive discovery
-

@@ -273,9 +273,9 @@ def audit_ssh_keys(
             }
 
             # Add cross-ref issues to relevant keys
-            for entry in local_not_on_github:
+            for missing_key in local_not_on_github:
                 for kr in key_results:
-                    if kr["fingerprint"] == entry["fingerprint"]:
+                    if kr["fingerprint"] == missing_key["fingerprint"]:
                         kr["registered_on_github"] = False
                         kr["issues"].append("not registered on GitHub (stale?)")
 

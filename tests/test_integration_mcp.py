@@ -27,19 +27,20 @@ async def test_mcp_run_checks_basic(mock_settings):
     """Test that MCP run_checks tool works."""
     from devguard.mcp_server import run_checks
 
-    with patch("devguard.core.Guardian") as mock_guardian_class:
-        mock_guardian = MagicMock()
-        mock_guardian_class.return_value = mock_guardian
+    with patch("devguard.mcp_server.get_settings", return_value=mock_settings):
+        with patch("devguard.mcp_server.Guardian") as mock_guardian_class:
+            mock_guardian = MagicMock()
+            mock_guardian_class.return_value = mock_guardian
 
-        mock_report = GuardianReport(checks=[], summary={})
-        mock_guardian.run_checks = AsyncMock(return_value=mock_report)
+            mock_report = GuardianReport(checks=[], summary={})
+            mock_guardian.run_checks = AsyncMock(return_value=mock_report)
 
-        result = await run_checks(json_output=True)
+            result = await run_checks(json_output=True)
 
-        # Should return JSON
-        assert isinstance(result, str)
-        data = json.loads(result)
-        assert "checks" in data or "error" in data
+            # Should return JSON
+            assert isinstance(result, str)
+            data = json.loads(result)
+            assert "checks" in data or "error" in data
 
 
 @pytest.mark.asyncio
@@ -47,10 +48,10 @@ async def test_mcp_run_checks_with_packages(mock_settings):
     """Test that MCP run_checks accepts package list."""
     from devguard.mcp_server import run_checks
 
-    with patch("devguard.config.get_settings") as mock_get_settings:
+    with patch("devguard.mcp_server.get_settings") as mock_get_settings:
         mock_get_settings.return_value = mock_settings
 
-        with patch("devguard.core.Guardian") as mock_guardian_class:
+        with patch("devguard.mcp_server.Guardian") as mock_guardian_class:
             mock_guardian = MagicMock()
             mock_guardian_class.return_value = mock_guardian
 
@@ -71,29 +72,30 @@ async def test_mcp_scan_npm_package(mock_settings):
     """Test that MCP scan_npm_package tool works."""
     from devguard.mcp_server import scan_npm_package
 
-    with patch("devguard.core.Guardian") as mock_guardian_class:
-        mock_guardian = MagicMock()
-        mock_guardian_class.return_value = mock_guardian
+    with patch("devguard.mcp_server.get_settings", return_value=mock_settings):
+        with patch("devguard.mcp_server.Guardian") as mock_guardian_class:
+            mock_guardian = MagicMock()
+            mock_guardian_class.return_value = mock_guardian
 
-        mock_report = GuardianReport(
-            checks=[
-                CheckResult(
-                    check_type="npm",
-                    success=True,
-                    vulnerabilities=[],
-                    errors=[],
-                )
-            ],
-            summary={},
-        )
-        mock_guardian.run_checks = AsyncMock(return_value=mock_report)
+            mock_report = GuardianReport(
+                checks=[
+                    CheckResult(
+                        check_type="npm",
+                        success=True,
+                        vulnerabilities=[],
+                        errors=[],
+                    )
+                ],
+                summary={},
+            )
+            mock_guardian.run_checks = AsyncMock(return_value=mock_report)
 
-        result = await scan_npm_package("test-package")
+            result = await scan_npm_package("test-package")
 
-        # Should return JSON
-        assert isinstance(result, str)
-        data = json.loads(result)
-        assert "success" in data or "error" in data
+            # Should return JSON
+            assert isinstance(result, str)
+            data = json.loads(result)
+            assert "success" in data or "error" in data
 
 
 @pytest.mark.asyncio
@@ -127,22 +129,23 @@ async def test_mcp_get_unified_alert_history_with_smart_email(mock_settings):
 
     mock_settings.use_smart_email = True
 
-    with patch("devguard.utils.import_smart_email") as mock_import:
-        mock_smart_email = MagicMock()
-        mock_smart_email.init_db = MagicMock()
-        mock_import.return_value = mock_smart_email
+    with patch("devguard.mcp_server.get_settings", return_value=mock_settings):
+        with patch("devguard.utils.import_smart_email") as mock_import:
+            mock_smart_email = MagicMock()
+            mock_smart_email.init_db = MagicMock()
+            mock_import.return_value = mock_smart_email
 
-        with patch("sqlite3.connect") as mock_connect:
-            mock_conn = MagicMock()
-            mock_connect.return_value = mock_conn
-            mock_conn.execute.return_value.fetchall.return_value = []
+            with patch("sqlite3.connect") as mock_connect:
+                mock_conn = MagicMock()
+                mock_connect.return_value = mock_conn
+                mock_conn.execute.return_value.fetchall.return_value = []
 
-            result = await get_unified_alert_history(limit=20)
+                result = await get_unified_alert_history(limit=20)
 
-            # Should return JSON
-            assert isinstance(result, str)
-            data = json.loads(result)
-            assert "alerts" in data or "error" in data
+                # Should return JSON
+                assert isinstance(result, str)
+                data = json.loads(result)
+                assert "alerts" in data or "error" in data
 
 
 @pytest.mark.asyncio
@@ -152,7 +155,8 @@ async def test_mcp_get_unified_alert_history_without_smart_email(mock_settings):
 
     mock_settings.use_smart_email = False
 
-    result = await get_unified_alert_history(limit=20)
+    with patch("devguard.mcp_server.get_settings", return_value=mock_settings):
+        result = await get_unified_alert_history(limit=20)
 
     # Should return error message
     assert isinstance(result, str)

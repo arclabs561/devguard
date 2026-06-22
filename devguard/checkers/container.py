@@ -3,7 +3,7 @@
 import logging
 import re
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from devguard.checkers.base import BaseChecker
 from devguard.models import CheckResult, Severity, Vulnerability
@@ -17,7 +17,7 @@ class ContainerChecker(BaseChecker):
     check_type: ClassVar[str] = "container"
 
     # Simple regex-based rules
-    RULES = [
+    RULES: ClassVar[list[dict[str, Any]]] = [
         {
             "id": "run-as-root",
             "pattern": r"^USER\s+root",

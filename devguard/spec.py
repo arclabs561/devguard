@@ -581,6 +581,26 @@ class RepoHygieneSweepSpec(BaseModel):
         ],
         description="Glob patterns to exclude repos from the sweep.",
     )
+    public_text_patterns: list[str] = Field(
+        default_factory=list,
+        description="Regex patterns forbidden in tracked text files of public repos.",
+    )
+    public_text_patterns_env: str | None = Field(
+        None,
+        description="Environment variable containing additional forbidden public text regexes.",
+    )
+    public_text_file_globs: list[str] = Field(
+        default_factory=lambda: [
+            "*.md",
+            "docs/**/*.md",
+            "src/**/*.rs",
+            "examples/**/*.rs",
+            "*.toml",
+            "*.yaml",
+            "*.yml",
+        ],
+        description="Tracked file globs scanned by the public text policy.",
+    )
     output: str = Field(
         ".state/devguard/repo-hygiene.json",
         description="Where to write the JSON report.",
@@ -628,63 +648,63 @@ class SweepSpec(BaseModel):
     """Spec for all sweeps (policy checks)."""
 
     local_dev: LocalDevSweepSpec = Field(
-        default_factory=lambda: LocalDevSweepSpec(),
+        default_factory=lambda: LocalDevSweepSpec.model_validate({}),
         description="Local dev workspace sweep",
     )
     public_github_secrets: PublicGitHubSecretsSweepSpec = Field(
-        default_factory=lambda: PublicGitHubSecretsSweepSpec(),
+        default_factory=lambda: PublicGitHubSecretsSweepSpec.model_validate({}),
         description="Scan public GitHub repos for leaked secrets (redacted)",
     )
     local_dirty_worktree_secrets: LocalDirtyWorktreeSecretsSweepSpec = Field(
-        default_factory=lambda: LocalDirtyWorktreeSecretsSweepSpec(),
+        default_factory=lambda: LocalDirtyWorktreeSecretsSweepSpec.model_validate({}),
         description="Scan dirty local git worktrees for secrets (redacted)",
     )
     project_flaudit: ProjectFlauditSweepSpec = Field(
-        default_factory=lambda: ProjectFlauditSweepSpec(),
+        default_factory=lambda: ProjectFlauditSweepSpec.model_validate({}),
         description="Files-to-prompt + OpenRouter/Gemini flaw analysis per project",
     )
     gitignore_audit: GitignoreAuditSweepSpec = Field(
-        default_factory=lambda: GitignoreAuditSweepSpec(),
+        default_factory=lambda: GitignoreAuditSweepSpec.model_validate({}),
         description="Audit .gitignore files for missing hygiene patterns",
     )
     dependency_audit: DependencyAuditSweepSpec = Field(
-        default_factory=lambda: DependencyAuditSweepSpec(),
+        default_factory=lambda: DependencyAuditSweepSpec.model_validate({}),
         description="Audit dependencies for known vulnerabilities",
     )
     ssh_key_audit: SSHKeyAuditSweepSpec = Field(
-        default_factory=lambda: SSHKeyAuditSweepSpec(),
+        default_factory=lambda: SSHKeyAuditSweepSpec.model_validate({}),
         description="Audit SSH keys for weak algorithms, missing passphrases, stale registrations",
     )
     cargo_publish_audit: CargoPublishAuditSweepSpec = Field(
-        default_factory=lambda: CargoPublishAuditSweepSpec(),
+        default_factory=lambda: CargoPublishAuditSweepSpec.model_validate({}),
         description="Audit Rust repos for correct cargo publish CI pipelines",
     )
     ai_editor_config_audit: AIEditorConfigAuditSweepSpec = Field(
-        default_factory=lambda: AIEditorConfigAuditSweepSpec(),
+        default_factory=lambda: AIEditorConfigAuditSweepSpec.model_validate({}),
         description="Audit AI editor configs (Claude, Cursor, Copilot, MCP) across repos",
     )
     publish_audit: PublishAuditSweepSpec = Field(
-        default_factory=lambda: PublishAuditSweepSpec(),
+        default_factory=lambda: PublishAuditSweepSpec.model_validate({}),
         description="Audit PyPI and npm repos for correct publish CI pipelines",
     )
     pre_commit_audit: PreCommitAuditSweepSpec = Field(
-        default_factory=lambda: PreCommitAuditSweepSpec(),
+        default_factory=lambda: PreCommitAuditSweepSpec.model_validate({}),
         description="Audit pre-commit configs for secret scanning hooks",
     )
     git_identity_audit: GitIdentityAuditSweepSpec = Field(
-        default_factory=lambda: GitIdentityAuditSweepSpec(),
+        default_factory=lambda: GitIdentityAuditSweepSpec.model_validate({}),
         description="Audit git identity settings and optional commit metadata",
     )
     credential_file_audit: CredentialFileAuditSweepSpec = Field(
-        default_factory=lambda: CredentialFileAuditSweepSpec(),
+        default_factory=lambda: CredentialFileAuditSweepSpec.model_validate({}),
         description="Audit credential files for permission issues and plaintext secrets",
     )
     mcp_security_audit: MCPSecurityAuditSweepSpec = Field(
-        default_factory=lambda: MCPSecurityAuditSweepSpec(),
+        default_factory=lambda: MCPSecurityAuditSweepSpec.model_validate({}),
         description="Deep MCP config security scanning (secrets, injection, trifecta)",
     )
     repo_hygiene: RepoHygieneSweepSpec = Field(
-        default_factory=lambda: RepoHygieneSweepSpec(),
+        default_factory=lambda: RepoHygieneSweepSpec.model_validate({}),
         description="Structural hygiene sweep (scattered docs, committed data, stale renames, etc.)",
     )
 
@@ -713,7 +733,7 @@ class MonitorSpec(BaseModel):
 
 def load_spec(spec_path: Path) -> MonitorSpec:
     """Load a monitoring spec from a file."""
-    import yaml  # type: ignore[import-not-found]
+    import yaml  # type: ignore[import-untyped]
 
     with open(spec_path) as f:
         data = yaml.safe_load(f) or {}

@@ -219,7 +219,7 @@ class Guardian:
         if checker_tasks:
             results = await asyncio.gather(*checker_tasks, return_exceptions=True)
             for result in results:
-                if isinstance(result, Exception):
+                if isinstance(result, BaseException):
                     # This shouldn't happen due to error handling in run_checker, but handle it
                     import logging
 
