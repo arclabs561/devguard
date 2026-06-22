@@ -41,6 +41,7 @@ No spec file is required. Without one, devguard uses built-in defaults. Create `
 | Sweep | Description |
 |-------|-------------|
 | `gitignore_audit` | Find repos missing `.gitignore` or lacking expected ignore patterns for their language. |
+| `repo_hygiene` | Check structural hygiene and configurable public-text leak patterns in local repos. |
 | `git_identity_audit` | Check git author emails in config, environment variables, and optional history. |
 | `ai_editor_config_audit` | Check AI editor configs (Cursor rules, Claude settings) for consistency across repos. |
 | `cargo_publish_audit` | Verify Rust crates have publish CI, correct metadata, and no publish blockers. |
@@ -77,6 +78,11 @@ Environment variables can be set in `.env` or exported in your shell.
 `*_env` field to load values from an environment variable. Leave
 `check_history: false` for fast current-config checks; set it to `true` when
 auditing old commits.
+
+`repo_hygiene.public_text_patterns` scans tracked text files in public repos for
+configured regexes. Use `public_text_patterns_env` when the patterns name private
+projects or workspace policy terms; reports include file locations, not the
+matched pattern text.
 
 ## Pre-commit hooks
 

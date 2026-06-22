@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 
 from devguard.checkers.base import BaseChecker
+from devguard.config import secret_value
 from devguard.models import APIUsage, CheckResult, Finding, Severity
 
 logger = logging.getLogger(__name__)
@@ -16,11 +17,7 @@ logger = logging.getLogger(__name__)
 
 def _get_secret(secret) -> str | None:
     """Extract secret value from SecretStr or return string directly."""
-    if secret is None:
-        return None
-    if hasattr(secret, "get_secret_value"):
-        return secret.get_secret_value()
-    return str(secret)
+    return secret_value(secret) if secret is not None else None
 
 
 class APIUsageChecker(BaseChecker):
@@ -69,7 +66,7 @@ class APIUsageChecker(BaseChecker):
         provider_names = ["openrouter", "anthropic", "openai", "perplexity", "groq"]
 
         for provider, result in zip(provider_names, results):
-            if isinstance(result, Exception):
+            if isinstance(result, BaseException):
                 # Log all exceptions for debugging
                 logger.warning(
                     f"{provider} check raised exception: {type(result).__name__}: {result}"
@@ -262,7 +259,7 @@ class APIUsageChecker(BaseChecker):
 
                             # Aggregate cost
                             if isinstance(cost, dict):
-                                total_cost += cost.get("total", cost.get("amount", 0))
+                                total_cost += float(cost.get("total") or cost.get("amount") or 0)
                             elif isinstance(cost, (int, float)):
                                 total_cost += cost
 
@@ -511,6 +508,7 @@ class APIUsageChecker(BaseChecker):
                         )
                     )
                     return None, findings
+                return None, findings
 
         except httpx.HTTPStatusError as e:
             logger.warning(f"Groq HTTP error: {e.response.status_code} - {e.response.text[:200]}")

@@ -94,7 +94,7 @@ async def execute_cli_command(
     command: str, parser: str, extract_path: str | None, timeout: int, username: str | None = None
 ) -> list[Any]:
     """Execute a CLI command and parse results."""
-    results = []
+    results: list[Any] = []
 
     # Replace {username} placeholder if present
     if username and "{username}" in command:
@@ -257,7 +257,7 @@ def _extract_from_file(file_path: Path, extractor: str, extract_path: str | None
                 return _extract_json_path(data, extract_path)
             return data
         elif extractor == "yaml_path":
-            import yaml
+            import yaml  # type: ignore[import-untyped]
 
             data = yaml.safe_load(content)
             if extract_path:

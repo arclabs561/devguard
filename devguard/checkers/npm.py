@@ -207,10 +207,9 @@ class NpmChecker(BaseChecker):
         if not self.settings.npm_packages_to_monitor:
             return vulnerabilities
 
-        # Handle SecretStr if using newer pydantic settings
-        snyk_token = self.settings.snyk_token
-        if hasattr(snyk_token, "get_secret_value"):
-            snyk_token = snyk_token.get_secret_value()
+        from devguard.config import secret_value
+
+        snyk_token = secret_value(self.settings.snyk_token)
 
         try:
             async with create_client() as client:

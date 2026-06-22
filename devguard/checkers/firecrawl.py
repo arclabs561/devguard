@@ -5,6 +5,7 @@ import logging
 import httpx
 
 from devguard.checkers.base import BaseChecker
+from devguard.config import secret_value
 from devguard.http_client import create_client, retry_with_backoff
 from devguard.models import CheckResult, CostMetric
 
@@ -28,10 +29,7 @@ class FirecrawlChecker(BaseChecker):
                 errors=["Firecrawl API key not configured"],
             )
 
-        # Handle SecretStr
-        firecrawl_key = self.settings.firecrawl_api_key
-        if hasattr(firecrawl_key, "get_secret_value"):
-            firecrawl_key = firecrawl_key.get_secret_value()
+        firecrawl_key = secret_value(self.settings.firecrawl_api_key)
 
         headers = {
             "Authorization": f"Bearer {firecrawl_key}",

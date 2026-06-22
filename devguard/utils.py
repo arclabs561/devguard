@@ -150,11 +150,15 @@ def load_budget_config() -> dict[str, Any]:
         return {}
 
     try:
-        import yaml
+        import yaml  # type: ignore[import-untyped]
 
         with open(budget_path) as f:
             config = yaml.safe_load(f)
-            return config.get("aws", {})
+            if isinstance(config, dict):
+                aws_config = config.get("aws", {})
+                if isinstance(aws_config, dict):
+                    return aws_config
+            return {}
     except Exception as e:
         logger.debug(f"Failed to load budget config from {budget_path}: {e}")
         return {}

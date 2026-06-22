@@ -643,7 +643,7 @@ def spec(
             spec.discovery_rules.append(username_rule)
 
         # Save spec
-        import yaml
+        import yaml  # type: ignore[import-untyped]
 
         spec_dict = spec.model_dump(exclude_none=True)
         with open(spec_file, "w") as f:
@@ -691,7 +691,7 @@ def spec(
             )
 
         # Save
-        import yaml
+        import yaml  # type: ignore[import-untyped]
 
         spec_dict = spec.model_dump(exclude_none=True)
         with open(spec_file, "w") as f:
@@ -1168,10 +1168,11 @@ def _sweep_body(
         )
         spec = MonitorSpec(
             name="default",
+            description=None,
             discovery_rules=[],
             manual_resources={},
             filters={},
-            sweeps=SweepSpec(),
+            sweeps=SweepSpec.model_validate({}),
         )
     else:
         spec = load_spec(spec_path)
@@ -1384,6 +1385,9 @@ def _sweep_body(
             dev_root=root,
             max_depth=rh.max_depth,
             exclude_repo_globs=rh.exclude_repo_globs,
+            public_text_patterns=rh.public_text_patterns,
+            public_text_patterns_env=rh.public_text_patterns_env,
+            public_text_file_globs=rh.public_text_file_globs,
         )
         out_path = Path(rh.output).expanduser()
         write_rh(out_path, report)

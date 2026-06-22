@@ -6,7 +6,7 @@ import os
 from datetime import UTC, datetime
 from typing import Any
 
-from devguard.config import Settings
+from devguard.config import Settings, secret_value
 from devguard.models import GuardianReport
 
 logger = logging.getLogger(__name__)
@@ -210,7 +210,9 @@ class Reporter:
         try:
             if os.path.exists(history_file):
                 with open(history_file) as f:
-                    return json.load(f)
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        return [entry for entry in data if isinstance(entry, dict)]
         except Exception as e:
             logger.debug(f"Could not read email history file: {e}")
         return []
@@ -230,7 +232,7 @@ class Reporter:
     def _record_email_history(
         self,
         report: GuardianReport,
-        message_id: str,
+        message_id: str | None,
         subject: str,
         in_reply_to: str | None,
         llm_decision: dict[str, Any] | None = None,
@@ -331,14 +333,14 @@ class Reporter:
                 conn = sqlite3.connect(str(db_path))
 
                 # Determine severity from report
-                critical_vulns = len(report.get_critical_vulnerabilities())
-                critical_findings = len(report.get_critical_findings())
-                high_findings = len(report.get_high_findings())
-                unhealthy = len(report.get_unhealthy_deployments())
+                critical_vulns_count = len(report.get_critical_vulnerabilities())
+                critical_findings_count = len(report.get_critical_findings())
+                high_findings_count = len(report.get_high_findings())
+                unhealthy_count = len(report.get_unhealthy_deployments())
 
-                if critical_vulns > 0 or critical_findings > 0 or unhealthy > 0:
+                if critical_vulns_count > 0 or critical_findings_count > 0 or unhealthy_count > 0:
                     severity = "CRITICAL"
-                elif high_findings > 0:
+                elif high_findings_count > 0:
                     severity = "HIGH"
                 elif report.summary.get("total_vulnerabilities", 0) > 0:
                     severity = "MEDIUM"
@@ -567,10 +569,10 @@ class Reporter:
         # Check if SMTP is configured
         smtp_host = getattr(self.settings, "smtp_host", None)
         smtp_user = getattr(self.settings, "smtp_user", None)
-        smtp_password = getattr(self.settings, "smtp_password", None)
+        smtp_password = secret_value(getattr(self.settings, "smtp_password", None))
         smtp_from = getattr(self.settings, "smtp_from", None)
 
-        if not all([smtp_host, smtp_user, smtp_password, smtp_from]):
+        if smtp_host is None or smtp_user is None or smtp_password is None or smtp_from is None:
             logger.warning(
                 "Email sending requires SMTP configuration: "
                 "smtp_host, smtp_user, smtp_password, smtp_from"
@@ -777,7 +779,7 @@ class Reporter:
                 # Record in history for introspection
                 self._record_email_history(report, None, headline, None, llm_decision)
 
-            return success
+            return bool(success)
 
         except ImportError as e:
             logger.warning(f"smart_email not available: {e}")

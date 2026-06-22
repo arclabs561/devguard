@@ -410,11 +410,17 @@ def scan_public_github_repos(
     requested_engines = [e.strip().lower() for e in (engines or ["trufflehog"]) if e and e.strip()]
     # Dedup while preserving order.
     seen: set[str] = set()
-    requested_engines = [e for e in requested_engines if not (e in seen or seen.add(e))]
+    deduped_engines: list[str] = []
+    for engine in requested_engines:
+        if engine in seen:
+            continue
+        seen.add(engine)
+        deduped_engines.append(engine)
+    requested_engines = deduped_engines
     supported = {"trufflehog", "kingfisher"}
-    unknown = [e for e in requested_engines if e not in supported]
-    if unknown:
-        errors.append(f"Unknown engines: {unknown}. Supported: {sorted(supported)}")
+    unknown_engines = [e for e in requested_engines if e not in supported]
+    if unknown_engines:
+        errors.append(f"Unknown engines: {unknown_engines}. Supported: {sorted(supported)}")
         requested_engines = [e for e in requested_engines if e in supported]
     if not requested_engines:
         requested_engines = ["trufflehog"]

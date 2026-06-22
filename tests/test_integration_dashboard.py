@@ -1,6 +1,6 @@
 """Integration tests for dashboard functionality."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from devguard.config import Settings
 from devguard.dashboard import app
+from devguard.models import GuardianReport
 
 
 @pytest.fixture
@@ -83,6 +84,12 @@ def test_dashboard_login_with_invalid_key(client):
 
 def test_dashboard_report_endpoint_requires_auth(client):
     """Test that dashboard report endpoint works (may or may not require auth)."""
-    response = client.get("/api/report")
+    with patch("devguard.dashboard.Guardian") as mock_guardian_class:
+        mock_guardian = MagicMock()
+        mock_guardian.run_checks = AsyncMock(return_value=GuardianReport(checks=[], summary={}))
+        mock_guardian_class.return_value = mock_guardian
+
+        response = client.get("/api/report")
+
     # Endpoint exists (may be public or require auth depending on implementation)
     assert response.status_code in [200, 401, 403, 404]

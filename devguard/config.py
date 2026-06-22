@@ -6,6 +6,15 @@ from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
+def secret_value(value: SecretStr | str | None) -> str | None:
+    """Return the raw value for SecretStr settings while still accepting test strings."""
+    if value is None:
+        return None
+    if isinstance(value, SecretStr):
+        return value.get_secret_value()
+    return value
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 

@@ -1,8 +1,11 @@
 """Tests for repo hygiene sweep (unused workspace dependencies check)."""
 
+import re
 from pathlib import Path
 
+from devguard.spec import load_spec
 from devguard.sweeps.repo_hygiene import (
+    _check_public_text_patterns,
     _check_unused_workspace_deps,
     _workspace_dep_consumers,
 )
@@ -142,3 +145,59 @@ def test_workspace_dep_consumers_all_dep_tables() -> None:
         },
     }
     assert _workspace_dep_consumers(manifest) == {"a", "b", "c", "d"}
+
+
+def test_public_text_policy_flags_public_repo(tmp_path: Path) -> None:
+    """Configured public text policy reports locations without exposing patterns."""
+    _write(tmp_path / "LICENSE", "MIT\n")
+    _write(tmp_path / "README.md", "private ADR-0001 context should stay local\n")
+
+    finding = _check_public_text_patterns(
+        tmp_path,
+        ["LICENSE", "README.md"],
+        True,
+        [re.compile(r"ADR-\d{4}")],
+        ["*.md"],
+    )
+
+    assert finding is not None
+    assert finding.check == "public_text_policy"
+    assert finding.severity == "medium"
+    assert finding.files == ["README.md:1"]
+    assert "ADR-0001" not in finding.message
+
+
+def test_public_text_policy_skips_private_repo(tmp_path: Path) -> None:
+    """Configured public text policy only applies to public repos."""
+    _write(tmp_path / "README.md", "ADR-0001 is fine in a private planning repo\n")
+
+    assert (
+        _check_public_text_patterns(
+            tmp_path,
+            ["README.md"],
+            False,
+            [re.compile(r"ADR-\d{4}")],
+            ["*.md"],
+        )
+        is None
+    )
+
+
+def test_spec_loads_public_text_policy_fields(tmp_path: Path) -> None:
+    """repo_hygiene accepts the public text policy fields from YAML."""
+    spec_path = tmp_path / "devguard.spec.yaml"
+    spec_path.write_text(
+        """
+name: test
+sweeps:
+  repo_hygiene:
+    public_text_patterns: ["ADR-[0-9]{4}"]
+    public_text_patterns_env: DEVGUARD_PUBLIC_TEXT_PATTERNS
+    public_text_file_globs: ["*.md"]
+"""
+    )
+
+    repo_hygiene = load_spec(spec_path).sweeps.repo_hygiene
+    assert repo_hygiene.public_text_patterns == ["ADR-[0-9]{4}"]
+    assert repo_hygiene.public_text_patterns_env == "DEVGUARD_PUBLIC_TEXT_PATTERNS"
+    assert repo_hygiene.public_text_file_globs == ["*.md"]

@@ -51,7 +51,7 @@ async def retry_with_backoff(
     For rate limiting (429), respects Retry-After header if available.
     For other transient errors, uses exponential backoff with optional jitter.
     """
-    last_exception = None
+    last_exception: BaseException | None = None
 
     for attempt in range(max_retries):
         try:

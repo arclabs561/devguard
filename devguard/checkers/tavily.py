@@ -5,6 +5,7 @@ import logging
 import httpx
 
 from devguard.checkers.base import BaseChecker
+from devguard.config import secret_value
 from devguard.http_client import create_client, retry_with_backoff
 from devguard.models import CheckResult, CostMetric
 
@@ -28,10 +29,7 @@ class TavilyChecker(BaseChecker):
                 errors=["Tavily API key not configured"],
             )
 
-        # Handle SecretStr
-        tavily_key = self.settings.tavily_api_key
-        if hasattr(tavily_key, "get_secret_value"):
-            tavily_key = tavily_key.get_secret_value()
+        tavily_key = secret_value(self.settings.tavily_api_key)
 
         headers = {
             "Authorization": f"Bearer {tavily_key}",

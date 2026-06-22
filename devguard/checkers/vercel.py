@@ -6,6 +6,7 @@ from datetime import datetime
 import httpx
 
 from devguard.checkers.base import BaseChecker
+from devguard.config import secret_value
 from devguard.http_client import create_client, retry_with_backoff
 from devguard.models import CheckResult, CheckStatus, DeploymentStatus
 
@@ -30,10 +31,7 @@ class VercelChecker(BaseChecker):
                 errors=["Vercel token not configured"],
             )
 
-        # Handle SecretStr
-        vercel_token = self.settings.vercel_token
-        if hasattr(vercel_token, "get_secret_value"):
-            vercel_token = vercel_token.get_secret_value()
+        vercel_token = secret_value(self.settings.vercel_token)
 
         headers = {
             "Authorization": f"Bearer {vercel_token}",
@@ -162,12 +160,14 @@ class VercelChecker(BaseChecker):
 
             # Parse dates
             created_at = None
-            if deployment_data.get("createdAt"):
-                created_at = datetime.fromtimestamp(deployment_data.get("createdAt") / 1000)
+            created_at_ms = deployment_data.get("createdAt")
+            if isinstance(created_at_ms, int | float):
+                created_at = datetime.fromtimestamp(created_at_ms / 1000)
 
             updated_at = None
-            if deployment_data.get("updatedAt"):
-                updated_at = datetime.fromtimestamp(deployment_data.get("updatedAt") / 1000)
+            updated_at_ms = deployment_data.get("updatedAt")
+            if isinstance(updated_at_ms, int | float):
+                updated_at = datetime.fromtimestamp(updated_at_ms / 1000)
 
             url = deployment_data.get("url")
             if url and not url.startswith("http"):

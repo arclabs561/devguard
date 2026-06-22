@@ -218,7 +218,8 @@ class SwarmChecker(BaseChecker):
             if proc.returncode != 0:
                 return {"error": f"docker info failed: {stderr.decode()}"}
 
-            return json.loads(stdout.decode())
+            data = json.loads(stdout.decode())
+            return data if isinstance(data, dict) else {"error": "docker info returned non-object"}
 
         except TimeoutError:
             return {"error": "docker info timed out"}
