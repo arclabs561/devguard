@@ -4,6 +4,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from devguard.sweeps.gitignore_audit import (
+    DesignAdrExposure,
+    _design_adr_exposure,
     _detect_languages,
     _is_likely_public,
     _pattern_satisfied,
@@ -142,3 +144,47 @@ def test_audit_gitignores_public_flagging(_mock_global, tmp_path: Path) -> None:
     report, _ = audit_gitignores(dev_root=tmp_path, max_depth=1)
     assert report["summary"]["public_repos_with_gaps"] == 1
     assert report["repos"][0]["is_public"] is True
+
+
+def test_design_adr_exposure_noop_when_convention_absent(tmp_path: Path) -> None:
+    # global gitignore does NOT mark design/adr private -> never fires
+    assert _design_adr_exposure(tmp_path, global_gi_lines=[], repo_gi_lines=["!docs/adr/"]) is None
+
+
+def test_design_adr_exposure_flags_reinclude(tmp_path: Path) -> None:
+    exp = _design_adr_exposure(
+        tmp_path,
+        global_gi_lines=["docs/adr/", "docs/design/"],
+        repo_gi_lines=["!docs/adr/"],
+    )
+    assert isinstance(exp, DesignAdrExposure)
+    assert exp.reincludes == ["!docs/adr/"]
+    assert exp.tracked == []
+
+
+def test_design_adr_exposure_none_when_clean(tmp_path: Path) -> None:
+    assert (
+        _design_adr_exposure(tmp_path, global_gi_lines=["docs/adr/"], repo_gi_lines=[".env"])
+        is None
+    )
+
+
+def test_design_adr_exposure_flags_tracked_files(tmp_path: Path) -> None:
+    import subprocess
+
+    repo = tmp_path / "r"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "core.excludesFile", "/dev/null"], cwd=repo, check=True)
+    (repo / "docs" / "adr").mkdir(parents=True)
+    (repo / "docs" / "adr" / "0001.md").write_text("x")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "i", "--no-verify"],
+        cwd=repo,
+        check=True,
+    )
+
+    exp = _design_adr_exposure(repo, global_gi_lines=["docs/adr/"], repo_gi_lines=[])
+    assert isinstance(exp, DesignAdrExposure)
+    assert "docs/adr/0001.md" in exp.tracked

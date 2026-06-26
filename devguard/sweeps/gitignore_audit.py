@@ -105,6 +105,14 @@ class GitignoreGap:
     is_public: bool
 
 
+@dataclass(frozen=True)
+class DesignAdrExposure:
+    """A repo exposing the private design/adr namespace (re-include and/or tracked files)."""
+
+    reincludes: list[str]
+    tracked: list[str]
+
+
 @dataclass
 class RepoAuditResult:
     repo_path: str
@@ -113,6 +121,7 @@ class RepoAuditResult:
     languages: list[str]
     missing_patterns: list[str] = field(default_factory=list)
     case_warnings: list[str] = field(default_factory=list)
+    design_adr_exposure: DesignAdrExposure | None = None
 
 
 # Files that must have exact casing for Claude Code to find them.
@@ -200,6 +209,61 @@ def _read_gitignore_lines_from(path: Path) -> list[str]:
     return [s for line in text.splitlines() if (s := line.strip()) and not s.startswith("#")]
 
 
+# Doc namespaces treated as private working scratch when the global gitignore
+# ignores them. A public repo that re-includes (!docs/adr/) or tracks files
+# there is exposing local-only notes.
+_PRIVATE_DOC_DIRS = ("docs/design", "docs/adr")
+
+
+def _tracked_doc_files(repo: Path, dirs: tuple[str, ...]) -> list[str]:
+    """Files tracked under the given dirs (git ls-files). Empty dirs -> [] (never lists all)."""
+    if not dirs:
+        return []
+    import subprocess as _sp
+
+    try:
+        res = _sp.run(
+            ["git", "ls-files", *dirs],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return [line for line in res.stdout.splitlines() if line.strip()]
+    except Exception:
+        return []
+
+
+def _design_adr_exposure(
+    repo: Path, global_gi_lines: list[str], repo_gi_lines: list[str]
+) -> DesignAdrExposure | None:
+    """Detect design/adr docs exposed where the global gitignore makes them private.
+
+    Returns None unless the global gitignore ignores the namespace (the convention
+    is in effect) AND this repo either re-includes it (!docs/adr/) or tracks files
+    under it. Self-gating: a no-op when the convention is absent, so it never fires
+    on a project that deliberately publishes its ADRs.
+    """
+    global_norm = {
+        line.lstrip("/").rstrip("/") for line in global_gi_lines if not line.startswith("!")
+    }
+    private_dirs = [d for d in _PRIVATE_DOC_DIRS if d in global_norm]
+    if not private_dirs:
+        return None
+    reincludes = sorted(
+        {
+            line
+            for line in repo_gi_lines
+            if line.startswith("!") and line.lstrip("!").rstrip("/") in private_dirs
+        }
+    )
+    existing = tuple(d for d in private_dirs if (repo / d).exists())
+    tracked = _tracked_doc_files(repo, existing)
+    if not reincludes and not tracked:
+        return None
+    return DesignAdrExposure(reincludes=reincludes, tracked=tracked)
+
+
 def audit_gitignores(
     *,
     dev_root: Path | None = None,
@@ -222,6 +286,7 @@ def audit_gitignores(
     gap_counter: Counter[str] = Counter()
     repos_without_gitignore: list[str] = []
     public_repos_with_gaps: list[str] = []
+    design_adr_exposed: list[str] = []
 
     for repo in repos:
         try:
@@ -244,6 +309,11 @@ def audit_gitignores(
                 gap_counter[pattern_name] += 1
 
         case_warns = _check_case_sensitive_files(repo)
+        # Exposure is only a finding for public repos; a private repo may legitimately
+        # opt the namespace back in (a deliberately tracked ledger).
+        exposure = (
+            _design_adr_exposure(repo, global_gi_lines, repo_gi_lines) if is_public else None
+        )
 
         result = RepoAuditResult(
             repo_path=str(repo),
@@ -252,6 +322,7 @@ def audit_gitignores(
             languages=sorted(langs),
             missing_patterns=missing,
             case_warnings=case_warns,
+            design_adr_exposure=exposure,
         )
         results.append(result)
 
@@ -259,6 +330,8 @@ def audit_gitignores(
             repos_without_gitignore.append(str(repo))
         if is_public and missing:
             public_repos_with_gaps.append(str(repo))
+        if exposure:
+            design_adr_exposed.append(str(repo))
 
     # Sort: public repos with gaps first, then by gap count
     results.sort(key=lambda r: (-r.is_public, -len(r.missing_patterns), r.repo_path))
@@ -279,6 +352,8 @@ def audit_gitignores(
             "total_gaps": sum(len(r.missing_patterns) for r in results),
             "gap_frequency": gap_counter.most_common(20),
             "total_case_warnings": sum(len(r.case_warnings) for r in results),
+            "design_adr_exposure_repos": len(design_adr_exposed),
+            "design_adr_exposure_list": design_adr_exposed[:50],
         },
         "repos": [
             {
@@ -288,9 +363,22 @@ def audit_gitignores(
                 "languages": r.languages,
                 "missing_patterns": r.missing_patterns,
                 **({"case_warnings": r.case_warnings} if r.case_warnings else {}),
+                **(
+                    {
+                        "design_adr_exposure": {
+                            "reincludes": r.design_adr_exposure.reincludes,
+                            "tracked": r.design_adr_exposure.tracked,
+                        }
+                    }
+                    if r.design_adr_exposure
+                    else {}
+                ),
             }
             for r in results
-            if r.missing_patterns or not r.has_gitignore or r.case_warnings
+            if r.missing_patterns
+            or not r.has_gitignore
+            or r.case_warnings
+            or r.design_adr_exposure
         ][:200],
         "errors": errors,
     }
