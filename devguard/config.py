@@ -140,6 +140,15 @@ class Settings(BaseSettings):
         description="Paths to git repos to scan for secrets (default: _infra subprojects)",
     )
 
+    private_docs_check_enabled: bool = Field(
+        False,
+        description="Flag public repos that track docs/design or docs/adr (opt-in)",
+    )
+    private_docs_scan_root: str | None = Field(
+        None,
+        description="Workspace root for the private-docs check (default: parent of this repo)",
+    )
+
     # Container Security
     container_check_enabled: bool = Field(
         True, description="Enable Container/Dockerfile security checks"

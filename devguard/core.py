@@ -15,6 +15,7 @@ from devguard.checkers.fly import FlyChecker
 from devguard.checkers.github import GitHubChecker
 from devguard.checkers.npm import NpmChecker
 from devguard.checkers.npm_security import NpmSecurityChecker
+from devguard.checkers.private_docs import PrivateDocsChecker
 from devguard.checkers.redteam import RedTeamChecker
 from devguard.checkers.secret import SecretChecker
 from devguard.checkers.swarm import SwarmChecker
@@ -65,6 +66,10 @@ class Guardian:
         # Secret scanning (uses trufflehog - runs locally, no API needed)
         if enabled("secret_scan_enabled"):
             self.checkers.append(SecretChecker(settings))
+
+        # Public-repo design/adr doc-tracking check (opt-in; local git + gh visibility)
+        if enabled("private_docs_check_enabled"):
+            self.checkers.append(PrivateDocsChecker(settings))
 
         # Container/Dockerfile security checks
         if enabled("container_check_enabled"):
