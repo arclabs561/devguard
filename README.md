@@ -1,6 +1,6 @@
 # devguard
 
-devguard scans your developer workspace for security and hygiene issues. It runs a set of sweeps -- automated checks across local repos, SSH keys, dependencies, and more -- and reports findings in one pass.
+devguard scans your developer workspace for security and hygiene issues. It runs a set of sweeps (automated checks across local repos, SSH keys, dependencies, and more) and reports findings in one pass.
 
 ```
 $ devguard sweep
@@ -35,6 +35,8 @@ No spec file is required. Without one, devguard uses built-in defaults. Create `
 | `dependency_audit` | Check repos for known vulnerabilities in dependencies (npm audit, pip-audit, cargo-audit). |
 | `ssh_key_audit` | Audit local SSH keys for weak algorithms, short key lengths, and stale GitHub deploy keys. |
 | `local_dirty_worktree_secrets` | Scan uncommitted changes in local repos for secrets before they reach a commit. |
+| `credential_file_audit` | Check well-known credential files (`~/.aws/credentials`, `~/.npmrc`, `~/.netrc`, `~/.ssh/`) for plaintext secrets and bad permissions. |
+| `mcp_security_audit` | Deep MCP config scan for hardcoded secrets, shell injection in command/args, and lethal-trifecta risk. |
 
 ### Hygiene
 
@@ -46,6 +48,7 @@ No spec file is required. Without one, devguard uses built-in defaults. Create `
 | `ai_editor_config_audit` | Check AI editor configs (Cursor rules, Claude settings) for consistency across repos. |
 | `cargo_publish_audit` | Verify Rust crates have publish CI, correct metadata, and no publish blockers. |
 | `publish_audit` | Audit PyPI and npm repos for correct CI publish pipelines, OIDC trusted publishing, and version/license consistency. |
+| `pre_commit_audit` | Check repos for a `.pre-commit-config.yaml` with at least one secret-scanning hook installed. |
 
 ### Analysis
 
