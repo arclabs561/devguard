@@ -184,6 +184,6 @@ DASHBOARD_API_KEY=your_secure_key
 - **devguard**: Main orchestrator managing checkers and reports
 - **BaseChecker**: Abstract base class for all checkers
 - **Reporter**: Output formatting, webhooks, email delivery
-- **Checkers**: NpmChecker, GitHubChecker, VercelChecker, FlyChecker, ContainerChecker, SecretChecker, AWSIAMChecker, RedTeamChecker
+- **Checkers**: NpmChecker, NpmSecurityChecker, GitHubChecker, VercelChecker, FlyChecker, ContainerChecker, SecretChecker, AWSIAMChecker, AWSCostChecker, RedTeamChecker, APIUsageChecker, FirecrawlChecker, TavilyChecker, DomainChecker, TailscaleChecker, TailsnitchChecker, SwarmChecker
 
 </details>
