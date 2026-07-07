@@ -1,95 +1,107 @@
 # devguard
 
-devguard scans your developer workspace for security and hygiene issues. It runs a set of sweeps (automated checks across local repos, SSH keys, dependencies, and more) and reports findings in one pass.
+Developer workspace security scanner.
 
-```
+`devguard` runs local sweeps across repos, dependency manifests, SSH keys,
+credential files, and AI editor configs. It reports findings as text, JSON, or
+SARIF.
+
+```text
 $ devguard sweep
 local_dev:                    142 repos scanned, 0 findings
 public_github_secrets:        18 repos scanned, 0 findings
 local_dirty_worktree_secrets: 47 repos scanned, 0 findings
-gitignore_audit:              3 repos with gaps (1 public)
-dependency_audit:             12 vulns across 5 repos (2 critical)
+gitignore_audit:              3 repos with gaps
+dependency_audit:             12 vulns across 5 repos
 ssh_key_audit:                1 weak key, 2 stale GitHub keys
 ai_editor_config_audit:       47 repos checked, 2 errors
 ```
 
-## Quick start
+## Install
 
-Requires Python >= 3.11.
+Requires Python 3.11 or newer.
 
 ```bash
 pip install devguard
-devguard doctor                # check prerequisites (trufflehog, cargo-audit, etc.)
-devguard sweep                 # run all enabled sweeps
 ```
 
-No spec file is required. Without one, devguard uses built-in defaults. Create `devguard.spec.yaml` to customize which sweeps run and their parameters.
+For local development:
 
-## Sweeps
+```bash
+pip install -e ".[dev]"
+```
 
-### Security
+## Usage
 
-| Sweep | Description |
-|-------|-------------|
-| `public_github_secrets` | Scan public GitHub repos for committed secrets (TruffleHog). |
-| `dependency_audit` | Check repos for known vulnerabilities in dependencies (npm audit, pip-audit, cargo-audit). |
-| `ssh_key_audit` | Audit local SSH keys for weak algorithms, short key lengths, and stale GitHub deploy keys. |
-| `local_dirty_worktree_secrets` | Scan uncommitted changes in local repos for secrets before they reach a commit. |
-| `credential_file_audit` | Check well-known credential files (`~/.aws/credentials`, `~/.npmrc`, `~/.netrc`, `~/.ssh/`) for plaintext secrets and bad permissions. |
-| `mcp_security_audit` | Deep MCP config scan for hardcoded secrets, shell injection in command/args, and lethal-trifecta risk. |
+Check external tools:
 
-### Hygiene
+```bash
+devguard doctor
+```
 
-| Sweep | Description |
-|-------|-------------|
-| `gitignore_audit` | Find repos missing `.gitignore` or lacking expected ignore patterns for their language. |
-| `repo_hygiene` | Check structural hygiene and configurable public-text leak patterns in local repos. |
-| `git_identity_audit` | Check git author emails in config, environment variables, and optional history. |
-| `ai_editor_config_audit` | Check AI editor configs (Cursor rules, Claude settings) for consistency across repos. |
-| `cargo_publish_audit` | Verify Rust crates have publish CI, correct metadata, and no publish blockers. |
-| `publish_audit` | Audit PyPI and npm repos for correct CI publish pipelines, OIDC trusted publishing, and version/license consistency. |
-| `pre_commit_audit` | Check repos for a `.pre-commit-config.yaml` with at least one secret-scanning hook installed. |
+Run all enabled sweeps:
 
-### Analysis
+```bash
+devguard sweep
+```
 
-| Sweep | Description |
-|-------|-------------|
-| `project_flaudit` | LLM-driven audit (OpenRouter/Gemini): README drift, test gaps, rule violations. |
+Run one sweep:
 
-### Workspace
+```bash
+devguard sweep --only dependency_audit
+```
 
-| Sweep | Description |
-|-------|-------------|
-| `local_dev` | Scan local repos for accidentally committed large files, binaries, and dev artifacts. |
+Scan one repo:
+
+```bash
+devguard sweep --repo /path/to/repo
+devguard sweep --repo https://github.com/owner/repo --format json
+```
 
 ## Configuration
 
-Copy `devguard.spec.example.yaml` to `devguard.spec.yaml` and edit to taste. The spec file controls which sweeps are enabled, their parameters, and output paths.
+No spec file is required. Without one, `devguard` uses built-in defaults.
 
-Most sweeps work with zero configuration. Sweeps that need external access:
+Create `devguard.spec.yaml` when you need to enable or tune sweeps:
 
-- `public_github_secrets`: requires `GITHUB_TOKEN` (for GitHub API).
-- `project_flaudit`: requires `OPENROUTER_API_KEY`.
-- `ssh_key_audit` with `check_github: true`: requires `GITHUB_TOKEN`.
-- `dependency_audit`: requires audit tools installed (`npm`, `pip-audit`, `cargo-audit`).
+```bash
+cp devguard.spec.example.yaml devguard.spec.yaml
+```
 
-Environment variables can be set in `.env` or exported in your shell.
+Environment variables can be set in `.env` or exported in the shell.
 
-`git_identity_audit` requires an explicit policy. Set
-`forbidden_email_domains`, `forbidden_email_patterns`, or
-`allowed_email_domains` in `devguard.spec.yaml`, or set the matching
-`*_env` field to load values from an environment variable. Leave
-`check_history: false` for fast current-config checks; set it to `true` when
-auditing old commits.
+Sweeps that need external access:
 
-`repo_hygiene.public_text_patterns` scans tracked text files in public repos for
-configured regexes. Use `public_text_patterns_env` when the patterns name private
-projects or workspace policy terms; reports include file locations, not the
-matched pattern text.
+| Sweep | Requirement |
+| --- | --- |
+| `public_github_secrets` | `GITHUB_TOKEN` and TruffleHog |
+| `ssh_key_audit` with `check_github: true` | `GITHUB_TOKEN` |
+| `dependency_audit` | `npm`, `pip-audit`, or `cargo-audit`, depending on repo type |
+| `project_flaudit` | `OPENROUTER_API_KEY` |
 
-## Pre-commit hooks
+## Sweeps
 
-devguard ships `.pre-commit-hooks.yaml` with three hooks: `devguard-gitignore`, `devguard-ai-config`, and `devguard-secrets`. Add to your `.pre-commit-config.yaml`:
+| Sweep | Checks |
+| --- | --- |
+| `local_dev` | Large files, binaries, and dev artifacts in local repos |
+| `public_github_secrets` | Committed secrets in public GitHub repos |
+| `local_dirty_worktree_secrets` | Secrets in uncommitted local changes |
+| `credential_file_audit` | Plaintext secrets and permissions in common credential files |
+| `mcp_security_audit` | Hardcoded secrets and risky MCP command configuration |
+| `dependency_audit` | Known vulnerable dependencies |
+| `ssh_key_audit` | Weak, short, or stale SSH keys |
+| `gitignore_audit` | Missing `.gitignore` files and missing language ignore patterns |
+| `repo_hygiene` | Public-text leak patterns and repo hygiene checks |
+| `git_identity_audit` | Git author email policy in config, env, and optional history |
+| `ai_editor_config_audit` | Cursor and Claude config consistency |
+| `cargo_publish_audit` | Rust crate publish metadata and CI blockers |
+| `publish_audit` | PyPI and npm publish metadata and trusted-publishing setup |
+| `pre_commit_audit` | Missing or incomplete secret-scanning pre-commit hooks |
+| `project_flaudit` | LLM-assisted repo audit |
+
+## Pre-commit Hooks
+
+`devguard` ships `.pre-commit-hooks.yaml`:
 
 ```yaml
 - repo: https://github.com/arclabs561/devguard
@@ -99,19 +111,24 @@ devguard ships `.pre-commit-hooks.yaml` with three hooks: `devguard-gitignore`, 
     - id: devguard-secrets
 ```
 
-## Library usage
+## Library Usage
 
-Sweep modules can be imported directly for scripting or integration:
+Sweep modules can be imported directly:
 
 ```python
-from devguard.sweeps.ssh_key_audit import audit_ssh_keys
 from devguard.sweeps.dependency_audit import audit_dependencies
+from devguard.sweeps.ssh_key_audit import audit_ssh_keys
 ```
+
+## Legacy Monitoring
+
+The older service-monitoring commands (`check`, `dashboard`, `mcp`, and related
+checkers) are still present but are not the primary workflow. See
+[`docs/legacy-monitoring.md`](docs/legacy-monitoring.md).
 
 ## Development
 
 ```bash
-pip install -e ".[dev]"       # editable install for development
 pytest
 ruff check .
 mypy devguard/
@@ -119,71 +136,4 @@ mypy devguard/
 
 ## License
 
-MIT
-
-<details>
-<summary>Legacy: Service monitoring (npm, Vercel, Fly.io, GitHub)</summary>
-
-devguard originally provided unified monitoring for npm packages, GitHub repositories, and Fly.io/Vercel deployments. This functionality still exists but is secondary to the sweep system.
-
-### Monitored services
-
-- **npm packages** for security vulnerabilities
-- **GitHub repositories** for Dependabot security alerts
-- **Fly.io deployments** for health status
-- **Vercel deployments** for deployment status
-- **Container/Dockerfile** security best practices
-- **Secret scanning** (TruffleHog or regex fallback)
-- **AWS IAM** security posture for satellite nodes
-- **AWS Cost** monitoring with budget alerts
-- **API usage/credits** for LLM providers (OpenRouter, Anthropic, OpenAI, Perplexity, Groq)
-- **Firecrawl API** credit usage
-- **Tavily API** usage tracking
-- **Tailscale** mesh network health
-- **Domain/SSL** certificate expiry
-- **Docker Swarm** cluster health
-- **Red team security testing** for deployment endpoints
-- **Web dashboard** for real-time monitoring
-- **MCP server** for AI agent integration
-
-### Legacy commands
-
-```bash
-devguard check           # run monitoring checks
-devguard check --watch   # continuous monitoring
-devguard mcp             # start MCP server
-devguard dashboard       # start web dashboard
-devguard discover        # auto-discover resources to monitor
-devguard config          # show current configuration
-devguard auth gh         # authenticate with GitHub
-devguard auth-status     # show auth status for all services
-```
-
-### Legacy configuration
-
-Set environment variables in `.env`:
-
-```bash
-GITHUB_TOKEN=your_github_token
-VERCEL_TOKEN=your_vercel_token
-FLY_API_TOKEN=your_fly_token
-SNYK_TOKEN=your_snyk_token
-GITHUB_ORG=your_org_name
-NPM_PACKAGES_TO_MONITOR=package1,package2
-GITHUB_REPOS_TO_MONITOR=owner/repo1,owner/repo2
-FLY_APPS_TO_MONITOR=app1,app2
-VERCEL_PROJECTS_TO_MONITOR=project1,project2
-DASHBOARD_ENABLED=false
-DASHBOARD_HOST=0.0.0.0
-DASHBOARD_PORT=8080
-DASHBOARD_API_KEY=your_secure_key
-```
-
-### Architecture (legacy)
-
-- **devguard**: Main orchestrator managing checkers and reports
-- **BaseChecker**: Abstract base class for all checkers
-- **Reporter**: Output formatting, webhooks, email delivery
-- **Checkers**: NpmChecker, NpmSecurityChecker, GitHubChecker, VercelChecker, FlyChecker, ContainerChecker, SecretChecker, AWSIAMChecker, AWSCostChecker, RedTeamChecker, APIUsageChecker, FirecrawlChecker, TavilyChecker, DomainChecker, TailscaleChecker, TailsnitchChecker, SwarmChecker
-
-</details>
+MIT OR Apache-2.0
