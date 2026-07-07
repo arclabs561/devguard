@@ -59,5 +59,8 @@ DASHBOARD_API_KEY=your_secure_key
 - `devguard.core`: orchestrates monitoring checks and reports.
 - `devguard.checkers.base.BaseChecker`: base class for service checkers.
 - `devguard.reporting`: output formatting, webhooks, and email delivery.
-- `devguard.checkers.*`: npm, GitHub, Vercel, Fly.io, container, secret,
-  AWS IAM, cost, usage, and deployment checks.
+- `devguard.checkers.*`: `NpmChecker`, `NpmSecurityChecker`, `GitHubChecker`,
+  `VercelChecker`, `FlyChecker`, `ContainerChecker`, `SecretChecker`,
+  `AWSIAMChecker`, `AWSCostChecker`, `RedTeamChecker`, `APIUsageChecker`,
+  `FirecrawlChecker`, `TavilyChecker`, `DomainChecker`, `TailscaleChecker`,
+  `TailsnitchChecker`, and `SwarmChecker`.
