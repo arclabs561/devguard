@@ -49,7 +49,7 @@ monitoring = [
   "fastapi>=0.109.0",
   "uvicorn>=0.27.0",
   "slowapi>=0.1.9",
-  "aiosmtplib>=3.0.0",
+  "aiosmtplib>=5.1.1",
   "prometheus-client>=0.20.0",
   "mcp>=0.1.0",
 ]
