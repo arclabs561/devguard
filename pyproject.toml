@@ -51,7 +51,7 @@ monitoring = [
   "slowapi>=0.1.9",
   "aiosmtplib>=3.0.0",
   "prometheus-client>=0.20.0",
-  "mcp>=0.1.0",
+  "mcp>=1.28.1",
 ]
 flaudit = ["openai>=1.0.0"]
 all = ["devguard[monitoring,flaudit]"]
