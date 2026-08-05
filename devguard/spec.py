@@ -1,7 +1,7 @@
 """Specification system for defining what to monitor."""
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, Field
 
@@ -735,8 +735,34 @@ def load_spec(spec_path: Path) -> MonitorSpec:
     """Load a monitoring spec from a file."""
     import yaml  # type: ignore[import-untyped]
 
+    class UniqueKeyLoader(yaml.SafeLoader):
+        """Safe YAML loader that refuses ambiguous repeated mapping keys."""
+
+    def construct_unique_mapping(
+        loader: UniqueKeyLoader, node: yaml.MappingNode, deep: bool = False
+    ) -> dict[Any, Any]:
+        seen: set[tuple[str, str]] = set()
+        for key_node, _ in node.value:
+            if not isinstance(key_node, yaml.ScalarNode):
+                continue
+            key = (key_node.tag, key_node.value)
+            if key in seen:
+                raise yaml.constructor.ConstructorError(
+                    "while constructing a mapping",
+                    node.start_mark,
+                    f"found duplicate key {key_node.value!r}",
+                    key_node.start_mark,
+                )
+            seen.add(key)
+        return cast(dict[Any, Any], yaml.SafeLoader.construct_mapping(loader, node, deep=deep))
+
+    UniqueKeyLoader.add_constructor(
+        yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+        construct_unique_mapping,
+    )
+
     with open(spec_path) as f:
-        data = yaml.safe_load(f) or {}
+        data = yaml.load(f, Loader=UniqueKeyLoader) or {}
 
     # Be tolerant of YAML keys that are present but null (common when a section is
     # left empty with only comments).
