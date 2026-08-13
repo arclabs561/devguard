@@ -184,6 +184,14 @@ sweeps:
     only_public: false
     repo_names: []
     output: ".state/devguard/cargo-publish-audit.json"
+  # Python and npm publish pipeline audit. Keep disabled until the local policy enables it.
+  publish_audit:
+    enabled: false
+    dev_root: null
+    max_depth: 2
+    exclude_repo_globs: ["*/_trash/*", "*/_scratch/*", "*/_external/*", "*/_archive/*", "*/_forks/*"]
+    ecosystems: ["pypi", "npm"]
+    output: ".state/devguard/publish-audit.json"
   # Pre-commit hook audit: config presence and secret scanning coverage.
   pre_commit_audit:
     enabled: false
