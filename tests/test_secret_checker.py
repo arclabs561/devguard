@@ -120,18 +120,15 @@ class TestSecretChecker:
 
         assert vuln is None
 
-    def test_get_repos_to_scan_defaults(self, settings):
-        """Test default repo detection."""
+    def test_get_repos_to_scan_defaults(self, settings, temp_git_repo, monkeypatch):
+        """Default scanning stays within the current arbitrarily named repo."""
+        sibling = temp_git_repo.parent / "ops"
+        sibling.mkdir()
+        (sibling / ".git").mkdir()
+        monkeypatch.chdir(temp_git_repo)
         checker = SecretChecker(settings)
         repos = checker._get_repos_to_scan()
-
-        # Should find either the surrounding workspace repos (when present)
-        # or fall back to scanning devguard itself (so the tool can self-audit).
-        repo_names = [r.name for r in repos]
-        assert any(
-            name in repo_names
-            for name in ["infra", "_infra", "accounting", "dossier", "www", "devguard"]
-        )
+        assert repos == [temp_git_repo]
 
     def test_get_repos_to_scan_configured(self, settings, temp_git_repo):
         """Test configured repo paths."""

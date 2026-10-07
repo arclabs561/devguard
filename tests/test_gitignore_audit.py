@@ -104,7 +104,8 @@ def test_audit_gitignores_basic(_mock_global, tmp_path: Path) -> None:
     assert "myrepo" in report["repos"][0]["repo_path"]
 
 
-def test_audit_gitignores_clean_repo(tmp_path: Path) -> None:
+@patch("devguard.sweeps.gitignore_audit._read_global_gitignore_lines", return_value=[])
+def test_audit_gitignores_clean_repo(_mock_global, tmp_path: Path) -> None:
     """Repo with all patterns present should not appear in results."""
     repo = tmp_path / "clean"
     repo.mkdir()
@@ -115,6 +116,8 @@ def test_audit_gitignores_clean_repo(tmp_path: Path) -> None:
             ".env.*",
             ".state/",
             ".claude/",
+            ".cursor/",
+            ".cursorrules",
             "*.log",
             ".DS_Store",
             "*.sqlite",

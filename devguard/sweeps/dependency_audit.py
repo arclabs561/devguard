@@ -84,22 +84,53 @@ def _cargo_severity_from_categories(categories: list[str]) -> str:
     return "unknown"
 
 
-def parse_cargo_audit_json(raw: str) -> list[VulnSummary]:
-    """Parse `cargo audit --json` output."""
+def _object(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError("invalid audit JSON schema")
+    return value
+
+
+def _array(value: Any) -> list[Any]:
+    if not isinstance(value, list):
+        raise ValueError("invalid audit JSON schema")
+    return value
+
+
+def _string(value: Any) -> str:
+    if not isinstance(value, str):
+        raise ValueError("invalid audit JSON schema")
+    return value
+
+
+def _payload(raw: str) -> Any:
     try:
         data = json.loads(raw)
     except (json.JSONDecodeError, ValueError):
-        return []
+        raise ValueError("invalid audit JSON") from None
+    if isinstance(data, dict) and "error" in data:
+        raise ValueError("audit tool reported an error")
+    return data
+
+
+def parse_cargo_audit_json(raw: str) -> list[VulnSummary]:
+    """Parse `cargo audit --json` output."""
+    data = _payload(raw)
     vulns: list[VulnSummary] = []
-    for v in data.get("vulnerabilities", {}).get("list", []):
-        advisory = v.get("advisory", {})
-        pkg = v.get("package", {})
+    entries = _array(_object(_object(data).get("vulnerabilities")).get("list"))
+    for entry in entries:
+        v = _object(entry)
+        advisory = _object(v.get("advisory"))
+        pkg = _object(v.get("package"))
+        _string(advisory.get("id"))
+        _string(pkg.get("name"))
+        _string(advisory.get("title", ""))
+        categories = [_string(c) for c in _array(advisory.get("categories", []))]
         # Try explicit severity, then CVSS, then infer from categories
         sev_str = _normalize_severity(advisory.get("severity"))
         if sev_str == "unknown" and advisory.get("cvss"):
             sev_str = _normalize_severity(str(advisory["cvss"]).split("/")[0])
         if sev_str == "unknown":
-            sev_str = _cargo_severity_from_categories(advisory.get("categories", []))
+            sev_str = _cargo_severity_from_categories(categories)
         # Informational advisories (unmaintained, etc.) are low severity
         if advisory.get("informational") is not None:
             sev_str = "low"
@@ -116,25 +147,25 @@ def parse_cargo_audit_json(raw: str) -> list[VulnSummary]:
 
 def parse_npm_audit_json(raw: str) -> list[VulnSummary]:
     """Parse `npm audit --json` output."""
-    try:
-        data = json.loads(raw)
-    except (json.JSONDecodeError, ValueError):
-        return []
+    data = _payload(raw)
     vulns: list[VulnSummary] = []
     # npm v7+ audit JSON uses "vulnerabilities" dict keyed by package name
-    vuln_dict = data.get("vulnerabilities", {})
+    vuln_dict = _object(_object(data).get("vulnerabilities"))
     if isinstance(vuln_dict, dict):
         for pkg_name, info in vuln_dict.items():
-            if not isinstance(info, dict):
-                continue
+            info = _object(info)
+            _string(info.get("name", pkg_name))
             sev_str = _normalize_severity(info.get("severity", "unknown"))
             # Extract title from via list (first dict entry) or fall back to name
             title = ""
-            via = info.get("via", [])
+            via = _array(info.get("via", []))
             for v_item in via:
-                if isinstance(v_item, dict) and v_item.get("title"):
-                    title = v_item["title"]
-                    break
+                if isinstance(v_item, dict):
+                    item_title = _string(v_item.get("title", ""))
+                    if item_title and not title:
+                        title = item_title
+                else:
+                    _string(v_item)
             vulns.append(
                 VulnSummary(
                     id=str(info.get("name") or pkg_name),
@@ -148,41 +179,42 @@ def parse_npm_audit_json(raw: str) -> list[VulnSummary]:
 
 def parse_pip_audit_json(raw: str) -> list[VulnSummary]:
     """Parse `pip-audit --format=json` output."""
-    try:
-        data = json.loads(raw)
-    except (json.JSONDecodeError, ValueError):
-        return []
+    data = _payload(raw)
     vulns: list[VulnSummary] = []
-    # pip-audit outputs a list of dicts, each with "name", "version", "vulns"
-    if isinstance(data, list):
-        for entry in data:
-            pkg = entry.get("name", "unknown")
-            for v in entry.get("vulns", []):
-                sev_str = _normalize_severity(
-                    v.get("fix_versions", [""])[0] if v.get("fix_versions") else ""
+    # Current pip-audit wraps dependencies/fixes; older releases used a list.
+    if isinstance(data, dict):
+        for fix in _array(data.get("fixes")):
+            _object(fix)
+        data = data.get("dependencies")
+    for item in _array(data):
+        entry = _object(item)
+        pkg = _string(entry.get("name"))
+        if "skip_reason" in entry:
+            raise ValueError("pip-audit skipped a dependency")
+        _string(entry.get("version"))
+        for item_vuln in _array(entry.get("vulns")):
+            v = _object(item_vuln)
+            vuln_id = _string(v.get("id"))
+            desc = _string(v.get("description", ""))
+            for key in ("aliases", "fix_versions"):
+                for value in _array(v.get(key, [])):
+                    _string(value)
+            vulns.append(
+                VulnSummary(
+                    id=vuln_id,
+                    severity=_normalize_severity(v.get("severity")),
+                    package=pkg,
+                    title=desc[:120] if desc else vuln_id,
                 )
-                # pip-audit doesn't always include severity; use id-based lookup
-                vuln_id = str(v.get("id") or "UNKNOWN")
-                desc = v.get("description", "")
-                # Attempt to extract severity from aliases or description
-                aliases = v.get("aliases", [])
-                sev_str = _normalize_severity(v.get("severity", "unknown"))
-                vulns.append(
-                    VulnSummary(
-                        id=vuln_id,
-                        severity=sev_str,
-                        package=pkg,
-                        title=desc[:120] if desc else vuln_id,
-                    )
-                )
+            )
     return vulns
 
 
 def _normalize_severity(raw: str | None) -> str:
     """Normalize severity string to one of the standard buckets."""
-    if not raw:
+    if raw is None:
         return "unknown"
-    low = raw.strip().lower()
+    low = _string(raw).strip().lower()
     if low in SEVERITY_BUCKETS:
         return low
     # Map common aliases
@@ -201,7 +233,19 @@ _ENGINE_COMMANDS: dict[str, tuple[list[str], str | None]] = {
     # (argv, which_binary_to_check)
     "cargo-audit": (["cargo", "audit", "--json"], "cargo-audit"),
     "npm-audit": (["npm", "audit", "--json"], "npm"),
-    "pip-audit": (["pip-audit", "--format=json", "--output=-"], "pip-audit"),
+    "pip-audit": (
+        [
+            "pip-audit",
+            "--format=json",
+            "--output=-",
+            "--no-deps",
+            "--disable-pip",
+            "--strict",
+            "-r",
+            "requirements.txt",
+        ],
+        "pip-audit",
+    ),
 }
 
 _ENGINE_PARSERS: dict[str, Any] = {
@@ -230,6 +274,7 @@ def _audit_repo(
     detected = detect_engines(repo)
     result = RepoAuditResult(repo_path=str(repo))
     counts: Counter[str] = Counter()
+    engine_errors: list[str] = []
 
     for det in detected:
         if det.engine not in engines:
@@ -246,6 +291,12 @@ def _audit_repo(
             result.skipped_engines.append(f"{det.engine} (not installed)")
             continue
 
+        if det.engine == "pip-audit" and not (repo / "requirements.txt").is_file():
+            engine_errors.append(
+                "pip-audit: unsupported input; export fully pinned requirements.txt"
+            )
+            continue
+
         try:
             proc = subprocess.run(
                 argv,
@@ -254,21 +305,30 @@ def _audit_repo(
                 text=True,
                 timeout=timeout_s,
             )
-            # cargo-audit and npm audit return non-zero when vulns are found;
-            # that is expected -- we still parse stdout.
+            if proc.returncode not in (0, 1):
+                engine_errors.append(f"{det.engine}: unexpected exit status {proc.returncode}")
+                continue
             raw = proc.stdout or ""
         except subprocess.TimeoutExpired:
-            result.skipped_engines.append(f"{det.engine} (timeout)")
+            engine_errors.append(f"{det.engine}: timeout")
             continue
-        except Exception as exc:
-            result.skipped_engines.append(f"{det.engine} ({exc})")
+        except Exception:
+            engine_errors.append(f"{det.engine}: execution failed")
             continue
 
         parser = _ENGINE_PARSERS.get(det.engine)
         if parser is None:
             continue
 
-        vulns = parser(raw)
+        try:
+            vulns = parser(raw)
+        except (ValueError, TypeError, KeyError):
+            # Tool output and exception messages may contain credentials or local data.
+            engine_errors.append(f"{det.engine}: invalid or incomplete audit result")
+            continue
+        if proc.returncode == 1 and not vulns:
+            engine_errors.append(f"{det.engine}: failure without vulnerability findings")
+            continue
         result.engines_run.append(det.engine)
         for v in vulns:
             result.vulns.append(
@@ -282,6 +342,7 @@ def _audit_repo(
             )
             counts[v.severity] += 1
 
+    result.error = "; ".join(engine_errors) or None
     result.severity_counts = dict(counts)
     return result
 
@@ -318,8 +379,8 @@ def audit_dependencies(
     def _run(repo: Path) -> RepoAuditResult:
         try:
             return _audit_repo(repo, engines=all_engines, timeout_s=timeout_s)
-        except Exception as exc:
-            return RepoAuditResult(repo_path=str(repo), error=str(exc))
+        except Exception:
+            return RepoAuditResult(repo_path=str(repo), error="dependency audit failed")
 
     with ThreadPoolExecutor(max_workers=max_concurrency) as pool:
         futures = {pool.submit(_run, r): r for r in repos}
@@ -365,12 +426,13 @@ def audit_dependencies(
                 "repo_path": r.repo_path,
                 "engines_run": r.engines_run,
                 "skipped_engines": r.skipped_engines,
+                "error": r.error,
                 "vuln_count": len(r.vulns),
                 "severity_counts": r.severity_counts,
                 "vulns": r.vulns[:100],  # cap per repo
             }
             for r in results
-            if r.vulns or r.skipped_engines
+            if r.engines_run or r.skipped_engines or r.error
         ][:200],
         "errors": errors,
     }
