@@ -137,7 +137,7 @@ class Settings(BaseSettings):
     secret_scan_enabled: bool = Field(True, description="Enable secret scanning of git repos")
     secret_scan_paths: Annotated[list[str], NoDecode] = Field(
         default_factory=list,
-        description="Paths to git repos to scan for secrets (default: _infra subprojects)",
+        description="Paths to git repos or workspace directories to scan (default: current Git repo)",
     )
 
     # Container Security

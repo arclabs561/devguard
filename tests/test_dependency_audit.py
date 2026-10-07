@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -25,10 +26,12 @@ from devguard.sweeps.dependency_audit import (
 
 class TestParseCargoAuditJson:
     def test_empty_input(self):
-        assert parse_cargo_audit_json("") == []
+        with pytest.raises(ValueError):
+            parse_cargo_audit_json("")
 
     def test_invalid_json(self):
-        assert parse_cargo_audit_json("not json") == []
+        with pytest.raises(ValueError):
+            parse_cargo_audit_json("not json")
 
     def test_no_vulnerabilities(self):
         data = json.dumps({"vulnerabilities": {"list": []}})
@@ -88,10 +91,12 @@ class TestParseCargoAuditJson:
 
 class TestParseNpmAuditJson:
     def test_empty_input(self):
-        assert parse_npm_audit_json("") == []
+        with pytest.raises(ValueError):
+            parse_npm_audit_json("")
 
     def test_invalid_json(self):
-        assert parse_npm_audit_json("{broken") == []
+        with pytest.raises(ValueError):
+            parse_npm_audit_json("{broken")
 
     def test_no_vulnerabilities(self):
         data = json.dumps({"vulnerabilities": {}})
@@ -133,10 +138,12 @@ class TestParseNpmAuditJson:
 
 class TestParsePipAuditJson:
     def test_empty_input(self):
-        assert parse_pip_audit_json("") == []
+        with pytest.raises(ValueError):
+            parse_pip_audit_json("")
 
     def test_invalid_json(self):
-        assert parse_pip_audit_json("nope") == []
+        with pytest.raises(ValueError):
+            parse_pip_audit_json("nope")
 
     def test_no_vulns(self):
         data = json.dumps([{"name": "requests", "version": "2.31.0", "vulns": []}])
@@ -315,3 +322,160 @@ class TestGracefulSkip:
         )
         repo_paths = [r["repo_path"] for r in report["repos"]]
         assert not any("forked" in p for p in repo_paths)
+
+
+# Shapes follow cargo-audit's vulnerabilities.list, npm v7+ vulnerabilities,
+# and pip-audit's JSON formatter (dependencies/fixes, or the legacy list).
+@pytest.mark.parametrize(
+    "engine,manifest,clean,finding",
+    [
+        (
+            "cargo-audit",
+            "Cargo.lock",
+            {"vulnerabilities": {"list": []}},
+            {
+                "vulnerabilities": {
+                    "list": [
+                        {
+                            "advisory": {"id": "RUSTSEC-TEST", "title": "test"},
+                            "package": {"name": "demo"},
+                        }
+                    ]
+                }
+            },
+        ),
+        (
+            "npm-audit",
+            "package-lock.json",
+            {"vulnerabilities": {}},
+            {"vulnerabilities": {"demo": {"severity": "high", "via": [{"title": "test"}]}}},
+        ),
+        (
+            "pip-audit",
+            "requirements.txt",
+            {"dependencies": [], "fixes": []},
+            {
+                "dependencies": [
+                    {
+                        "name": "demo",
+                        "version": "1.0",
+                        "vulns": [{"id": "PYSEC-TEST", "description": "test"}],
+                    }
+                ],
+                "fixes": [],
+            },
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        "clean",
+        "finding",
+        "malformed",
+        "schema",
+        "envelope",
+        "unexpected",
+        "empty_failure",
+        "timeout",
+        "exception",
+    ],
+)
+def test_real_audit_result_boundary(tmp_path, engine, manifest, clean, finding, outcome):
+    repo = tmp_path / "project"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    (repo / manifest).write_text("demo==1.0\n")
+    secret = "private-output-must-not-escape"
+    body, code = clean, 0
+    if outcome == "finding":
+        body, code = finding, 1
+    elif outcome == "schema":
+        body = {"vulnerabilities": [], "dependencies": {}, "fixes": []}
+    elif outcome == "envelope":
+        body = {"error": secret}
+    elif outcome == "unexpected":
+        code = 7
+    elif outcome == "empty_failure":
+        code = 1
+    raw = secret if outcome == "malformed" else json.dumps(body)
+    with (
+        patch("devguard.sweeps.dependency_audit.shutil.which", return_value="audit-tool"),
+        patch("devguard.sweeps.dependency_audit.subprocess.run") as run,
+    ):
+        if outcome == "timeout":
+            run.side_effect = subprocess.TimeoutExpired(secret, 1, output=secret)
+        elif outcome == "exception":
+            run.side_effect = OSError(secret)
+        else:
+            run.return_value = subprocess.CompletedProcess([], code, stdout=raw, stderr=secret)
+        report, errors = audit_dependencies(dev_root=tmp_path, engines=[engine])
+    assert run.call_args.kwargs["cwd"] == str(repo)
+    if engine == "pip-audit":
+        assert run.call_args.args[0] == [
+            "pip-audit",
+            "--format=json",
+            "--output=-",
+            "--no-deps",
+            "--disable-pip",
+            "--strict",
+            "-r",
+            "requirements.txt",
+        ]
+    assert secret not in json.dumps(report)
+    entry = report["repos"][0]
+    if outcome in ("clean", "finding"):
+        assert errors == []
+        assert entry["engines_run"] == [engine]
+        assert report["summary"]["total_vulns"] == (1 if outcome == "finding" else 0)
+    else:
+        assert errors
+        assert entry["error"]
+        assert entry["engines_run"] == []
+
+
+@pytest.mark.parametrize("manifest", ["uv.lock", "poetry.lock"])
+def test_python_lock_only_is_unsupported_not_host_audit(tmp_path, manifest):
+    (tmp_path / ".git").mkdir()
+    (tmp_path / manifest).touch()
+    with (
+        patch("devguard.sweeps.dependency_audit.shutil.which", return_value="pip-audit"),
+        patch("devguard.sweeps.dependency_audit.subprocess.run") as run,
+    ):
+        report, errors = audit_dependencies(dev_root=tmp_path)
+    run.assert_not_called()
+    assert "unsupported input" in errors[0]
+    assert report["repos"][0]["engines_run"] == []
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"dependencies": [{"name": "demo", "skip_reason": "private detail"}], "fixes": []},
+        {"dependencies": [{"name": "demo", "version": "1", "vulns": None}], "fixes": []},
+        {"dependencies": [], "fixes": "invalid"},
+        [None],
+    ],
+)
+def test_incomplete_pip_results_are_not_clean(payload):
+    with pytest.raises(ValueError):
+        parse_pip_audit_json(json.dumps(payload))
+
+
+def test_skipped_pip_dependency_is_a_sanitized_report_error(tmp_path):
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "requirements.txt").write_text("demo==1.0\n")
+    raw = json.dumps(
+        {"dependencies": [{"name": "demo", "skip_reason": "private-skip-detail"}], "fixes": []}
+    )
+    with (
+        patch("devguard.sweeps.dependency_audit.shutil.which", return_value="pip-audit"),
+        patch(
+            "devguard.sweeps.dependency_audit.subprocess.run",
+            return_value=subprocess.CompletedProcess([], 0, stdout=raw),
+        ),
+    ):
+        report, errors = audit_dependencies(dev_root=tmp_path, engines=["pip-audit"])
+    assert errors
+    assert report["repos"][0]["engines_run"] == []
+    assert "private-skip-detail" not in json.dumps(report)

@@ -77,6 +77,8 @@ DEFAULT_DENY_GLOBS: list[str] = [
     # Known devguard "oops outputs"
     "**/.devguard-email-history.json",
     "**/.devguard-email-thread",
+    "**/.guardian-email-history.json",
+    "**/.guardian-email-thread",
     "**/repo_review_results.json",
     "**/npm_security_report.json",
     "**/npm_security_report.md",

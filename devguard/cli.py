@@ -1440,7 +1440,7 @@ def _sweep_body(
             if errors:
                 console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
             _print_dependency_audit_table(report)
-        if report["summary"]["total_vulns"] > 0:
+        if errors or report["summary"]["total_vulns"] > 0:
             exit_code = max(exit_code, 2)
 
     # ssh key audit sweep (machine-scoped, skip in single-repo mode)

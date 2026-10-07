@@ -70,6 +70,9 @@ cp devguard.spec.example.yaml devguard.spec.yaml
 
 Environment variables can be set in `.env` or exported in the shell.
 
+Secret checking scans the current Git repository by default. Set
+`SECRET_SCAN_PATHS` to comma-separated repository or workspace paths for a wider scan.
+
 Sweeps that need external access:
 
 | Sweep | Requirement |
@@ -110,6 +113,15 @@ Sweeps that need external access:
     - id: devguard-gitignore
     - id: devguard-secrets
 ```
+
+Python dependency auditing requires a fully pinned `requirements.txt` export. It
+uses `pip-audit --no-deps --disable-pip --strict -r requirements.txt`, auditing
+only declared inputs without invoking pip or inspecting the host environment.
+Include transitive dependencies in the export when that coverage is needed;
+Devguard does not infer completeness. Repositories with only `uv.lock` or
+`poetry.lock` report an unsupported-input error. Tool failures, invalid output,
+and skipped dependencies produce audit errors (CLI exit 2); missing tools remain
+reported as skipped.
 
 ## Library Usage
 

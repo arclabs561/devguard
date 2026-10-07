@@ -261,3 +261,55 @@ class TestCloneRepo:
         path, _ = _clone_repo("https://github.com/owner/my-repo/")
 
         assert path == Path("/tmp/devguard-xyz/my-repo")
+
+
+@pytest.mark.parametrize(
+    "raw,tool_exit,expected_exit",
+    [
+        ('{"dependencies": [], "fixes": []}', 0, 0),
+        (
+            '{"dependencies": [{"name":"demo","version":"1","vulns":[{"id":"PYSEC-TEST"}]}], "fixes": []}',
+            1,
+            2,
+        ),
+        ("private-output-must-not-escape", 0, 2),
+        ('{"error":"private-output-must-not-escape"}', 1, 2),
+        ('{"dependencies": [], "fixes": []}', 8, 2),
+        ("timeout", 0, 2),
+    ],
+)
+def test_dependency_audit_cli_real_report_errors(runner, tmp_path, raw, tool_exit, expected_exit):
+    import json
+    import subprocess
+
+    repo = tmp_path / "project"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    (repo / "requirements.txt").write_text("demo==1.0\n")
+    output = tmp_path / "report.json"
+    spec = tmp_path / "spec.yaml"
+    spec.write_text(
+        f"name: test\nsweeps:\n  dependency_audit:\n    enabled: true\n    dev_root: {tmp_path}\n    output: {output}\n"
+    )
+    with (
+        patch("devguard.sweeps.dependency_audit.shutil.which", return_value="pip-audit"),
+        patch(
+            "devguard.sweeps.dependency_audit.subprocess.run",
+            side_effect=(
+                subprocess.TimeoutExpired("private-output-must-not-escape", 1)
+                if raw == "timeout"
+                else None
+            ),
+            return_value=subprocess.CompletedProcess(
+                [], tool_exit, stdout=raw, stderr="private-output-must-not-escape"
+            ),
+        ),
+    ):
+        result = runner.invoke(
+            app, ["sweep", "--spec", str(spec), "--only", "dependency_audit", "--format", "json"]
+        )
+    assert result.exit_code == expected_exit, result.output
+    report = json.loads(output.read_text())
+    assert "private-output-must-not-escape" not in result.output + json.dumps(report)
+    if expected_exit == 2 and report["summary"]["total_vulns"] == 0:
+        assert report["errors"]

@@ -7,6 +7,29 @@ on:
 permissions:
   contents: read
 jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install quality dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes just
+          uv sync --locked --all-extras
+      - name: Run canonical quality checks
+        run: just quality
+      - name: Build and check distribution archives
+        run: |
+          uv build
+          uv run --no-project python -m devguard._release_artifacts dist
   devguard-sweep:
     runs-on: ubuntu-latest
     permissions:
