@@ -21,7 +21,12 @@ def _isolate_git_config(monkeypatch: pytest.MonkeyPatch) -> None:
 def _init_repo(tmp_path: Path, name: str = "repo") -> Path:
     repo = tmp_path / name
     repo.mkdir(parents=True)
-    subprocess.run(["git", "init", "--quiet"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "init", "--quiet", "--initial-branch=main"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
     subprocess.run(
         ["git", "config", "user.name", "Test User"],
         cwd=repo,
