@@ -3,7 +3,7 @@
 
 repository:
   description: "Developer workspace security scanner"
-  private: false
+  private: true
   has_issues: true
   has_wiki: false
   has_downloads: true
