@@ -1,9 +1,14 @@
 """Tests for AI editor config audit sweep -- unicode injection detection."""
 
+import os
+import subprocess
 from pathlib import Path
+
+import pytest
 
 from devguard.sweeps.ai_editor_config_audit import (
     RepoAuditResult,
+    _check_memory_dir,
     _check_unicode_injection,
     _check_unicode_injection_repo,
 )
@@ -108,3 +113,32 @@ def test_check_unicode_injection_nonexistent_file(tmp_path: Path) -> None:
     """Non-existent file returns empty findings (no crash)."""
     findings = _check_unicode_injection(tmp_path / "nope.md")
     assert findings == []
+
+
+@pytest.mark.parametrize("tracked", [True, False])
+def test_public_memory_directory_requires_content_review(tmp_path: Path, tracked: bool) -> None:
+    """An intentionally public source directory is not evidence of private agent state."""
+    subprocess.run(["git", "init", "--quiet", str(tmp_path)], check=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "config", "core.excludesFile", os.devnull], check=True
+    )
+    memory_dir = tmp_path / "memory"
+    memory_dir.mkdir()
+    (memory_dir / "README.md").write_text(
+        "# Memory allocator examples\nIntentionally public project documentation.\n",
+        encoding="utf-8",
+    )
+    if tracked:
+        subprocess.run(["git", "-C", str(tmp_path), "add", "memory/README.md"], check=True)
+    result = RepoAuditResult(repo_path=str(tmp_path), repo_name=tmp_path.name, is_public=True)
+
+    _check_memory_dir(tmp_path, result)
+
+    assert len(result.findings) == 1
+    finding = result.findings[0]
+    assert finding.severity == "info"
+    advice = finding.message + " " + finding.detail
+    assert "Review" in advice
+    for unsupported_advice in ("git rm", ".gitignore_global", "~/.claude/projects/", "belongs"):
+        assert unsupported_advice not in advice
+    assert (memory_dir / "README.md").is_file()

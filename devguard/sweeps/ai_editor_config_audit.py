@@ -610,7 +610,7 @@ def _check_unicode_injection_repo(repo: Path, result: RepoAuditResult) -> None:
 
 
 def _check_memory_dir(repo: Path, result: RepoAuditResult) -> None:
-    """Check for in-repo memory/ directories (should use ~/.claude/projects/ instead)."""
+    """Inventory memory/ content without inferring its purpose from the directory name."""
     memory_dir = repo / "memory"
     if not memory_dir.is_dir():
         return
@@ -630,20 +630,20 @@ def _check_memory_dir(repo: Path, result: RepoAuditResult) -> None:
         result.findings.append(
             Finding(
                 check="memory_dir_tracked",
-                severity="warning",
+                severity="info",
                 message=f"memory/ has {len(tracked)} file(s) tracked by git",
-                detail="Claude auto-memory belongs in ~/.claude/projects/, not inside repos. "
-                "Add memory/ to .gitignore and run: git rm -r --cached memory/",
+                detail="Review the content against the project's publication policy. "
+                "The directory name alone does not identify private agent state.",
             )
         )
     elif any(memory_dir.iterdir()):
-        # Untracked but present -- info-level (gitignore should catch it)
+        # Untracked content also needs review before assigning a publication policy.
         result.findings.append(
             Finding(
                 check="memory_dir_present",
                 severity="info",
                 message="memory/ directory exists (untracked)",
-                detail="Verify ~/.gitignore_global includes memory/ to prevent accidental commits",
+                detail="Review whether the content is intended for publication before tracking it.",
             )
         )
 
