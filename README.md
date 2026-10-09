@@ -45,7 +45,7 @@ Run all enabled sweeps:
 devguard sweep
 ```
 
-Run one sweep:
+Run one sweep (named sweeps run even when the spec leaves them disabled):
 
 ```bash
 devguard sweep --only dependency_audit
@@ -89,6 +89,8 @@ Sweeps that need external access:
 | `local_dev` | Large files, binaries, and dev artifacts in local repos |
 | `public_github_secrets` | Committed secrets in public GitHub repos |
 | `local_dirty_worktree_secrets` | Secrets in uncommitted local changes |
+| `local_history_secrets` | Secrets anywhere in local git history, including deleted files (gitleaks, TruffleHog, or built-in regex) |
+| `exec_config_audit` | Repo configs that run commands on open: Claude Code hooks, VS Code folderOpen tasks, devcontainer commands, `.envrc` |
 | `credential_file_audit` | Plaintext secrets and permissions in common credential files |
 | `mcp_security_audit` | Hardcoded secrets and risky MCP command configuration |
 | `dependency_audit` | Known vulnerable dependencies |

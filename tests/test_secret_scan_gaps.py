@@ -221,3 +221,44 @@ def test_pre_commit_audit_summary_has_total_errors(tmp_path: Path) -> None:
     report, _ = audit_pre_commit(dev_root=tmp_path / "root", max_depth=2)
 
     assert report["summary"]["total_errors"] == 1
+
+
+# --- --only runs a sweep that is disabled by default ----------------------
+
+
+@pytest.mark.skipif(not __import__("shutil").which("trufflehog"), reason="trufflehog not installed")
+def test_only_runs_disabled_sweep_like_the_precommit_hook(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The devguard-secrets hook runs `sweep --only local_dirty_worktree_secrets`.
+
+    That sweep is disabled by default, so before this fix the hook scanned nothing.
+    """
+    import json
+
+    from typer.testing import CliRunner
+
+    from devguard.cli import app
+
+    repo = _init_repo(tmp_path / "repo")
+    (repo / "deploy.py").write_text(f'GITHUB_TOKEN = "{GH_TOKEN}"\n')
+    _git(repo, "add", "deploy.py")  # staged, as during a commit
+    monkeypatch.chdir(tmp_path)  # no devguard.spec.yaml: built-in defaults
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "sweep",
+            "--repo",
+            str(repo),
+            "--only",
+            "local_dirty_worktree_secrets",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 2, result.output
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    report = payload["local_dirty_worktree_secrets"]
+    assert report["summary"]["findings_total"] >= 1

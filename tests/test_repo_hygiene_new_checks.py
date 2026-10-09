@@ -149,3 +149,63 @@ def test_history_bloat_quiet_for_small_clean_history(tmp_path: Path) -> None:
     _commit(repo, "init")
 
     assert _check_history_bloat(repo, _git_ls_files(repo)) is None
+
+
+def test_stray_files_groups(tmp_path: Path) -> None:
+    from devguard.sweeps.repo_hygiene import _check_stray_files
+
+    repo = _repo(
+        tmp_path / "r",
+        {
+            ".yamlfmt.bak": "x\n",
+            "docs/progress.md": "# Session 3\n",
+            "docs/typst-output/main.pdf": "x\n",
+            "static/bundle.js": "var a=1;" * 1000 + "\n",
+            "static/app.js": "const a = 1;\n//# sourceMappingURL=app.js.map\n",
+            "src/main.js": "const a = 1;\n",
+            "Scripts/run.sh": "x\n",
+            "package.json": '{"scripts": {"build": "javascript-obfuscator src"}}',
+        },
+    )
+    # A second directory differing only in case cannot be created on a
+    # case-insensitive filesystem, so add it straight to the index.
+    blob = (
+        subprocess.run(
+            ["git", "hash-object", "-w", "--stdin"],
+            cwd=repo,
+            input=b"y\n",
+            capture_output=True,
+            check=True,
+        )
+        .stdout.decode()
+        .strip()
+    )
+    subprocess.run(
+        ["git", "update-index", "--add", "--cacheinfo", f"100644,{blob},scripts/other.sh"],
+        cwd=repo,
+        check=True,
+    )
+
+    f = _check_stray_files(repo, _git_ls_files(repo))
+
+    assert f is not None
+    assert sorted(f.files) == [
+        "backup: .yamlfmt.bak",
+        "built_docs: docs/...",
+        "bundled: static/app.js",
+        "bundled: static/bundle.js",
+        "case_collision: Scripts vs scripts",
+        "obfuscated_build: package.json",
+        "session_log: docs/progress.md",
+    ]
+
+
+def test_stray_files_quiet_for_ordinary_repo(tmp_path: Path) -> None:
+    from devguard.sweeps.repo_hygiene import _check_stray_files
+
+    repo = _repo(
+        tmp_path / "r",
+        {"README.md": "x\n", "src/main.js": "const a = 1;\n", "docs/guide.md": "x\n"},
+    )
+
+    assert _check_stray_files(repo, _git_ls_files(repo)) is None

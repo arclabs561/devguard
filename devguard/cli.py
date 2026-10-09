@@ -1183,7 +1183,7 @@ def _sweep_body(
 
     # local-dev sweep
     local = spec.sweeps.local_dev
-    if local.enabled and (not wanted or "local_dev" in wanted):
+    if (local.enabled and not wanted) or "local_dev" in wanted:
         root = _resolve_root(dev_root)
         deny = list(DEFAULT_DENY_GLOBS) + list(local.deny_globs or [])
         hits, meta = sweep_dev_repos(
@@ -1224,7 +1224,7 @@ def _sweep_body(
             stderr_console.print(
                 "public_github_secrets: skipped (not applicable in single-repo mode)"
             )
-    elif pub.enabled and (not wanted or "public_github_secrets" in wanted):
+    elif (pub.enabled and not wanted) or "public_github_secrets" in wanted:
         report, errors = scan_public_github_repos(
             owners=pub.owners,
             include_repos=pub.include_repos,
@@ -1257,7 +1257,7 @@ def _sweep_body(
 
     # local dirty worktree secret sweep
     dirty = spec.sweeps.local_dirty_worktree_secrets
-    if dirty.enabled and (not wanted or "local_dirty_worktree_secrets" in wanted):
+    if (dirty.enabled and not wanted) or "local_dirty_worktree_secrets" in wanted:
         root = _resolve_root(dirty.dev_root)
         report, errors = scan_dirty_worktrees(
             dev_root=root,
@@ -1287,7 +1287,7 @@ def _sweep_body(
 
     # local full-history secret sweep
     hist = spec.sweeps.local_history_secrets
-    if hist.enabled and (not wanted or "local_history_secrets" in wanted):
+    if (hist.enabled and not wanted) or "local_history_secrets" in wanted:
         from devguard.sweeps.local_history_secrets import scan_history_secrets
         from devguard.sweeps.local_history_secrets import write_report as write_hist
 
@@ -1326,7 +1326,7 @@ def _sweep_body(
 
     # configs that execute when a repo is opened
     eca = spec.sweeps.exec_config_audit
-    if eca.enabled and (not wanted or "exec_config_audit" in wanted):
+    if (eca.enabled and not wanted) or "exec_config_audit" in wanted:
         from devguard.sweeps.exec_config_audit import audit_exec_configs
         from devguard.sweeps.exec_config_audit import write_report as write_eca
 
@@ -1355,7 +1355,7 @@ def _sweep_body(
 
     # project_flaudit sweep (files-to-prompt + OpenRouter/Gemini)
     flaudit = spec.sweeps.project_flaudit
-    if flaudit.enabled and (not wanted or "project_flaudit" in wanted):
+    if (flaudit.enabled and not wanted) or "project_flaudit" in wanted:
         from devguard.sweeps import default_dev_root
         from devguard.sweeps.project_flaudit import scan_project_flaudit
         from devguard.sweeps.project_flaudit import write_report as write_flaudit
@@ -1410,7 +1410,7 @@ def _sweep_body(
 
     # gitignore audit sweep
     gi = spec.sweeps.gitignore_audit
-    if gi.enabled and (not wanted or "gitignore_audit" in wanted):
+    if (gi.enabled and not wanted) or "gitignore_audit" in wanted:
         from devguard.sweeps.gitignore_audit import audit_gitignores
         from devguard.sweeps.gitignore_audit import write_report as write_gi
 
@@ -1444,7 +1444,7 @@ def _sweep_body(
 
     # repo hygiene sweep
     rh = spec.sweeps.repo_hygiene
-    if rh.enabled and (not wanted or "repo_hygiene" in wanted):
+    if (rh.enabled and not wanted) or "repo_hygiene" in wanted:
         from devguard.sweeps.repo_hygiene import sweep_repo_hygiene
         from devguard.sweeps.repo_hygiene import write_report as write_rh
 
@@ -1476,7 +1476,7 @@ def _sweep_body(
 
     # dependency audit sweep
     depaudit = spec.sweeps.dependency_audit
-    if depaudit.enabled and (not wanted or "dependency_audit" in wanted):
+    if (depaudit.enabled and not wanted) or "dependency_audit" in wanted:
         from devguard.sweeps.dependency_audit import audit_dependencies
         from devguard.sweeps.dependency_audit import write_report as write_depaudit
 
@@ -1513,10 +1513,10 @@ def _sweep_body(
 
     # ssh key audit sweep (machine-scoped, skip in single-repo mode)
     sshk = spec.sweeps.ssh_key_audit
-    if sshk.enabled and (not wanted or "ssh_key_audit" in wanted) and _single_repo is not None:
+    if ((sshk.enabled and not wanted) or "ssh_key_audit" in wanted) and _single_repo is not None:
         if not machine_output:
             stderr_console.print("ssh_key_audit: skipped (not applicable in single-repo mode)")
-    elif sshk.enabled and (not wanted or "ssh_key_audit" in wanted):
+    elif (sshk.enabled and not wanted) or "ssh_key_audit" in wanted:
         from devguard.sweeps.ssh_key_audit import audit_ssh_keys
         from devguard.sweeps.ssh_key_audit import write_report as write_sshk
 
@@ -1543,7 +1543,7 @@ def _sweep_body(
 
     # cargo publish audit sweep
     cpub = spec.sweeps.cargo_publish_audit
-    if cpub.enabled and (not wanted or "cargo_publish_audit" in wanted):
+    if (cpub.enabled and not wanted) or "cargo_publish_audit" in wanted:
         from devguard.sweeps.cargo_publish_audit import audit_cargo_publish
         from devguard.sweeps.cargo_publish_audit import write_report as write_cpub
 
@@ -1582,7 +1582,7 @@ def _sweep_body(
 
     # ai editor config audit sweep
     aicfg = spec.sweeps.ai_editor_config_audit
-    if aicfg.enabled and (not wanted or "ai_editor_config_audit" in wanted):
+    if (aicfg.enabled and not wanted) or "ai_editor_config_audit" in wanted:
         from devguard.sweeps.ai_editor_config_audit import audit_ai_editor_configs
         from devguard.sweeps.ai_editor_config_audit import write_report as write_aicfg
 
@@ -1620,7 +1620,7 @@ def _sweep_body(
 
     # publish audit sweep (PyPI + npm)
     puba = spec.sweeps.publish_audit
-    if puba.enabled and (not wanted or "publish_audit" in wanted):
+    if (puba.enabled and not wanted) or "publish_audit" in wanted:
         from devguard.sweeps.publish_audit import audit_publish
         from devguard.sweeps.publish_audit import write_report as write_puba
 
@@ -1649,7 +1649,7 @@ def _sweep_body(
 
     # pre-commit audit sweep
     pca = spec.sweeps.pre_commit_audit
-    if pca.enabled and (not wanted or "pre_commit_audit" in wanted):
+    if (pca.enabled and not wanted) or "pre_commit_audit" in wanted:
         from devguard.sweeps.pre_commit_audit import audit_pre_commit
         from devguard.sweeps.pre_commit_audit import write_report as write_pca
 
@@ -1685,7 +1685,7 @@ def _sweep_body(
 
     # git identity audit sweep
     gia = spec.sweeps.git_identity_audit
-    if gia.enabled and (not wanted or "git_identity_audit" in wanted):
+    if (gia.enabled and not wanted) or "git_identity_audit" in wanted:
         from devguard.sweeps.git_identity_audit import audit_git_identity
         from devguard.sweeps.git_identity_audit import write_report as write_gia
 
@@ -1733,7 +1733,7 @@ def _sweep_body(
             stderr_console.print(
                 "credential_file_audit: skipped (not applicable in single-repo mode)"
             )
-    elif cfa.enabled and (not wanted or "credential_file_audit" in wanted):
+    elif (cfa.enabled and not wanted) or "credential_file_audit" in wanted:
         from devguard.sweeps.credential_file_audit import audit_credential_files
         from devguard.sweeps.credential_file_audit import write_report as write_cfa
 
@@ -1758,7 +1758,7 @@ def _sweep_body(
 
     # MCP security audit sweep
     mcps = spec.sweeps.mcp_security_audit
-    if mcps.enabled and (not wanted or "mcp_security_audit" in wanted):
+    if (mcps.enabled and not wanted) or "mcp_security_audit" in wanted:
         from devguard.sweeps.mcp_security_audit import audit_mcp_security
         from devguard.sweeps.mcp_security_audit import write_report as write_mcps
 

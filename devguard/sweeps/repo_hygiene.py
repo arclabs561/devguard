@@ -257,6 +257,72 @@ def _check_tracked_ignored(repo: Path) -> HygieneFinding | None:
     )
 
 
+_BACKUP_RE = re.compile(r"\.(?:bak|orig|rej|swp|tmp)$|~$")
+_OS_JUNK = frozenset({".DS_Store", "Thumbs.db"})
+_SESSION_LOG_RE = re.compile(
+    r"(?:^|/)(?:progress|session|review-status|handoff|scratch)(?:[-_](?:log|notes))?\.md$",
+    re.IGNORECASE,
+)
+_BUILT_DOC_RE = re.compile(r"(?:^|/)(?:typst-output|_site|book/html|target/doc|build/html)/")
+_BUNDLE_SUFFIXES = (".js", ".mjs", ".css")
+
+
+def _looks_bundled(repo: Path, rel: str) -> bool:
+    text = _tracked_text(repo, rel)
+    if text is None:
+        # _tracked_text skips files over 1 MiB; a source file that big is a bundle.
+        path = repo / rel
+        return (
+            path.is_file() and not path.is_symlink() and path.stat().st_size > _TEXT_SCAN_MAX_BYTES
+        )
+    return "sourceMappingURL=" in text or any(len(line) > 5000 for line in text.splitlines())
+
+
+def _check_stray_files(repo: Path, tracked: list[str]) -> HygieneFinding | None:
+    """L: Backups, OS junk, case collisions, agent session logs, bundles, built docs."""
+    groups: dict[str, list[str]] = {}
+
+    def add(kind: str, rel: str) -> None:
+        groups.setdefault(kind, []).append(rel)
+
+    seen_lower: dict[str, str] = {}
+    for rel in tracked:
+        name = Path(rel).name
+        if _BACKUP_RE.search(name):
+            add("backup", rel)
+        if name in _OS_JUNK:
+            add("os_junk", rel)
+        if _SESSION_LOG_RE.search(rel):
+            add("session_log", rel)
+        if _BUILT_DOC_RE.search(rel):
+            add("built_docs", rel.split("/", 1)[0] + "/...")
+        if name.endswith(_BUNDLE_SUFFIXES) and _looks_bundled(repo, rel):
+            add("bundled", rel)
+        # Compare every parent directory too: Scripts/a vs scripts/b collide on
+        # case-insensitive filesystems even though the files differ.
+        parts = rel.split("/")
+        for i in range(1, len(parts) + 1):
+            prefix = "/".join(parts[:i])
+            other = seen_lower.setdefault(prefix.lower(), prefix)
+            if other != prefix:
+                add("case_collision", f"{other} vs {prefix}")
+    pkg = repo / "package.json"
+    if "package.json" in tracked and "obfuscat" in pkg.read_text(errors="replace"):
+        add("obfuscated_build", "package.json")
+    if not groups:
+        return None
+    files = [f"{kind}: {rel}" for kind, rels in groups.items() for rel in sorted(set(rels))]
+    return HygieneFinding(
+        repo_path=str(repo),
+        check="stray_files",
+        severity="low",
+        message="Stray tracked files: "
+        + ", ".join(f"{len(set(v))} {k}" for k, v in groups.items())
+        + ".",
+        files=files[:20],
+    )
+
+
 _HISTORY_BLOB_LIMIT = 5 * 1024 * 1024
 # Build output and caches that should never have been committed at all.
 _ARTIFACT_PATH_RE = re.compile(
@@ -916,6 +982,7 @@ def sweep_repo_hygiene(
             lambda r: _check_tracked_ignored(r),
             lambda r: _check_local_path_deps(r, tracked),
             lambda r: _check_history_bloat(r, tracked),
+            lambda r: _check_stray_files(r, tracked),
         ):
             try:
                 finding = check_fn(repo)
