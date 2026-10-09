@@ -1729,6 +1729,9 @@ def _sweep_body(
             check_history=gia.check_history,
             redact_emails=gia.redact_emails,
             max_history_commits=gia.max_history_commits,
+            allowed_emails=gia.allowed_emails,
+            allowed_emails_env=gia.allowed_emails_env,
+            flag_employer_domains=gia.flag_employer_domains,
         )
         out_path = Path(gia.output).expanduser()
         write_gia(out_path, report)

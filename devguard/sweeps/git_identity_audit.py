@@ -114,6 +114,52 @@ def _finding(
     return data
 
 
+# Consumer mail providers: an address here is personal, never an employer's.
+PERSONAL_EMAIL_DOMAINS = frozenset(
+    {
+        "gmail.com",
+        "googlemail.com",
+        "icloud.com",
+        "me.com",
+        "mac.com",
+        "outlook.com",
+        "hotmail.com",
+        "live.com",
+        "msn.com",
+        "yahoo.com",
+        "proton.me",
+        "protonmail.com",
+        "pm.me",
+        "fastmail.com",
+        "fastmail.fm",
+        "hey.com",
+        "zoho.com",
+        "aol.com",
+        "gmx.com",
+        "gmx.de",
+        "mail.com",
+        "duck.com",
+        "tutanota.com",
+        "qq.com",
+        "163.com",
+    }
+)
+# RFC 2606/6761 reserved names used by tests and docs.
+_RESERVED_DOMAIN_RE = re.compile(
+    r"(?:^|\.)(?:example\.(?:com|org|net)|test|example|invalid|localhost)$"
+)
+
+
+def _is_exempt(email: str) -> bool:
+    """GitHub noreply addresses and bots are never a person's work email."""
+    e = email.lower()
+    return (
+        _email_domain(e).endswith("users.noreply.github.com")
+        or e == "noreply@github.com"
+        or "[bot]@" in e
+    )
+
+
 def _check_email(
     *,
     email: str,
@@ -124,11 +170,30 @@ def _check_email(
     allowed_domains: set[str],
     redact_emails: bool,
     extra: dict[str, Any] | None = None,
+    allowed_emails: frozenset[str] = frozenset(),
+    flag_employer_domains: bool = False,
+    own_domains: frozenset[str] = frozenset(),
 ) -> list[dict[str, Any]]:
     findings: list[dict[str, Any]] = []
     domain = _email_domain(email)
     if not domain:
         return findings
+    if email.lower() in allowed_emails or (_is_exempt(email) and domain not in forbidden_domains):
+        return findings
+
+    def warn(check_id: str, message: str) -> None:
+        findings.append(
+            _finding(
+                check_id=check_id,
+                source=source,
+                email=email,
+                severity="warning",
+                message=message,
+                repo_path=repo_path,
+                redact_email=redact_emails,
+                extra=extra,
+            )
+        )
 
     if domain in forbidden_domains or any(p.search(email) for p in forbidden_patterns):
         findings.append(
@@ -144,17 +209,19 @@ def _check_email(
             )
         )
     elif allowed_domains and domain not in allowed_domains:
-        findings.append(
-            _finding(
-                check_id="unexpected_git_email_domain",
-                source=source,
-                email=email,
-                severity="warning",
-                message="Git identity domain is outside the allowlist",
-                repo_path=repo_path,
-                redact_email=redact_emails,
-                extra=extra,
-            )
+        warn("unexpected_git_email_domain", "Git identity domain is outside the allowlist")
+    elif allowed_emails and not allowed_domains:
+        warn("unexpected_git_email", "Git identity email is not one of the allowed addresses")
+    elif (
+        flag_employer_domains
+        and domain not in PERSONAL_EMAIL_DOMAINS
+        and domain not in own_domains
+        and not _RESERVED_DOMAIN_RE.search(domain)  # test fixtures, docs
+    ):
+        warn(
+            "possible_employer_email",
+            "Git identity uses a non-personal domain, possibly an employer's; add the "
+            "address to allowed_emails if it is yours",
         )
     return findings
 
@@ -169,15 +236,21 @@ def _refs_containing_commit(repo: Path, commit: str) -> list[str]:
     return sorted(line for line in value.splitlines() if line.strip())
 
 
-def _history_email_samples(value: str) -> dict[str, str]:
-    samples: dict[str, str] = {}
+def _history_email_samples(value: str) -> dict[str, tuple[str, set[str]]]:
+    """Map each author/committer email to (first commit seen, names used with it).
+
+    Expects `git log --format=%H%x00%aN%x00%aE%x00%cN%x00%cE`.
+    """
+    samples: dict[str, tuple[str, set[str]]] = {}
     for line in value.splitlines():
         parts = line.split("\0")
-        if len(parts) != 3:
+        if len(parts) != 5:
             continue
-        commit, author_email, committer_email = parts
-        for email in _extract_emails(f"{author_email} {committer_email}"):
-            samples.setdefault(email, commit)
+        commit, author_name, author_email, committer_name, committer_email = parts
+        for name, raw in ((author_name, author_email), (committer_name, committer_email)):
+            for email in _extract_emails(raw):
+                _, names = samples.setdefault(email, (commit, set()))
+                names.add(name.strip().lower())
     return samples
 
 
@@ -199,6 +272,9 @@ def audit_git_identity(
     redact_emails: bool = True,
     max_history_commits: int = 50_000,
     env: Mapping[str, str] | None = None,
+    allowed_emails: list[str] | None = None,
+    allowed_emails_env: str | None = None,
+    flag_employer_domains: bool = False,
 ) -> tuple[dict[str, Any], list[str]]:
     """Audit git identity settings and optional commit metadata."""
     root = dev_root if dev_root is not None else _default_dev_root()
@@ -232,24 +308,41 @@ def audit_git_identity(
             errors.append(f"invalid forbidden_email_pattern: {exc}")
 
     findings: list[dict[str, Any]] = []
+    allowed_email_set = frozenset(
+        e.strip().lower()
+        for e in [*(allowed_emails or []), *_env_values(environment, allowed_emails_env)]
+        if e.strip()
+    )
+    global_email = _git_output(["git", "config", "--global", "--get", "user.email"]) or ""
+    global_name = _git_output(["git", "config", "--global", "--get", "user.name"]) or ""
+    # The employer heuristic applies only when no explicit policy says otherwise.
+    heuristic = flag_employer_domains and not (allowed_domains or allowed_email_set)
+    policy: dict[str, Any] = {
+        "allowed_emails": allowed_email_set,
+        "flag_employer_domains": heuristic,
+        # The user's own configured address and allowlisted addresses define "personal".
+        "own_domains": frozenset(
+            _email_domain(e) for e in [*_extract_emails(global_email), *allowed_email_set]
+        ),
+    }
 
     if check_global_config:
-        value = _git_output(["git", "config", "--global", "--get", "user.email"])
-        if value:
-            for email in _extract_emails(value):
-                findings.extend(
-                    _check_email(
-                        email=email,
-                        source="git config --global user.email",
-                        repo_path=None,
-                        forbidden_domains=forbidden_domains,
-                        forbidden_patterns=compiled_patterns,
-                        allowed_domains=allowed_domains,
-                        redact_emails=redact_emails,
-                        extra=None,
-                    )
+        for email in _extract_emails(global_email):
+            findings.extend(
+                _check_email(
+                    email=email,
+                    source="git config --global user.email",
+                    repo_path=None,
+                    forbidden_domains=forbidden_domains,
+                    forbidden_patterns=compiled_patterns,
+                    allowed_domains=allowed_domains,
+                    redact_emails=redact_emails,
+                    **policy,
+                    extra=None,
                 )
+            )
 
+    value: str | None
     if check_environment:
         for key in ("GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"):
             value = environment.get(key, "")
@@ -263,6 +356,7 @@ def audit_git_identity(
                         forbidden_patterns=compiled_patterns,
                         allowed_domains=allowed_domains,
                         redact_emails=redact_emails,
+                        **policy,
                         extra=None,
                     )
                 )
@@ -286,12 +380,20 @@ def audit_git_identity(
                             forbidden_patterns=compiled_patterns,
                             allowed_domains=allowed_domains,
                             redact_emails=redact_emails,
+                            **policy,
                             extra=None,
                         )
                     )
 
         if check_history:
-            cmd = ["git", "-C", str(repo), "log", "--all", "--format=%H%x00%aE%x00%cE"]
+            cmd = [
+                "git",
+                "-C",
+                str(repo),
+                "log",
+                "--all",
+                "--format=%H%x00%aN%x00%aE%x00%cN%x00%cE",
+            ]
             if history_limit:
                 cmd.insert(4, f"--max-count={history_limit}")
             value = _git_output(cmd, timeout=60)
@@ -299,7 +401,21 @@ def audit_git_identity(
                 errors.append(f"failed to read git history for {repo}")
             else:
                 samples = _history_email_samples(value)
-                for email, commit in samples.items():
+                # The employer heuristic is about the user's own identity: names
+                # from global user.name or used with one of the user's addresses.
+                # Other contributors (e.g. upstream authors in a fork) are left to
+                # explicit policy.
+                own_emails = {*_extract_emails(global_email), *allowed_email_set}
+                user_names = {n for n in (global_name.strip().lower(),) if n}
+                for email, (_, names) in samples.items():
+                    if email.lower() in own_emails:
+                        user_names |= names
+                for email, (commit, names) in samples.items():
+                    # With no known identity, every commit is a candidate.
+                    if policy["flag_employer_domains"] and user_names and not (names & user_names):
+                        continue_policy: dict[str, Any] = {**policy, "flag_employer_domains": False}
+                    else:
+                        continue_policy = policy
                     containing_refs = _refs_containing_commit(repo, commit)
                     repo_findings.extend(
                         _check_email(
@@ -310,6 +426,7 @@ def audit_git_identity(
                             forbidden_patterns=compiled_patterns,
                             allowed_domains=allowed_domains,
                             redact_emails=redact_emails,
+                            **continue_policy,
                             extra={
                                 "sample_commit": commit,
                                 "containing_refs": containing_refs[:25],

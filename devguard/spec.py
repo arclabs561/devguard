@@ -591,8 +591,26 @@ class GitIdentityAuditSweepSpec(BaseModel):
         True,
         description="Check GIT_AUTHOR_EMAIL and GIT_COMMITTER_EMAIL.",
     )
+    allowed_emails: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Your own addresses. When set, any other author/committer email (except GitHub "
+            "noreply and bot addresses) is flagged."
+        ),
+    )
+    allowed_emails_env: str | None = Field(
+        None,
+        description="Environment variable containing additional allowed email addresses.",
+    )
+    flag_employer_domains: bool = Field(
+        True,
+        description=(
+            "With no allowlist configured, flag emails whose domain is not a consumer mail "
+            "provider or your global user.email's domain (likely an employer)."
+        ),
+    )
     check_history: bool = Field(
-        False,
+        True,
         description="Scan commit author/committer emails in local branch/tag history.",
     )
     redact_emails: bool = Field(
