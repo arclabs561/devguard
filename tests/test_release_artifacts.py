@@ -36,6 +36,7 @@ def write_archive(directory: Path, kind: str, member: str) -> Path:
         ".guardian-email-thread",
         ".devguard-email-history.json",
         ".devguard-email-thread",
+        "devguard_sweep_dev.json",
     ],
 )
 def test_known_runtime_files_block_upload(tmp_path, kind, prefix, filename):
@@ -44,6 +45,14 @@ def test_known_runtime_files_block_upload(tmp_path, kind, prefix, filename):
     assert len(errors) == 1
     assert filename in errors[0]
     assert "SYNTHETIC_CONTENT_MUST_NOT_APPEAR" not in errors[0]
+
+
+@pytest.mark.parametrize("kind", ["whl", "tar.gz"])
+def test_sweep_state_directory_blocks_upload(tmp_path, kind):
+    write_archive(tmp_path, kind, "devguard-0.2.5/.state/devguard/local-history-secrets.json")
+    errors = check_artifacts(tmp_path)
+    assert len(errors) == 1
+    assert ".state/" in errors[0]
 
 
 @pytest.mark.parametrize("kind", ["whl", "tar.gz"])
@@ -90,8 +99,11 @@ def test_package_build_excludes_runtime_files_without_git(tmp_path):
             ".guardian-email-thread",
             ".devguard-email-history.json",
             ".devguard-email-thread",
+            "devguard_sweep_dev.json",
         ):
             (directory / filename).write_text("SYNTHETIC_RUNTIME_DATA")
+    (tmp_path / ".state" / "devguard").mkdir(parents=True)
+    (tmp_path / ".state" / "devguard" / "report.json").write_text("SYNTHETIC_RUNTIME_DATA")
     proc = subprocess.run(["uv", "build"], cwd=tmp_path, capture_output=True, text=True, timeout=60)
     assert proc.returncode == 0, proc.stderr
     archives = tmp_path / "dist"

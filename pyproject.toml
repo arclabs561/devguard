@@ -1,6 +1,6 @@
 [project]
 name = "devguard"
-version = "0.2.4"
+version = "0.2.5"
 description = "Developer workspace security scanner"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -74,6 +74,8 @@ exclude = [
   "**/.guardian-email-thread",
   "**/.devguard-email-history.json",
   "**/.devguard-email-thread",
+  "**/devguard_sweep_dev.json",
+  ".state/",
 ]
 
 [tool.hatch.build.targets.wheel]
