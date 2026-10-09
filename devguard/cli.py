@@ -1086,7 +1086,7 @@ def sweep(
     only: list[str] = typer.Option(
         None,
         "--only",
-        help="Run only these sweeps (repeatable). Known: local_dev, public_github_secrets, local_dirty_worktree_secrets, local_history_secrets, exec_config_audit, project_flaudit, gitignore_audit, repo_hygiene, dependency_audit, ssh_key_audit, cargo_publish_audit, ai_editor_config_audit, pre_commit_audit, git_identity_audit, credential_file_audit, mcp_security_audit",
+        help="Run only these sweeps (repeatable). Known: local_dev, public_github_secrets, local_dirty_worktree_secrets, local_history_secrets, exec_config_audit, repo_lint, project_flaudit, gitignore_audit, repo_hygiene, dependency_audit, ssh_key_audit, cargo_publish_audit, ai_editor_config_audit, pre_commit_audit, git_identity_audit, credential_file_audit, mcp_security_audit",
     ),
     format: str = typer.Option(
         "text",
@@ -1352,6 +1352,29 @@ def _sweep_body(
                 console.print(f"[yellow]Errors:[/yellow] {len(eca_errors)} (see report)")
         if report["summary"]["high_findings"] > 0:
             exit_code = max(exit_code, 2)
+
+    # Rust workspace hygiene lint: report only, never part of the exit code
+    rl = spec.sweeps.repo_lint
+    if (rl.enabled and not wanted) or "repo_lint" in wanted:
+        from devguard.sweeps.repo_lint import lint_repos
+        from devguard.sweeps.repo_lint import write_report as write_rl
+
+        root = _resolve_root(rl.dev_root)
+        report, rl_errors = lint_repos(
+            dev_root=root, max_depth=rl.max_depth, exclude_repo_globs=rl.exclude_repo_globs
+        )
+        out_path = Path(rl.output).expanduser()
+        write_rl(out_path, report)
+        if machine_output:
+            sweep_reports.append(("repo_lint", report))
+        else:
+            console.print(f"[bold]repo_lint report:[/bold] {out_path}")
+            for check, n in report["summary"]["by_check"].items():
+                console.print(f"  {check}: {n}")
+            for f in report["findings"][:30]:
+                console.print(f"  [{f['severity']}] {Path(f['repo_path']).name}: {f['message']}")
+            if rl_errors:
+                console.print(f"[yellow]Errors:[/yellow] {len(rl_errors)} (see report)")
 
     # project_flaudit sweep (files-to-prompt + OpenRouter/Gemini)
     flaudit = spec.sweeps.project_flaudit

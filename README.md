@@ -103,6 +103,7 @@ Sweeps that need external access:
 | `publish_audit` | PyPI and npm publish metadata and trusted-publishing setup |
 | `pre_commit_audit` | Missing or incomplete secret-scanning pre-commit hooks |
 | `project_flaudit` | LLM-assisted repo audit |
+| `repo_lint` | Rust workspace hygiene: own-crate pin drift, README version lines, Cargo metadata, CI gaps (off by default, never changes the exit code) |
 
 ## Pre-commit Hooks
 
