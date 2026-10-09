@@ -1,11 +1,11 @@
 /**
- * Visual testing for Guardian dashboard using ai-browser-test
- * 
+ * Visual testing for Guardian dashboard using @arclabs561/ai-visual-test
+ *
  * Tests the dashboard UI for accessibility, design quality, and functionality.
  */
 
 import { test, expect } from '@playwright/test';
-import { validateScreenshot } from 'ai-browser-test';
+import { validateScreenshot } from '@arclabs561/ai-visual-test';
 
 const DASHBOARD_URL = process.env.DASHBOARD_URL || 'http://localhost:8080';
 const DASHBOARD_API_KEY = process.env.DASHBOARD_API_KEY || '';

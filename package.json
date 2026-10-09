@@ -10,6 +10,6 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.56.0",
-    "ai-browser-test": "file:../ai-browser-test"
+    "@arclabs561/ai-visual-test": "^0.14.0"
   }
 }
