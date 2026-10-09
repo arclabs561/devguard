@@ -233,8 +233,9 @@ def _load_servers(config_path: Path, text: str) -> dict[str, Any] | None:
     if not isinstance(data, dict):
         return None
     for key in ("mcpServers", "servers"):
-        if isinstance(data.get(key), dict):
-            return data[key]
+        table = data.get(key)
+        if isinstance(table, dict):
+            return table
     # Some formats put servers at the root level with command/url fields.
     return {
         k: v
