@@ -210,6 +210,19 @@ def _extract_exec_config_audit(report: dict) -> list[_Finding]:
     ]
 
 
+def _extract_repo_lint(report: dict) -> list[_Finding]:
+    return [
+        (
+            f.get("check", "repo_lint"),
+            _sarif_level(f.get("severity", "low")),
+            f.get("message", ""),
+            f.get("file"),
+            f.get("severity", "low"),
+        )
+        for f in report.get("findings", [])
+    ]
+
+
 def _extract_local_dev(report: dict) -> list[_Finding]:
     results: list[_Finding] = []
     for hit in report.get("hits", []):
@@ -282,6 +295,7 @@ _EXTRACTORS: dict[str, Any] = {
     "local_dirty_worktree_secrets": _extract_local_dirty_worktree_secrets,
     "local_history_secrets": _extract_local_history_secrets,
     "exec_config_audit": _extract_exec_config_audit,
+    "repo_lint": _extract_repo_lint,
     "local_dev": _extract_local_dev,
     "project_flaudit": _extract_project_flaudit,
 }

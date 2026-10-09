@@ -158,6 +158,31 @@ class ExecConfigAuditSweepSpec(BaseModel):
     )
 
 
+class RepoLintSweepSpec(BaseModel):
+    """Rust workspace hygiene: own-crate pin drift, README versions, metadata, CI gaps.
+
+    Off by default and never changes the sweep exit code; run it with
+    `devguard sweep --only repo_lint`.
+    """
+
+    enabled: bool = Field(False, description="Whether this sweep runs without --only")
+    dev_root: str | None = Field(
+        None,
+        description="Workspace root to discover git repos under (default: $DEV_DIR or current directory).",
+    )
+    max_depth: int = Field(
+        2, description="How deep under dev_root to look for git repos (bounded)."
+    )
+    exclude_repo_globs: list[str] = Field(
+        default_factory=lambda: ["*/_trash/*", "*/_archive/*", "*/_forks/*"],
+        description="Glob patterns (matched against repo paths) to exclude from scanning.",
+    )
+    output: str = Field(
+        ".state/devguard/repo-lint.json",
+        description="Where to write the JSON report (path).",
+    )
+
+
 class ProjectFlauditSweepSpec(BaseModel):
     """Files-to-prompt per project + OpenRouter/Gemini flaw analysis.
 
@@ -720,6 +745,10 @@ class SweepSpec(BaseModel):
     exec_config_audit: ExecConfigAuditSweepSpec = Field(
         default_factory=lambda: ExecConfigAuditSweepSpec.model_validate({}),
         description="Inventory repo configs that run commands when the repo is opened",
+    )
+    repo_lint: RepoLintSweepSpec = Field(
+        default_factory=lambda: RepoLintSweepSpec.model_validate({}),
+        description="Rust workspace hygiene lint (never affects exit code)",
     )
     project_flaudit: ProjectFlauditSweepSpec = Field(
         default_factory=lambda: ProjectFlauditSweepSpec.model_validate({}),
