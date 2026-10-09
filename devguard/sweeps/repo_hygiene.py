@@ -144,29 +144,68 @@ def _check_committed_generated_data(repo: Path, tracked: list[str]) -> HygieneFi
     )
 
 
-_HARDCODED_PATH_RE = re.compile(r"(/Users/|/home/)\S+")
+# A home directory with a real-looking user name: /Users/<name>/, /home/<name>/
+# or C:\Users\<name>\. Generic names used by CI and docs are allowed.
+_HARDCODED_PATH_RE = re.compile(
+    r"(?:/Users/|/home/|[A-Za-z]:\\\\?Users\\\\?)([A-Za-z0-9._-]+)[/\\]"
+)
+_GENERIC_HOME_NAMES = frozenset(
+    {
+        "runner",
+        "user",
+        "username",
+        "example",
+        "you",
+        "me",
+        "name",
+        "someone",
+        "shared",
+        "ubuntu",
+        "admin",
+        "root",
+        "vscode",
+        "node",
+        "app",
+        "dev",
+        "jovyan",
+        "circleci",
+    }
+)
+_TEXT_SCAN_MAX_BYTES = 1024 * 1024
+_TEXT_SKIP_GLOBS = ("*.lock", "*.min.*", "*.svg", "*.map", "*search-index*.js", "package-lock.json")
+
+
+def _tracked_text(repo: Path, rel: str) -> str | None:
+    """Text of a tracked regular file, or None for links, binaries and big files."""
+    if any(fnmatch.fnmatch(Path(rel).name, g) for g in _TEXT_SKIP_GLOBS):
+        return None
+    path = repo / rel
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > _TEXT_SCAN_MAX_BYTES:
+            return None
+        data = path.read_bytes()
+    except OSError:
+        return None
+    if b"\0" in data[:8192]:
+        return None
+    return data.decode("utf-8", errors="replace")
 
 
 def _check_hardcoded_paths(repo: Path, tracked: list[str]) -> HygieneFinding | None:
-    """C: Tracked .sh files with hardcoded /Users/ or /home/ absolute paths."""
-    sh_files = [rel for rel in tracked if rel.endswith(".sh")]
+    """C: Tracked text files containing a personal home-directory path."""
     hits: list[str] = []
-    for rel in sh_files:
-        path = repo / rel
-        try:
-            text = path.read_text(encoding="utf-8", errors="replace")
-        except Exception:
+    for rel in tracked:
+        text = _tracked_text(repo, rel)
+        if text is None:
             continue
         for lineno, line in enumerate(text.splitlines(), 1):
-            # Skip comment lines
-            stripped = line.strip()
-            if stripped.startswith("#"):
-                continue
-            if _HARDCODED_PATH_RE.search(line):
+            if any(
+                m.group(1).lower() not in _GENERIC_HOME_NAMES
+                for m in _HARDCODED_PATH_RE.finditer(line)
+            ):
                 hits.append(f"{rel}:{lineno}")
-                if len(hits) >= 10:
-                    break
-        if len(hits) >= 10:
+                break  # one location per file keeps the report readable
+        if len(hits) >= 20:
             break
 
     if not hits:
@@ -175,8 +214,106 @@ def _check_hardcoded_paths(repo: Path, tracked: list[str]) -> HygieneFinding | N
         repo_path=str(repo),
         check="hardcoded_absolute_paths",
         severity="medium",
-        message=f"Hardcoded absolute path (/Users/ or /home/) in {len(hits)} tracked shell script location(s).",
+        message=(
+            f"Personal home-directory path in {len(hits)} tracked file(s) -- it leaks a "
+            "user name and breaks on other machines."
+        ),
         files=hits,
+    )
+
+
+_SECRET_LIKE_NAME_RE = re.compile(
+    r"^(?:\.env(?:\.(?!example|sample|template|dist)[\w.-]+)?|.*\.(?:pem|key|p12|pfx)|id_[rd]sa|"
+    r"id_ed25519|credentials(?:\.json)?|\.netrc|\.npmrc|\.pypirc)$",
+    re.IGNORECASE,
+)
+
+
+def _check_tracked_ignored(repo: Path) -> HygieneFinding | None:
+    """I: Tracked files that the repo's own ignore rules say should not be tracked."""
+    proc = subprocess.run(
+        ["git", "-C", str(repo), "ls-files", "-z", "--cached", "--ignored", "--exclude-standard"],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        timeout=60,
+    )
+    if proc.returncode != 0:
+        return None
+    files = [p for p in proc.stdout.decode("utf-8", errors="replace").split("\0") if p]
+    if not files:
+        return None
+    secret_like = [f for f in files if _SECRET_LIKE_NAME_RE.match(Path(f).name)]
+    return HygieneFinding(
+        repo_path=str(repo),
+        check="tracked_but_ignored",
+        severity="medium" if secret_like else "low",
+        message=(
+            f"{len(files)} tracked file(s) match the repo's ignore rules"
+            + (f", {len(secret_like)} with secret-like names" if secret_like else "")
+            + " -- untrack them (git rm --cached) or narrow the rule."
+        ),
+        files=(secret_like + [f for f in files if f not in secret_like])[:20],
+    )
+
+
+def _check_local_path_deps(repo: Path, tracked: list[str]) -> HygieneFinding | None:
+    """J: Dependencies on paths outside the repo, which break clones and publishes."""
+    repo_real = repo.resolve()
+
+    def outside(base: Path, target: str) -> bool:
+        try:
+            (base / target).resolve().relative_to(repo_real)
+        except ValueError:
+            return True
+        return False
+
+    hits: list[str] = []
+    for rel in tracked:
+        name = Path(rel).name
+        base = (repo / rel).parent
+        if name == "package.json":
+            try:
+                data = json.loads((repo / rel).read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            for table in (
+                "dependencies",
+                "devDependencies",
+                "optionalDependencies",
+                "peerDependencies",
+            ):
+                deps = data.get(table) if isinstance(data, dict) else None
+                for dep, spec in (deps or {}).items():
+                    if isinstance(spec, str) and spec.startswith(("file:", "link:")):
+                        target = spec.split(":", 1)[1]
+                        if outside(base, target):
+                            hits.append(f"{rel}: {dep} -> {spec}")
+        elif name == "Cargo.toml":
+            data = _parse_toml(repo / rel)
+            if data is None:
+                continue
+            for target in _path_deps(data):
+                if outside(base, target):
+                    hits.append(f"{rel}: path = {target}")
+        elif name == "pyproject.toml":
+            data = _parse_toml(repo / rel)
+            sources = ((data or {}).get("tool", {}).get("uv", {}) or {}).get("sources", {})
+            for dep, src in (sources or {}).items():
+                if isinstance(src, dict) and isinstance(src.get("path"), str):
+                    if outside(base, src["path"]):
+                        hits.append(f"{rel}: {dep} -> {src['path']}")
+    if not hits:
+        return None
+    return HygieneFinding(
+        repo_path=str(repo),
+        check="local_path_dependency",
+        severity="medium",
+        message=(
+            f"{len(hits)} dependency(ies) point outside the repo -- a fresh clone or a "
+            "published package cannot resolve them."
+        ),
+        files=hits[:20],
     )
 
 
@@ -698,6 +835,8 @@ def sweep_repo_hygiene(
             ),
             lambda r: _check_stale_rename_refs(r, tracked),
             lambda r: _check_unused_workspace_deps(r),
+            lambda r: _check_tracked_ignored(r),
+            lambda r: _check_local_path_deps(r, tracked),
         ):
             try:
                 finding = check_fn(repo)
