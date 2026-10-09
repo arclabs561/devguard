@@ -182,3 +182,29 @@ def test_unrunnable_engine_reports_not_scanned(
     assert report["summary"]["total_errors"] == 1
     assert report["findings"] == []
     assert any("gitleaks" in e for e in errors)
+
+
+def test_timeout_stops_the_engine_cascade(planted: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from devguard.sweeps import local_history_secrets as hist
+
+    calls: list[str] = []
+
+    def slow(repo: Path, timeout_s: int) -> list:
+        calls.append("gitleaks")
+        raise subprocess.TimeoutExpired(cmd="gitleaks", timeout=timeout_s)
+
+    def never(repo: Path, timeout_s: int) -> list:
+        calls.append("trufflehog")
+        return []
+
+    monkeypatch.setattr(hist, "_RUNNERS", {"gitleaks": slow, "trufflehog": never, "regex": never})
+    monkeypatch.setattr(
+        hist, "_available_engines", lambda engine: ["gitleaks", "trufflehog", "regex"]
+    )
+
+    report, errors = scan_history_secrets(dev_root=planted, max_depth=2, timeout_s=7)
+
+    assert calls == ["gitleaks"]
+    assert report["repos"][0]["status"] == "not_scanned"
+    assert report["repos"][0]["error"] == "gitleaks: timed out after 7s"
+    assert report["summary"]["repos_not_scanned"] == 1

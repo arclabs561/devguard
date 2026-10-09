@@ -268,6 +268,11 @@ def scan_history_secrets(
         for name in engines:
             try:
                 hits = _RUNNERS[name](repo, timeout_s)
+            except subprocess.TimeoutExpired:
+                # The next engine would read the same oversized history; stop here
+                # and report missed coverage instead of tripling the cost.
+                repo_error = f"{name}: timed out after {timeout_s}s"
+                break
             except (OSError, subprocess.SubprocessError, RuntimeError, ValueError) as e:
                 repo_error = f"{name}: {e}"
                 continue
