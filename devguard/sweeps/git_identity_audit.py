@@ -173,6 +173,7 @@ def _check_email(
     allowed_emails: frozenset[str] = frozenset(),
     flag_employer_domains: bool = False,
     own_domains: frozenset[str] = frozenset(),
+    judge_unlisted: bool = True,
 ) -> list[dict[str, Any]]:
     findings: list[dict[str, Any]] = []
     domain = _email_domain(email)
@@ -210,7 +211,7 @@ def _check_email(
         )
     elif allowed_domains and domain not in allowed_domains:
         warn("unexpected_git_email_domain", "Git identity domain is outside the allowlist")
-    elif allowed_emails and not allowed_domains:
+    elif allowed_emails and not allowed_domains and judge_unlisted:
         warn("unexpected_git_email", "Git identity email is not one of the allowed addresses")
     elif (
         flag_employer_domains
@@ -411,9 +412,16 @@ def audit_git_identity(
                     if email.lower() in own_emails:
                         user_names |= names
                 for email, (commit, names) in samples.items():
-                    # With no known identity, every commit is a candidate.
-                    if policy["flag_employer_domains"] and user_names and not (names & user_names):
-                        continue_policy: dict[str, Any] = {**policy, "flag_employer_domains": False}
+                    # Identity checks (allowlist, employer heuristic) judge only the
+                    # user's own commits; other contributors in forks and vendored
+                    # clones are left to explicit domain policy. With no known
+                    # identity, every commit is judged.
+                    if user_names and not (names & user_names):
+                        continue_policy: dict[str, Any] = {
+                            **policy,
+                            "flag_employer_domains": False,
+                            "judge_unlisted": False,
+                        }
                     else:
                         continue_policy = policy
                     containing_refs = _refs_containing_commit(repo, commit)
@@ -430,6 +438,12 @@ def audit_git_identity(
                             extra={
                                 "sample_commit": commit,
                                 "containing_refs": containing_refs[:25],
+                                # False when only stashes, backup branches or other
+                                # local refs hold it: cleanup, not a published leak.
+                                "on_remote": any(
+                                    r.startswith(("refs/remotes/origin/", "refs/tags/"))
+                                    for r in containing_refs
+                                ),
                             },
                         )
                     )

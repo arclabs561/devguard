@@ -396,3 +396,47 @@ def test_employer_heuristic_ignores_other_contributors(
     )
 
     assert _history_checks(report) == [("possible_employer_email", "me.person@bigcorp.com")]
+
+
+def test_allowlist_ignores_other_contributors_and_marks_local_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gitconfig = tmp_path / "gitconfig"
+    gitconfig.write_text("[user]\n\temail = me@gmail.com\n\tname = Me Person\n")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(gitconfig))
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+    repo = _init_repo(tmp_path / "ws")
+
+    def commit(email: str, name: str) -> None:
+        (repo / f"{name}-{email}.txt").write_text("x")
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-c", f"user.email={email}", "-c", f"user.name={name}", "commit", "-qm", "c"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+
+    commit("me@gmail.com", "Me Person")
+    commit("dev@upstream.io", "Upstream Dev")  # vendored contributor: not judged
+    subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "push", "-q", "origin", "main"], cwd=repo, check=True, capture_output=True
+    )
+    subprocess.run(["git", "switch", "-q", "-c", "backup/old"], cwd=repo, check=True)
+    commit("me@bigcorp.com", "Me Person")  # only on a local backup branch
+
+    report, _ = audit_git_identity(
+        dev_root=tmp_path / "ws",
+        max_depth=1,
+        check_history=True,
+        allowed_emails=["me@gmail.com"],
+        redact_emails=False,
+        check_environment=False,
+    )
+
+    hist = [f for f in report["findings"] if f["source"].startswith("git log")]
+    assert [(f["check_id"], f["email"], f["on_remote"]) for f in hist] == [
+        ("unexpected_git_email", "me@bigcorp.com", False)
+    ]
