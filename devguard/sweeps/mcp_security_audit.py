@@ -15,8 +15,10 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import tomllib
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlsplit
 
 from devguard.sweeps._common import default_dev_root as _default_dev_root
 from devguard.sweeps._common import iter_git_repos
@@ -48,10 +50,14 @@ _PROVIDER_SECRET_PREFIXES: list[str] = [
     "hf_",  # HuggingFace
 ]
 
-# Compiled prefix regex (match at start of value).
+# Compiled prefix regex: at the start of a value or after `=`, whitespace or `:`,
+# so `--token=ghp_...` and `Bearer ghp_...` match as well as a bare token.
 _PROVIDER_RE = re.compile(
-    r"^(" + "|".join(re.escape(p) for p in _PROVIDER_SECRET_PREFIXES) + r")\S{8,}",
+    r"(?:^|[=\s:])(" + "|".join(re.escape(p) for p in _PROVIDER_SECRET_PREFIXES) + r")\S{8,}",
 )
+
+# URL query parameters that carry credentials (e.g. ?tavilyApiKey=...).
+_URL_SECRET_PARAM_RE = re.compile(r"(?:key|token|secret|password|auth)$", re.IGNORECASE)
 
 # Generic long hex/base64 -- only fire when the *key name* suggests a secret.
 _SECRET_KEY_NAMES = re.compile(
@@ -89,6 +95,9 @@ _SHELL_META_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r";"),  # command separator
     re.compile(r"&&"),  # logical AND
     re.compile(r">>"),  # append redirect
+    re.compile(r">&"),  # fd redirect, as in `bash -i >& /dev/tcp/...`
+    re.compile(r"/dev/(?:tcp|udp)/"),  # bash network redirection (reverse shell)
+    re.compile(r"\bnc\b.*\s-[ec]\b"),  # netcat executing a program
 ]
 
 # ---------------------------------------------------------------------------
@@ -117,6 +126,9 @@ _REPO_MCP_FILES: list[str] = [
     ".cursor/mcp.json",
     ".claude.json",
     "mcp-manifest.json",
+    ".vscode/mcp.json",  # servers under "servers"
+    ".gemini/settings.json",
+    ".codex/config.toml",  # servers under [mcp_servers.*]
 ]
 
 
@@ -174,7 +186,7 @@ def _check_value_for_secret(key_name: str, value: str) -> str | None:
         return None
 
     # Provider-specific prefix match -- fires regardless of key name.
-    if _PROVIDER_RE.match(v):
+    if _PROVIDER_RE.search(v):
         return "mcp_hardcoded_secret"
 
     # Generic long hex/base64 -- only if key name is secret-like.
@@ -191,6 +203,54 @@ def _check_command_injection(parts: list[str]) -> bool:
         for pattern in _SHELL_META_PATTERNS:
             if pattern.search(part):
                 return True
+    return False
+
+
+def _url_secret_params(url: str) -> list[str]:
+    """Names of query parameters that look like literal credentials."""
+    query = urlsplit(url).query
+    return [
+        k
+        for k, v in parse_qsl(query)
+        if _URL_SECRET_PARAM_RE.search(k) and v and not (_is_env_ref(v) or _is_placeholder(v))
+    ]
+
+
+def _load_servers(config_path: Path, text: str) -> dict[str, Any] | None:
+    """Parse an MCP config and return its server table, or None if unparseable."""
+    if config_path.suffix == ".toml":
+        try:
+            data: Any = tomllib.loads(text)
+        except tomllib.TOMLDecodeError:
+            return None
+        servers = data.get("mcp_servers") if isinstance(data, dict) else None
+        return servers if isinstance(servers, dict) else {}
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        # Invalid JSON is already covered by ai_editor_config_audit; skip here.
+        return None
+    if not isinstance(data, dict):
+        return None
+    for key in ("mcpServers", "servers"):
+        if isinstance(data.get(key), dict):
+            return data[key]
+    # Some formats put servers at the root level with command/url fields.
+    return {
+        k: v
+        for k, v in data.items()
+        if isinstance(v, dict) and ("command" in v or "url" in v or "args" in v)
+    }
+
+
+def _escapes_repo(path: Path, repo: Path) -> bool:
+    """True if path is a symlink whose target lies outside repo."""
+    if not path.is_symlink():
+        return False
+    try:
+        path.resolve().relative_to(repo.resolve())
+    except ValueError:
+        return True
     return False
 
 
@@ -227,24 +287,9 @@ def _audit_mcp_config(
     except (OSError, PermissionError):
         return findings
 
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        # Invalid JSON is already covered by ai_editor_config_audit; skip here.
+    servers = _load_servers(config_path, text)
+    if servers is None:
         return findings
-
-    if not isinstance(data, dict):
-        return findings
-
-    # Locate mcpServers block -- top-level or nested.
-    servers: dict[str, Any] = {}
-    if "mcpServers" in data and isinstance(data["mcpServers"], dict):
-        servers = data["mcpServers"]
-    else:
-        # Some formats put servers at the root level with command/url fields.
-        for k, v in data.items():
-            if isinstance(v, dict) and ("command" in v or "url" in v or "args" in v):
-                servers[k] = v
 
     has_any_secret = False
 
@@ -310,6 +355,33 @@ def _audit_mcp_config(
                         }
                     )
                     has_any_secret = True
+
+        # --- mcp_hardcoded_secret: HTTP headers and URL query strings ---
+        headers = server_cfg.get("headers", {})
+        leaked_in: list[str] = []
+        if isinstance(headers, dict):
+            leaked_in += [
+                f"headers.{k}"
+                for k, v in headers.items()
+                if isinstance(v, str) and _check_value_for_secret(k, v)
+            ]
+        url_val = server_cfg.get("url")
+        if isinstance(url_val, str):
+            leaked_in += [f"url ?{p}=" for p in _url_secret_params(url_val)]
+        if leaked_in:
+            findings.append(
+                {
+                    "check_id": "mcp_hardcoded_secret",
+                    "severity": "error",
+                    "file": rel_label,
+                    "server": server_name,
+                    "message": (
+                        f"Hardcoded credential in {', '.join(leaked_in)} for server "
+                        f"'{server_name}' -- use an env var reference instead"
+                    ),
+                }
+            )
+            has_any_secret = True
 
         # --- mcp_command_injection ---
         cmd_parts: list[str] = []
@@ -411,7 +483,6 @@ def audit_mcp_security(
 
     all_findings: list[dict[str, Any]] = []
     configs_scanned = 0
-    repos_scanned = 0
 
     # --- Per-repo MCP configs ---
     repos = sorted(iter_git_repos(root, max_depth=max_depth, exclude_globs=globs))
@@ -421,6 +492,18 @@ def audit_mcp_security(
         for rel_path in _REPO_MCP_FILES:
             config_path = repo / rel_path
             if not config_path.is_file():
+                continue
+            if _escapes_repo(config_path, repo):
+                # Never read through a link that points outside the repo.
+                all_findings.append(
+                    {
+                        "check_id": "symlink_escapes_repo",
+                        "severity": "warning",
+                        "file": rel_path,
+                        "server": "(all)",
+                        "message": f"{rel_path} in {repo.name} links outside the repo; not read",
+                    }
+                )
                 continue
             configs_scanned += 1
             try:
