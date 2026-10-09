@@ -1,7 +1,7 @@
 """Specification system for defining what to monitor."""
 
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, Field
 
@@ -100,6 +100,39 @@ class LocalDirtyWorktreeSecretsSweepSpec(BaseModel):
     timeout_s: int = Field(180, description="Per-repo timeout upper bound in seconds.")
     output: str = Field(
         ".state/devguard/local-dirty-worktree-secrets.json",
+        description="Where to write the redacted JSON report (path).",
+    )
+
+
+class LocalHistorySecretsSweepSpec(BaseModel):
+    """Scan the full git history of every local repo, clean or dirty, for secrets."""
+
+    enabled: bool = Field(True, description="Whether this sweep is enabled")
+    dev_root: str | None = Field(
+        None,
+        description="Workspace root to discover git repos under (default: $DEV_DIR or current directory).",
+    )
+    max_depth: int = Field(
+        2, description="How deep under dev_root to look for git repos (bounded)."
+    )
+    exclude_repo_globs: list[str] = Field(
+        default_factory=lambda: [
+            "*/_trash/*",
+            "*/_scratch/*",
+            "*/_external/*",
+            "*/_archive/*",
+            "*/_forks/*",
+        ],
+        description="Glob patterns (matched against repo paths) to exclude from scanning.",
+    )
+    engine: Literal["auto", "gitleaks", "trufflehog", "regex"] = Field(
+        "auto",
+        description="auto uses gitleaks, then trufflehog, then devguard's built-in regex.",
+    )
+    timeout_s: int = Field(300, description="Per-repo timeout in seconds.")
+    max_concurrency: int = Field(4, description="Maximum concurrent repo scans.")
+    output: str = Field(
+        ".state/devguard/local-history-secrets.json",
         description="Where to write the redacted JSON report (path).",
     )
 
@@ -658,6 +691,10 @@ class SweepSpec(BaseModel):
     local_dirty_worktree_secrets: LocalDirtyWorktreeSecretsSweepSpec = Field(
         default_factory=lambda: LocalDirtyWorktreeSecretsSweepSpec.model_validate({}),
         description="Scan dirty local git worktrees for secrets (redacted)",
+    )
+    local_history_secrets: LocalHistorySecretsSweepSpec = Field(
+        default_factory=lambda: LocalHistorySecretsSweepSpec.model_validate({}),
+        description="Scan full local git history for committed secrets (redacted)",
     )
     project_flaudit: ProjectFlauditSweepSpec = Field(
         default_factory=lambda: ProjectFlauditSweepSpec.model_validate({}),
