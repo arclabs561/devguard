@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import stat
 import subprocess
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
@@ -210,16 +211,33 @@ def sweep_dev_repos(
     hits: list[Hit] = []
     for repo in repos:
         tracked = _git_ls_files(repo)
+        repo_real = repo.resolve()
         for rel in tracked:
+            p = repo / rel
+            # lstat first: a tracked symlink is a few bytes, and its target may
+            # sit outside the repo, so never stat or read through it.
+            try:
+                st = p.lstat()
+            except OSError:
+                continue
+            if stat.S_ISLNK(st.st_mode):
+                try:
+                    p.resolve().relative_to(repo_real)
+                except (ValueError, OSError):
+                    hits.append(
+                        Hit(
+                            repo_path=str(repo),
+                            file_path=rel,
+                            reason="symlink_escapes_repo",
+                            size_bytes=st.st_size,
+                        )
+                    )
+                continue
+            is_file = stat.S_ISREG(st.st_mode)
+
             pat = _matches_any(rel, globs)
             if pat:
-                size = None
-                try:
-                    p = repo / rel
-                    if p.exists() and p.is_file():
-                        size = p.stat().st_size
-                except OSError:
-                    size = None
+                size = st.st_size if is_file else None
                 hits.append(
                     Hit(
                         repo_path=str(repo),
@@ -231,21 +249,15 @@ def sweep_dev_repos(
                 continue
 
             # Large blobs (current working tree size, not historical blob size)
-            try:
-                p = repo / rel
-                if p.exists() and p.is_file():
-                    sz = p.stat().st_size
-                    if sz > max_blob_bytes:
-                        hits.append(
-                            Hit(
-                                repo_path=str(repo),
-                                file_path=rel,
-                                reason=f"blob_too_large>{max_blob_bytes}",
-                                size_bytes=sz,
-                            )
-                        )
-            except OSError:
-                continue
+            if is_file and st.st_size > max_blob_bytes:
+                hits.append(
+                    Hit(
+                        repo_path=str(repo),
+                        file_path=rel,
+                        reason=f"blob_too_large>{max_blob_bytes}",
+                        size_bytes=st.st_size,
+                    )
+                )
 
     meta = {
         "generated_at": utc_now(),
