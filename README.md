@@ -97,7 +97,7 @@ Sweeps that need external access:
 | `ssh_key_audit` | Weak, short, or stale SSH keys |
 | `gitignore_audit` | Missing `.gitignore` files and missing language ignore patterns |
 | `repo_hygiene` | Public-text leak patterns and repo hygiene checks |
-| `git_identity_audit` | Git author email policy in config, env, and optional history |
+| `git_identity_audit` | Git author emails in config, env, and history: forbidden domains, an `allowed_emails` list, or, with no policy, likely employer addresses under your own name |
 | `ai_editor_config_audit` | Cursor and Claude config consistency |
 | `cargo_publish_audit` | Rust crate publish metadata and CI blockers |
 | `publish_audit` | PyPI and npm publish metadata and trusted-publishing setup |

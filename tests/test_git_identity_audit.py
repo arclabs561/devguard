@@ -259,3 +259,140 @@ def _repo_entry(report: dict, name: str) -> dict | None:
         if name in entry["repo_path"]:
             return entry
     return None
+
+
+def _commit_as(repo: Path, email: str, name: str = "x") -> None:
+    (repo / f"{abs(hash(email))}.txt").write_text(email)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-c", f"user.email={email}", "-c", "user.name=t", "commit", "-qm", name],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+
+
+def _history_checks(report: dict) -> list[tuple[str, str]]:
+    return sorted(
+        (f["check_id"], f["email"]) for f in report["findings"] if f["source"].startswith("git log")
+    )
+
+
+def test_employer_domain_in_history_flagged_without_config(tmp_path: Path) -> None:
+    repo = _init_repo(tmp_path)
+    for email in (
+        "person@gmail.com",
+        "person@bigcorp.com",
+        "123+person@users.noreply.github.com",
+        "dependabot[bot]@users.noreply.github.com",
+    ):
+        _commit_as(repo, email)
+
+    report, _ = audit_git_identity(
+        dev_root=tmp_path,
+        max_depth=1,
+        check_history=True,
+        flag_employer_domains=True,
+        redact_emails=False,
+        check_global_config=False,
+        check_environment=False,
+    )
+
+    assert _history_checks(report) == [("possible_employer_email", "person@bigcorp.com")]
+
+
+def test_allowed_emails_flag_every_other_address(tmp_path: Path) -> None:
+    repo = _init_repo(tmp_path)
+    for email in ("me@gmail.com", "me@mydomain.io", "other@gmail.com", "me@bigcorp.com"):
+        _commit_as(repo, email)
+
+    report, _ = audit_git_identity(
+        dev_root=tmp_path,
+        max_depth=1,
+        check_history=True,
+        flag_employer_domains=True,
+        allowed_emails=["Me@Gmail.com", "me@mydomain.io"],
+        redact_emails=False,
+        check_global_config=False,
+        check_environment=False,
+    )
+
+    assert _history_checks(report) == [
+        ("unexpected_git_email", "me@bigcorp.com"),
+        ("unexpected_git_email", "other@gmail.com"),
+    ]
+
+
+def test_own_global_domain_is_not_an_employer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gitconfig = tmp_path / "gitconfig"
+    gitconfig.write_text("[user]\n\temail = me@mydomain.io\n")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(gitconfig))
+    repo = _init_repo(tmp_path / "ws")
+    _commit_as(repo, "me@mydomain.io")
+    _commit_as(repo, "me@bigcorp.com")
+
+    report, _ = audit_git_identity(
+        dev_root=tmp_path / "ws",
+        max_depth=1,
+        check_history=True,
+        flag_employer_domains=True,
+        redact_emails=False,
+        check_environment=False,
+    )
+
+    assert _history_checks(report) == [("possible_employer_email", "me@bigcorp.com")]
+
+
+def test_sweep_only_flags_employer_history_with_default_spec(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from typer.testing import CliRunner
+
+    from devguard.cli import app
+
+    repo = _init_repo(tmp_path / "ws")
+    _commit_as(repo, "person@bigcorp.com")
+    monkeypatch.chdir(tmp_path)  # no devguard.spec.yaml
+
+    result = CliRunner().invoke(
+        app, ["sweep", "--repo", str(repo), "--only", "git_identity_audit", "--format", "json"]
+    )
+
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    checks = [f["check_id"] for f in payload["git_identity_audit"]["findings"]]
+    assert checks == ["possible_employer_email"]
+
+
+def test_employer_heuristic_ignores_other_contributors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gitconfig = tmp_path / "gitconfig"
+    gitconfig.write_text("[user]\n\temail = me@gmail.com\n\tname = Me Person\n")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(gitconfig))
+    repo = _init_repo(tmp_path / "ws")
+    for email, name in (
+        ("me@gmail.com", "Me Person"),
+        ("me.person@bigcorp.com", "Me Person"),  # the user, at work
+        ("dev@upstream.io", "Upstream Dev"),  # someone else's commit in a fork
+    ):
+        (repo / f"{name}-{email}.txt").write_text("x")
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-c", f"user.email={email}", "-c", f"user.name={name}", "commit", "-qm", "c"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+
+    report, _ = audit_git_identity(
+        dev_root=tmp_path / "ws",
+        max_depth=1,
+        check_history=True,
+        flag_employer_domains=True,
+        redact_emails=False,
+        check_environment=False,
+    )
+
+    assert _history_checks(report) == [("possible_employer_email", "me.person@bigcorp.com")]
