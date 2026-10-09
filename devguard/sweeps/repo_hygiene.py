@@ -257,6 +257,84 @@ def _check_tracked_ignored(repo: Path) -> HygieneFinding | None:
     )
 
 
+_HISTORY_BLOB_LIMIT = 5 * 1024 * 1024
+# Build output and caches that should never have been committed at all.
+_ARTIFACT_PATH_RE = re.compile(
+    r"(?:^|/)(?:target|node_modules|__pycache__|\.fastembed_cache|\.venv)/"
+    r"|\.(?:rlib|rmeta|so|dylib|o|a|pyc|onnx)$|(?:^|/)\.DS_Store$"
+)
+
+
+def _check_history_bloat(repo: Path, tracked: list[str]) -> HygieneFinding | None:
+    """K: Large blobs or build artifacts anywhere in history, not just the tree.
+
+    Every clone downloads them; deleting the file from HEAD does not help.
+    """
+    revs = subprocess.run(
+        ["git", "-C", str(repo), "rev-list", "--objects", "--all"],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        timeout=120,
+    )
+    if revs.returncode != 0 or not revs.stdout:
+        return None
+    sizes = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "cat-file",
+            "--batch-check=%(objecttype) %(objectsize) %(rest)",
+        ],
+        input=revs.stdout,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        timeout=120,
+    )
+    if sizes.returncode != 0:
+        return None
+    in_head = set(tracked)
+    big: dict[str, int] = {}
+    artifacts: set[str] = set()
+    for line in sizes.stdout.decode("utf-8", errors="replace").splitlines():
+        kind, _, rest = line.partition(" ")
+        if kind != "blob":
+            continue
+        size_s, _, path = rest.partition(" ")
+        if not path:
+            continue
+        size = int(size_s)
+        if size > _HISTORY_BLOB_LIMIT:
+            big[path] = max(size, big.get(path, 0))
+        if _ARTIFACT_PATH_RE.search(path) and path not in in_head:
+            artifacts.add(path)
+    if not big and not artifacts:
+        return None
+    total_mb = sum(big.values()) / (1024 * 1024)
+    files = [
+        f"{p} ({s / (1024 * 1024):.1f} MiB{'' if p in in_head else ', history only'})"
+        for p, s in sorted(big.items(), key=lambda kv: -kv[1])
+    ]
+    files += sorted(artifacts)
+    parts = []
+    if big:
+        parts.append(f"{len(big)} blob(s) over 5 MiB ({total_mb:.0f} MiB)")
+    if artifacts:
+        parts.append(f"{len(artifacts)} build artifact path(s) no longer in HEAD")
+    return HygieneFinding(
+        repo_path=str(repo),
+        check="history_bloat",
+        severity="medium" if total_mb > 50 else "low",
+        message=(
+            f"History holds {' and '.join(parts)}; every clone downloads them. "
+            "Removing them needs a history rewrite (git filter-repo)."
+        ),
+        files=files[:20],
+    )
+
+
 def _check_local_path_deps(repo: Path, tracked: list[str]) -> HygieneFinding | None:
     """J: Dependencies on paths outside the repo, which break clones and publishes."""
     repo_real = repo.resolve()
@@ -837,6 +915,7 @@ def sweep_repo_hygiene(
             lambda r: _check_unused_workspace_deps(r),
             lambda r: _check_tracked_ignored(r),
             lambda r: _check_local_path_deps(r, tracked),
+            lambda r: _check_history_bloat(r, tracked),
         ):
             try:
                 finding = check_fn(repo)
