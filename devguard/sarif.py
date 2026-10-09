@@ -188,6 +188,15 @@ def _extract_local_dirty_worktree_secrets(report: dict) -> list[_Finding]:
     return _extract_public_github_secrets(report)
 
 
+def _extract_local_history_secrets(report: dict) -> list[_Finding]:
+    results: list[_Finding] = []
+    for f in report.get("findings", []):
+        sev = f.get("severity", "high")
+        rule = "history_secret" if not f.get("in_head") else "committed_secret"
+        results.append((rule, _sarif_level(sev), f.get("message", ""), f.get("file"), sev))
+    return results
+
+
 def _extract_local_dev(report: dict) -> list[_Finding]:
     results: list[_Finding] = []
     for hit in report.get("hits", []):
@@ -258,6 +267,7 @@ _EXTRACTORS: dict[str, Any] = {
     "ssh_key_audit": _extract_ssh_key_audit,
     "public_github_secrets": _extract_public_github_secrets,
     "local_dirty_worktree_secrets": _extract_local_dirty_worktree_secrets,
+    "local_history_secrets": _extract_local_history_secrets,
     "local_dev": _extract_local_dev,
     "project_flaudit": _extract_project_flaudit,
 }

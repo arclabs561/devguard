@@ -1086,7 +1086,7 @@ def sweep(
     only: list[str] = typer.Option(
         None,
         "--only",
-        help="Run only these sweeps (repeatable). Known: local_dev, public_github_secrets, local_dirty_worktree_secrets, project_flaudit, gitignore_audit, repo_hygiene, dependency_audit, ssh_key_audit, cargo_publish_audit, ai_editor_config_audit, pre_commit_audit, git_identity_audit, credential_file_audit, mcp_security_audit",
+        help="Run only these sweeps (repeatable). Known: local_dev, public_github_secrets, local_dirty_worktree_secrets, local_history_secrets, project_flaudit, gitignore_audit, repo_hygiene, dependency_audit, ssh_key_audit, cargo_publish_audit, ai_editor_config_audit, pre_commit_audit, git_identity_audit, credential_file_audit, mcp_security_audit",
     ),
     format: str = typer.Option(
         "text",
@@ -1284,6 +1284,44 @@ def _sweep_body(
             _print_local_dirty_worktree_table(report)
         if report["summary"]["findings_total"] > 0:
             exit_code = max(exit_code, 2)
+
+    # local full-history secret sweep
+    hist = spec.sweeps.local_history_secrets
+    if hist.enabled and (not wanted or "local_history_secrets" in wanted):
+        from devguard.sweeps.local_history_secrets import scan_history_secrets
+        from devguard.sweeps.local_history_secrets import write_report as write_hist
+
+        root = _resolve_root(hist.dev_root)
+        report, _hist_errors = scan_history_secrets(
+            dev_root=root,
+            max_depth=hist.max_depth,
+            exclude_repo_globs=hist.exclude_repo_globs,
+            engine=hist.engine,
+            timeout_s=hist.timeout_s,
+        )
+        out_path = Path(hist.output).expanduser()
+        write_hist(out_path, report)
+        if machine_output:
+            sweep_reports.append(("local_history_secrets", report))
+        else:
+            summary = report["summary"]
+            console.print(f"[bold]local_history_secrets report:[/bold] {out_path}")
+            console.print(f"[bold]Repos scanned:[/bold] {summary['repos_scanned']}")
+            console.print(
+                f"[bold]Findings:[/bold] {summary['findings_total']} "
+                f"({summary['history_only_findings']} only in history)"
+            )
+            for f in report["findings"][:20]:
+                console.print(f"  [{f['severity']}] {Path(f['repo_path']).name}: {f['message']}")
+            if summary["repos_not_scanned"]:
+                console.print(
+                    f"[yellow]Not scanned:[/yellow] {summary['repos_not_scanned']} repos (see report)"
+                )
+        if report["summary"]["high_findings"] > 0:
+            exit_code = max(exit_code, 2)
+        # A repo no engine could scan is missed coverage, not a clean result.
+        if report["summary"]["repos_not_scanned"] > 0:
+            exit_code = max(exit_code, 3)
 
     # project_flaudit sweep (files-to-prompt + OpenRouter/Gemini)
     flaudit = spec.sweeps.project_flaudit
