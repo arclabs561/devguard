@@ -51,6 +51,7 @@ Thumbs.db
 
 # Local env backups
 .env.*
+!.env.example
 
 # Local-only lists
 private_repos.txt
