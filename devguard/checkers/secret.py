@@ -28,15 +28,25 @@ class SecretChecker(BaseChecker):
     check_type = "secret"
 
     # Fallback patterns if trufflehog is missing
+    # Key formats match anywhere, not only after an assignment like
+    # AWS_ACCESS_KEY_ID=, so keys passed as kwargs or kept in fixture files count.
     FALLBACK_PATTERNS = [
-        (r"AWS_ACCESS_KEY_ID\s*=\s*['\"]?(AKIA[0-9A-Z]{16})['\"]?", "AWS Access Key"),
+        (r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b", "AWS Access Key"),
         (r"AWS_SECRET_ACCESS_KEY\s*=\s*['\"]?([0-9a-zA-Z/+]{40})['\"]?", "AWS Secret Key"),
-        (r"PRIVATE_KEY\s*=\s*['\"]?(-+BEGIN PRIVATE KEY-+)['\"]?", "Private Key"),
-        (r"ghp_[a-zA-Z0-9]{36}", "GitHub Personal Access Token"),
+        (r"-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----", "Private Key"),
+        (r"\bgh[pousr]_[A-Za-z0-9]{36}\b", "GitHub Token"),
+        (r"\bgithub_pat_[A-Za-z0-9_]{82}\b", "GitHub Fine-grained Token"),
+        (r"\bsk-ant-(?:api|admin)\d\d-[A-Za-z0-9_-]{80,}", "Anthropic API Key"),
+        (r"\bsk-proj-[A-Za-z0-9_-]{40,}", "OpenAI Project Key"),
         (r"xox[baprs]-([0-9a-zA-Z]{10,48})", "Slack Token"),
-        (r"sk_live_[0-9a-zA-Z]{24}", "Stripe Secret Key"),
+        (r"\b[sr]k_live_[0-9a-zA-Z]{24,}", "Stripe Secret Key"),
+        (r"\bglpat-[A-Za-z0-9_-]{20,}", "GitLab Token"),
+        (r"\bhf_[A-Za-z]{34}\b", "Hugging Face Token"),
+        (r"\bnpm_[A-Za-z0-9]{36}\b", "npm Token"),
+        (r"\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9_-]{50,}", "PyPI Token"),
         (r"api_key\s*=\s*['\"]?([a-zA-Z0-9]{32,})['\"]?", "Generic API Key"),
     ]
+    _SKIP_DIR_NAMES = frozenset({".git", "node_modules", "venv", ".venv", "__pycache__"})
 
     def __init__(self, settings: Settings):
         """Initialize secret checker."""
@@ -154,7 +164,7 @@ class SecretChecker(BaseChecker):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60.0)
+            stdout, _stderr = await asyncio.wait_for(proc.communicate(), timeout=60.0)
         except TimeoutError:
             logger.warning(f"Timeout scanning {repo_path}")
             if proc:
@@ -196,9 +206,11 @@ class SecretChecker(BaseChecker):
 
         # Walk through files, ignoring .git and node_modules
         for path in repo_path.rglob("*"):
-            if not path.is_file():
+            # A symlink can point outside the repo; never read through one.
+            if path.is_symlink() or not path.is_file():
                 continue
-            if any(p in str(path) for p in [".git", "node_modules", "venv", "__pycache__"]):
+            # Compare whole path components: a substring test skipped .github/ and .gitignore.
+            if self._SKIP_DIR_NAMES.intersection(path.relative_to(repo_path).parts):
                 continue
             # Skip large files
             if path.stat().st_size > 1024 * 1024:  # 1MB

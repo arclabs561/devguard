@@ -40,7 +40,9 @@ def _dirty_paths(repo: Path, timeout_s: int = 8) -> tuple[list[str], str | None]
     """
     try:
         res = subprocess.run(
-            ["git", "status", "--porcelain=v1", "-z"],
+            # -uall expands untracked directories into their files; without it a
+            # new directory is one entry that is not a file and gets skipped.
+            ["git", "status", "--porcelain=v1", "-z", "-uall"],
             cwd=str(repo),
             capture_output=True,
             text=True,
@@ -58,27 +60,94 @@ def _dirty_paths(repo: Path, timeout_s: int = 8) -> tuple[list[str], str | None]
         return [], None
 
     paths: list[str] = []
-    for entry in out.split("\0"):
-        if not entry:
+    entries = out.split("\0")
+    i = 0
+    while i < len(entries):
+        entry = entries[i]
+        i += 1
+        # Porcelain v1 -z: "XY path"; a rename or copy is "XY new\0old", so the
+        # following field is the old path and carries no status prefix.
+        if len(entry) < 4 or entry[2] != " ":
             continue
-        # Porcelain v1 format begins with XY status and a space, then path.
-        # For renames, it can be "R  old -> new" (in -z form it's "R  old\0new\0" in some modes),
-        # but we keep this parser simple and best-effort.
-        if len(entry) >= 4 and entry[2] == " ":
-            p = entry[3:]
-        else:
-            p = entry
-        # Handle the "old -> new" display form (non -z) defensively.
-        if " -> " in p:
-            p = p.split(" -> ", 1)[1]
-        p = p.strip()
-        if not p:
-            continue
-        paths.append(p)
+        if entry[0] in "RC" or entry[1] in "RC":
+            i += 1
+        p = entry[3:]
+        if p:
+            paths.append(p)
 
     # Dedup and drop obviously non-files.
     uniq = sorted(set(paths))
     return uniq, None
+
+
+def _tracked_paths(repo: Path, timeout_s: int = 15) -> tuple[list[str], str | None]:
+    """Return tracked file paths (relative to repo) from `git ls-files -z`."""
+    try:
+        res = subprocess.run(
+            ["git", "ls-files", "-z"],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            env=os.environ.copy(),
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        return [], str(e)
+    if res.returncode != 0:
+        return [], (res.stderr or "").strip()[:300] or f"git ls-files exit={res.returncode}"
+    return [p for p in (res.stdout or "").split("\0") if p], None
+
+
+# trufflehog releases before ~3.89 reject this flag and scan nothing.
+_SCAN_ERRORS_FLAG = "--no-fail-on-scan-errors"
+_TRUFFLEHOG_BATCH = 200
+
+
+def _run_trufflehog_filesystem(
+    abs_paths: list[str], *, concurrency: int, timeout_s: int
+) -> tuple[str, list[str]]:
+    """Run trufflehog over paths in batches; return (stdout, error strings).
+
+    Retries a batch without the scan-errors flag when the installed trufflehog
+    does not know it, so older versions still scan instead of failing silently.
+    """
+    stdout_parts: list[str] = []
+    errors: list[str] = []
+    use_flag = True
+    for start in range(0, len(abs_paths), _TRUFFLEHOG_BATCH):
+        batch = abs_paths[start : start + _TRUFFLEHOG_BATCH]
+        while True:
+            cmd = [
+                "trufflehog",
+                "filesystem",
+                "--json",
+                "--no-update",
+                "--no-verification",
+                *([_SCAN_ERRORS_FLAG] if use_flag else []),
+                f"--concurrency={concurrency}",
+                *batch,
+            ]
+            try:
+                res = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout_s,
+                    env=os.environ.copy(),
+                )
+            except (OSError, subprocess.SubprocessError) as e:
+                errors.append(str(e))
+                break
+            stderr = (res.stderr or "").strip()
+            if use_flag and res.returncode != 0 and _SCAN_ERRORS_FLAG in stderr:
+                use_flag = False
+                continue
+            # TruffleHog may exit non-zero on some errors; we tolerate and record stderr.
+            if res.returncode not in (0, 183) and stderr:
+                errors.append(f"exit={res.returncode} stderr={stderr[:600]}")
+            stdout_parts.append(res.stdout or "")
+            break
+    return "\n".join(stdout_parts), errors
 
 
 @dataclass(frozen=True)
@@ -314,14 +383,21 @@ def scan_dirty_worktrees(
         rel_paths, err = _dirty_paths(repo)
         if err:
             return repo_path, [], [f"git status failed for {repo_path}: {err}"], None
-        if not rel_paths:
-            return repo_path, [], [], None
 
         rel_paths_sorted = sorted(rel_paths)
         truncated = False
         if len(rel_paths_sorted) > max_paths_per_repo:
             rel_paths_sorted = rel_paths_sorted[:max_paths_per_repo]
             truncated = True
+        if not only_dirty:
+            # Committed files too, so a clean repo is still scanned. The per-repo
+            # path cap applies to dirty files only.
+            tracked_rel, tracked_err = _tracked_paths(repo)
+            if tracked_err:
+                return repo_path, [], [f"git ls-files failed for {repo_path}: {tracked_err}"], None
+            rel_paths_sorted = sorted(set(rel_paths_sorted) | set(tracked_rel))
+        if not rel_paths_sorted:
+            return repo_path, [], [], None
 
         abs_paths: list[str] = []
         skipped_ignored = 0
@@ -363,37 +439,13 @@ def scan_dirty_worktrees(
             "fetch_error": fetch_err,
         }
 
-        cmd = [
-            "trufflehog",
-            "filesystem",
-            "--json",
-            "--no-update",
-            "--no-verification",
-            "--no-fail-on-scan-errors",
-            f"--concurrency={max_concurrency}",
-            *abs_paths,
-        ]
-        try:
-            res = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=per_repo_timeout,
-                env=os.environ.copy(),
-            )
-        except Exception as e:
-            return repo_path, [], [f"trufflehog filesystem failed for {repo_path}: {e}"], None
+        stdout, th_errors = _run_trufflehog_filesystem(
+            abs_paths, concurrency=max_concurrency, timeout_s=per_repo_timeout
+        )
+        repo_errors.extend(f"trufflehog filesystem error for {repo_path}: {e}" for e in th_errors)
 
-        # TruffleHog may exit non-zero on some errors; we tolerate and record stderr.
-        if res.returncode not in (0, 183):
-            stderr = (res.stderr or "").strip()
-            if stderr:
-                repo_errors.append(
-                    f"trufflehog filesystem error for {repo_path}: exit={res.returncode} stderr={stderr[:600]}"
-                )
-
-        if res.stdout:
-            parsed = _parse_trufflehog_filesystem_json(res.stdout, repo_path=repo_path)
+        if stdout:
+            parsed = _parse_trufflehog_filesystem_json(stdout, repo_path=repo_path)
             for f in parsed:
                 # Skip findings in lock files -- they contain dependency hashes that
                 # routinely trigger false positives (e.g. SentryToken on uv.lock).
