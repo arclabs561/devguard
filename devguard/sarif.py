@@ -197,6 +197,19 @@ def _extract_local_history_secrets(report: dict) -> list[_Finding]:
     return results
 
 
+def _extract_exec_config_audit(report: dict) -> list[_Finding]:
+    return [
+        (
+            f.get("check_id", "runs_on_open"),
+            _sarif_level(f.get("severity", "medium")),
+            f.get("message", ""),
+            f.get("file"),
+            f.get("severity", "medium"),
+        )
+        for f in report.get("findings", [])
+    ]
+
+
 def _extract_local_dev(report: dict) -> list[_Finding]:
     results: list[_Finding] = []
     for hit in report.get("hits", []):
@@ -268,6 +281,7 @@ _EXTRACTORS: dict[str, Any] = {
     "public_github_secrets": _extract_public_github_secrets,
     "local_dirty_worktree_secrets": _extract_local_dirty_worktree_secrets,
     "local_history_secrets": _extract_local_history_secrets,
+    "exec_config_audit": _extract_exec_config_audit,
     "local_dev": _extract_local_dev,
     "project_flaudit": _extract_project_flaudit,
 }

@@ -1086,7 +1086,7 @@ def sweep(
     only: list[str] = typer.Option(
         None,
         "--only",
-        help="Run only these sweeps (repeatable). Known: local_dev, public_github_secrets, local_dirty_worktree_secrets, local_history_secrets, project_flaudit, gitignore_audit, repo_hygiene, dependency_audit, ssh_key_audit, cargo_publish_audit, ai_editor_config_audit, pre_commit_audit, git_identity_audit, credential_file_audit, mcp_security_audit",
+        help="Run only these sweeps (repeatable). Known: local_dev, public_github_secrets, local_dirty_worktree_secrets, local_history_secrets, exec_config_audit, project_flaudit, gitignore_audit, repo_hygiene, dependency_audit, ssh_key_audit, cargo_publish_audit, ai_editor_config_audit, pre_commit_audit, git_identity_audit, credential_file_audit, mcp_security_audit",
     ),
     format: str = typer.Option(
         "text",
@@ -1323,6 +1323,35 @@ def _sweep_body(
         # A repo no engine could scan is missed coverage, not a clean result.
         if report["summary"]["repos_not_scanned"] > 0:
             exit_code = max(exit_code, 3)
+
+    # configs that execute when a repo is opened
+    eca = spec.sweeps.exec_config_audit
+    if eca.enabled and (not wanted or "exec_config_audit" in wanted):
+        from devguard.sweeps.exec_config_audit import audit_exec_configs
+        from devguard.sweeps.exec_config_audit import write_report as write_eca
+
+        root = _resolve_root(eca.dev_root)
+        report, eca_errors = audit_exec_configs(
+            dev_root=root, max_depth=eca.max_depth, exclude_repo_globs=eca.exclude_repo_globs
+        )
+        out_path = Path(eca.output).expanduser()
+        write_eca(out_path, report)
+        if machine_output:
+            sweep_reports.append(("exec_config_audit", report))
+        else:
+            console.print(f"[bold]exec_config_audit report:[/bold] {out_path}")
+            console.print(
+                f"[bold]Runs on open:[/bold] {report['summary']['total_findings']} "
+                f"({report['summary']['high_findings']} high)"
+            )
+            for f in report["findings"][:20]:
+                console.print(
+                    f"  [{f['severity']}] {Path(f['repo_path']).name}/{f['file']}: {f['message']}"
+                )
+            if eca_errors:
+                console.print(f"[yellow]Errors:[/yellow] {len(eca_errors)} (see report)")
+        if report["summary"]["high_findings"] > 0:
+            exit_code = max(exit_code, 2)
 
     # project_flaudit sweep (files-to-prompt + OpenRouter/Gemini)
     flaudit = spec.sweeps.project_flaudit

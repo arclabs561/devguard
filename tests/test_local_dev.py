@@ -66,3 +66,23 @@ def test_custom_runtime_policy_preserves_defaults(tracked_repo: Path) -> None:
         "exports/session-history.json",
         ".guardian-email-thread",
     }
+
+
+def test_symlink_outside_repo_is_reported_not_followed(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "big.bin").write_bytes(b"\0" * 2048)
+    repo = tmp_path / "root" / "symrepo"
+    repo.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / "big.bin").symlink_to(outside / "big.bin")
+    (repo / "docs").mkdir()
+    (repo / "docs" / "README.md").write_text("readme\n")
+    (repo / "README.md").symlink_to("docs/README.md")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+
+    hits, _ = sweep_dev_repos(tmp_path / "root", max_blob_bytes=1024, max_depth=2)
+
+    # The escaping link is reported by its own size; the in-repo link is fine.
+    assert [(h.file_path, h.reason) for h in hits] == [("big.bin", "symlink_escapes_repo")]
+    assert hits[0].size_bytes is not None and hits[0].size_bytes < 1024

@@ -137,6 +137,27 @@ class LocalHistorySecretsSweepSpec(BaseModel):
     )
 
 
+class ExecConfigAuditSweepSpec(BaseModel):
+    """Inventory tracked repo configs that run commands when the repo is opened."""
+
+    enabled: bool = Field(True, description="Whether this sweep is enabled")
+    dev_root: str | None = Field(
+        None,
+        description="Workspace root to discover git repos under (default: $DEV_DIR or current directory).",
+    )
+    max_depth: int = Field(
+        2, description="How deep under dev_root to look for git repos (bounded)."
+    )
+    exclude_repo_globs: list[str] = Field(
+        default_factory=lambda: ["*/_trash/*", "*/_archive/*", "*/_forks/*"],
+        description="Glob patterns (matched against repo paths) to exclude from scanning.",
+    )
+    output: str = Field(
+        ".state/devguard/exec-config-audit.json",
+        description="Where to write the JSON report (path).",
+    )
+
+
 class ProjectFlauditSweepSpec(BaseModel):
     """Files-to-prompt per project + OpenRouter/Gemini flaw analysis.
 
@@ -695,6 +716,10 @@ class SweepSpec(BaseModel):
     local_history_secrets: LocalHistorySecretsSweepSpec = Field(
         default_factory=lambda: LocalHistorySecretsSweepSpec.model_validate({}),
         description="Scan full local git history for committed secrets (redacted)",
+    )
+    exec_config_audit: ExecConfigAuditSweepSpec = Field(
+        default_factory=lambda: ExecConfigAuditSweepSpec.model_validate({}),
+        description="Inventory repo configs that run commands when the repo is opened",
     )
     project_flaudit: ProjectFlauditSweepSpec = Field(
         default_factory=lambda: ProjectFlauditSweepSpec.model_validate({}),
