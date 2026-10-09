@@ -74,6 +74,8 @@ exclude = [
   "**/.guardian-email-thread",
   "**/.devguard-email-history.json",
   "**/.devguard-email-thread",
+  "**/devguard_sweep_dev.json",
+  ".state/",
 ]
 
 [tool.hatch.build.targets.wheel]

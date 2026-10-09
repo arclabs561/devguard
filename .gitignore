@@ -68,6 +68,7 @@ npm_security_report.md
 
 # Devguard dogfooding outputs (spec-driven sweeps)
 .state/
+devguard_sweep_dev.json
 
 # Local operational archives (personal infra docs)
 archive/

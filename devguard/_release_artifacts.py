@@ -1,4 +1,4 @@
-"""Reject known runtime email files in built distributions before upload."""
+"""Reject known runtime files (email history, sweep reports) in built distributions."""
 
 from __future__ import annotations
 
@@ -14,8 +14,13 @@ RUNTIME_FILENAMES = frozenset(
         ".guardian-email-thread",
         ".devguard-email-history.json",
         ".devguard-email-thread",
+        # Default local_dev report path: written to the current directory and
+        # full of absolute local paths.
+        "devguard_sweep_dev.json",
     }
 )
+# Default directory for every other sweep's report.
+RUNTIME_DIRS = frozenset({".state"})
 
 
 def check_artifacts(directory: Path) -> list[str]:
@@ -32,9 +37,9 @@ def check_artifacts(directory: Path) -> list[str]:
             else:
                 with tarfile.open(archive, "r:gz") as sdist:
                     members = [member.name for member in sdist]
-            forbidden = {
-                PurePosixPath(member.replace("\\", "/")).name for member in members
-            } & RUNTIME_FILENAMES
+            paths = [PurePosixPath(member.replace("\\", "/")) for member in members]
+            forbidden = {p.name for p in paths} & RUNTIME_FILENAMES
+            forbidden |= {f"{d}/" for p in paths for d in RUNTIME_DIRS.intersection(p.parts[:-1])}
             if forbidden:
                 errors.append(
                     f"{archive.name}: forbidden runtime files: {', '.join(sorted(forbidden))}"
@@ -53,7 +58,7 @@ def main() -> int:
         print(error, file=sys.stderr)
     if errors:
         return 1
-    print("Distribution archives contain no known runtime email filenames")
+    print("Distribution archives contain no known runtime files")
     return 0
 
 
