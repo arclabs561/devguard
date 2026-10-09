@@ -440,3 +440,43 @@ def test_allowlist_ignores_other_contributors_and_marks_local_only(
     assert [(f["check_id"], f["email"], f["on_remote"]) for f in hist] == [
         ("unexpected_git_email", "me@bigcorp.com", False)
     ]
+
+
+def test_aliases_and_hostname_defaults_count_as_the_user(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import getpass
+
+    gitconfig = tmp_path / "gitconfig"
+    gitconfig.write_text("[user]\n\temail = me@gmail.com\n\tname = Me Person\n")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(gitconfig))
+    monkeypatch.setattr(getpass, "getuser", lambda: "mp")
+    repo = _init_repo(tmp_path / "ws")
+    for email, name in (
+        ("me@gmail.com", "Me Person"),
+        ("mp@Mes-MacBook-Pro.local", "Me"),  # first name, hostname default
+        ("mp@shop.example.co", "mp"),  # OS account name, unknown domain
+        ("dev@upstream.io", "Upstream Dev"),
+    ):
+        (repo / f"{name}-{email}.txt").write_text("x")
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-c", f"user.email={email}", "-c", f"user.name={name}", "commit", "-qm", "c"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+
+    report, _ = audit_git_identity(
+        dev_root=tmp_path / "ws",
+        max_depth=1,
+        check_history=True,
+        flag_employer_domains=True,
+        redact_emails=False,
+        check_environment=False,
+    )
+
+    assert _history_checks(report) == [
+        ("hostname_default_email", "mp@mes-macbook-pro.local"),
+        ("possible_employer_email", "mp@shop.example.co"),
+    ]
