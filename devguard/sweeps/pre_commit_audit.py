@@ -171,6 +171,9 @@ def audit_pre_commit(
             "repos_no_secret_scanning": total_no_secret_hook,
             "total_findings": total_no_config + total_not_installed + total_no_secret_hook,
             "repos_without_secret_hook": total_no_secret_hook,
+            # no_secret_scanning_hook is the only error-severity finding; the CLI
+            # reads this key for its exit code like the other audits.
+            "total_errors": total_no_secret_hook,
         },
         "repos": findings[:200],
         "errors": errors,
