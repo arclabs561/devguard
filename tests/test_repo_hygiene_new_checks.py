@@ -113,3 +113,39 @@ def test_local_path_dependencies_outside_repo(tmp_path: Path) -> None:
         "package.json: ui -> file:../ui",
         "pyproject.toml: lib -> ../../lib",
     ]
+
+
+def _commit(repo: Path, msg: str) -> None:
+    subprocess.run(["git", "add", "-f", "-A"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", msg],
+        cwd=repo,
+        check=True,
+    )
+
+
+def test_history_bloat_reports_deleted_big_blob_and_artifacts(tmp_path: Path) -> None:
+    from devguard.sweeps.repo_hygiene import _check_history_bloat
+
+    repo = _repo(tmp_path / "r", {"README.md": "x\n"})
+    (repo / "model.bin").write_bytes(b"\1" * (6 * 1024 * 1024))
+    (repo / "target" / "debug").mkdir(parents=True)
+    (repo / "target" / "debug" / "libx.rlib").write_bytes(b"rlib")
+    _commit(repo, "oops")
+    subprocess.run(["git", "rm", "-rq", "model.bin", "target"], cwd=repo, check=True)
+    _commit(repo, "remove")
+
+    f = _check_history_bloat(repo, _git_ls_files(repo))
+
+    assert f is not None
+    assert f.severity == "low"
+    assert f.files == ["model.bin (6.0 MiB, history only)", "target/debug/libx.rlib"]
+
+
+def test_history_bloat_quiet_for_small_clean_history(tmp_path: Path) -> None:
+    from devguard.sweeps.repo_hygiene import _check_history_bloat
+
+    repo = _repo(tmp_path / "r", {"README.md": "x\n", "src/main.rs": "fn main() {}\n"})
+    _commit(repo, "init")
+
+    assert _check_history_bloat(repo, _git_ls_files(repo)) is None
