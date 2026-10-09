@@ -208,3 +208,17 @@ def test_timeout_stops_the_engine_cascade(planted: Path, monkeypatch: pytest.Mon
     assert report["repos"][0]["status"] == "not_scanned"
     assert report["repos"][0]["error"] == "gitleaks: timed out after 7s"
     assert report["summary"]["repos_not_scanned"] == 1
+
+
+def test_colocated_test_files_and_heuristic_rules_are_low() -> None:
+    from devguard.sweeps.local_history_secrets import _finding
+
+    def sev(rule: str, file: str) -> str:
+        return _finding(Path("/r"), "gitleaks", rule, file, "abc", 1, set()).severity
+
+    assert sev("aws-access-token", "ops/scripts/test-aws-session.sh") == "low"
+    assert sev("private-key", "netops/test_netops.py") == "low"
+    assert sev("gcp-api-key", "src/client.test.ts") == "low"
+    assert sev("generic-api-key", "docs/setup.md") == "low"
+    assert sev("aws-access-token", "src/deploy.sh") == "high"
+    assert sev("gcp-api-key", "CURSOR_MCP_SETUP.md") == "high"

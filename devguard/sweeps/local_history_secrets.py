@@ -39,6 +39,11 @@ _SKIP_PATH_GLOBS = ("*.min.*", "*search-index*.js", "*.rlib", "*.o", "*.so", "*.
 _SKIP_DIR_PARTS = frozenset({"target", "node_modules", "dist", "build"})
 # Hits here are usually test fixtures: still reported, at low severity.
 _FIXTURE_DIR_PARTS = frozenset({"tests", "test", "fixtures", "testdata", "examples"})
+# Test files kept beside the code they test (test_x.py, test-x.sh, x.test.ts, x_test.go).
+_TEST_FILE_RE = re.compile(r"^test[_-]|[._-]test\.[^.]+$|[._]spec\.[^.]+$")
+# Entropy-only rules: on an 80-repo workspace gitleaks' generic-api-key made up
+# 369 of 443 high findings, nearly all dataset strings and doc examples.
+_HEURISTIC_RULES = frozenset({"generic-api-key", "Generic API Key"})
 
 _REGEX_PATTERNS = [
     (re.compile(p), name)
@@ -80,7 +85,11 @@ def _finding(
     head_paths: set[str],
 ) -> HistoryFinding:
     in_head = file in head_paths
-    fixture = bool(_FIXTURE_DIR_PARTS.intersection(PurePosixPath(file).parts[:-1]))
+    p = PurePosixPath(file)
+    fixture = bool(_FIXTURE_DIR_PARTS.intersection(p.parts[:-1])) or bool(
+        _TEST_FILE_RE.search(p.name)
+    )
+    fixture = fixture or rule in _HEURISTIC_RULES
     if in_head:
         message = f"{rule} in {file}: remove it from the tree and rotate the credential"
     else:
