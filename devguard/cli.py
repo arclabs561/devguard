@@ -1298,6 +1298,7 @@ def _sweep_body(
             exclude_repo_globs=hist.exclude_repo_globs,
             engine=hist.engine,
             timeout_s=hist.timeout_s,
+            max_concurrency=hist.max_concurrency,
         )
         out_path = Path(hist.output).expanduser()
         write_hist(out_path, report)

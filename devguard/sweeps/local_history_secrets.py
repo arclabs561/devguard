@@ -21,6 +21,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -246,6 +247,7 @@ def scan_history_secrets(
     exclude_repo_globs: list[str] | None = None,
     engine: str = "auto",
     timeout_s: int = 300,
+    max_concurrency: int = 4,
 ) -> tuple[dict[str, Any], list[str]]:
     """Scan every repo under dev_root; return (report, errors)."""
     if engine != "auto" and engine not in ENGINES:
@@ -260,9 +262,7 @@ def scan_history_secrets(
             "covers fewer secret types"
         )
 
-    for repo in sorted(
-        iter_git_repos(dev_root, max_depth=max_depth, exclude_globs=exclude_repo_globs)
-    ):
+    def scan_one(repo: Path) -> tuple[dict[str, Any], list[HistoryFinding]]:
         status, used, repo_error = "not_scanned", None, None
         hits: list[tuple[str, str, str | None, int | None]] = []
         for name in engines:
@@ -273,24 +273,30 @@ def scan_history_secrets(
                 continue
             status, used, repo_error = "scanned", name, None
             break
-        if repo_error:
-            errors.append(f"{repo}: {repo_error}")
         repo_findings: list[HistoryFinding] = []
         if status == "scanned":
             head = _head_paths(repo, timeout_s=30)
             for rule, file, commit, line in hits:
                 if file and not _skip_path(file):
                     repo_findings.append(_finding(repo, used or "", rule, file, commit, line, head))
-        findings.extend(repo_findings)
-        repos_meta.append(
-            {
-                "repo_path": str(repo),
-                "status": status,
-                "engine": used,
-                "findings_count": len(repo_findings),
-                "error": repo_error,
-            }
-        )
+        meta = {
+            "repo_path": str(repo),
+            "status": status,
+            "engine": used,
+            "findings_count": len(repo_findings),
+            "error": repo_error,
+        }
+        return meta, repo_findings
+
+    repos = sorted(iter_git_repos(dev_root, max_depth=max_depth, exclude_globs=exclude_repo_globs))
+    workers = max(1, min(int(max_concurrency), 12))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        # map keeps discovery order, so the report is stable across runs.
+        for meta, repo_findings in pool.map(scan_one, repos):
+            if meta["error"]:
+                errors.append(f"{meta['repo_path']}: {meta['error']}")
+            repos_meta.append(meta)
+            findings.extend(repo_findings)
 
     not_scanned = [r for r in repos_meta if r["status"] != "scanned"]
     report: dict[str, Any] = {

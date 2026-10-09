@@ -130,6 +130,7 @@ class LocalHistorySecretsSweepSpec(BaseModel):
         description="auto uses gitleaks, then trufflehog, then devguard's built-in regex.",
     )
     timeout_s: int = Field(300, description="Per-repo timeout in seconds.")
+    max_concurrency: int = Field(4, description="Maximum concurrent repo scans.")
     output: str = Field(
         ".state/devguard/local-history-secrets.json",
         description="Where to write the redacted JSON report (path).",
