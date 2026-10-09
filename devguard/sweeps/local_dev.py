@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import re
 import stat
 import subprocess
 from collections.abc import Iterable
@@ -194,6 +195,76 @@ def _discover_git_repos(dev_root: Path, max_depth: int = 2) -> list[Path]:
     return out
 
 
+# Config files that are often committed harmlessly; flag them only when they
+# actually hold a credential.
+_CONTENT_GATED_GLOBS = frozenset({"**/.npmrc", "**/.pypirc"})
+_CREDENTIAL_LINE_RE = re.compile(
+    r"(?im)^\s*[^#;\s].*(?:_authToken|_auth\b|_password|password)\s*[=:]"
+)
+_PRIVATE_KEY_HEADER_RE = re.compile(rb"-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----")
+
+
+def _has_credential(path: Path) -> bool:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return True  # unreadable: keep the conservative name-based hit
+    return bool(_CREDENTIAL_LINE_RE.search(text))
+
+
+# Source and document types never hold a bare key file; skipping them keeps the
+# content check from reading every file in large workspaces. Key files are
+# usually extensionless or .txt/.bak/.crt, which stay covered.
+_NON_KEY_SUFFIXES = frozenset(
+    {
+        ".rs",
+        ".py",
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".mjs",
+        ".go",
+        ".java",
+        ".kt",
+        ".c",
+        ".h",
+        ".cc",
+        ".cpp",
+        ".hpp",
+        ".swift",
+        ".rb",
+        ".md",
+        ".rst",
+        ".html",
+        ".css",
+        ".scss",
+        ".json",
+        ".toml",
+        ".yaml",
+        ".yml",
+        ".lock",
+        ".svg",
+        ".png",
+        ".jpg",
+        ".gif",
+        ".ipynb",
+        ".csv",
+    }
+)
+
+
+def _starts_like_private_key(path: Path) -> bool:
+    if path.suffix.lower() in _NON_KEY_SUFFIXES:
+        return False
+    try:
+        with path.open("rb") as fh:
+            head = fh.read(512)
+    except OSError:
+        return False
+    return bool(_PRIVATE_KEY_HEADER_RE.search(head))
+
+
 def sweep_dev_repos(
     dev_root: Path,
     deny_globs: list[str] | None = None,
@@ -236,6 +307,8 @@ def sweep_dev_repos(
             is_file = stat.S_ISREG(st.st_mode)
 
             pat = _matches_any(rel, globs)
+            if pat and pat in _CONTENT_GATED_GLOBS and is_file and not _has_credential(p):
+                pat = None  # e.g. an .npmrc holding only save-exact=true
             if pat:
                 size = st.st_size if is_file else None
                 hits.append(
@@ -244,6 +317,18 @@ def sweep_dev_repos(
                         file_path=rel,
                         reason=f"deny_glob:{pat}",
                         size_bytes=size,
+                    )
+                )
+                continue
+
+            # A key file's name need not say so (deploy_key, server.crt.bak).
+            if is_file and st.st_size <= 64 * 1024 and _starts_like_private_key(p):
+                hits.append(
+                    Hit(
+                        repo_path=str(repo),
+                        file_path=rel,
+                        reason="private_key_content",
+                        size_bytes=st.st_size,
                     )
                 )
                 continue

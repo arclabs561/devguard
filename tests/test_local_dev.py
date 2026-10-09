@@ -86,3 +86,22 @@ def test_symlink_outside_repo_is_reported_not_followed(tmp_path: Path) -> None:
     # The escaping link is reported by its own size; the in-repo link is fine.
     assert [(h.file_path, h.reason) for h in hits] == [("big.bin", "symlink_escapes_repo")]
     assert hits[0].size_bytes is not None and hits[0].size_bytes < 1024
+
+
+def test_key_file_found_by_content_and_benign_npmrc_skipped(tmp_path: Path) -> None:
+    repo = tmp_path / "root" / "r"
+    repo.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    pem = "-----BEGIN " + "OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n"
+    (repo / "deploy_key").write_text(pem)
+    (repo / ".npmrc").write_text("save-exact=true\n")
+    (repo / "web").mkdir()
+    (repo / "web" / ".npmrc").write_text("//registry.npmjs.org/:_authToken=${NPM_TOKEN}\n")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+
+    hits, _ = sweep_dev_repos(tmp_path / "root", max_depth=2)
+
+    assert sorted((h.file_path, h.reason) for h in hits) == [
+        ("deploy_key", "private_key_content"),
+        ("web/.npmrc", "deny_glob:**/.npmrc"),
+    ]
