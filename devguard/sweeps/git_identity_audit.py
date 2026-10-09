@@ -6,6 +6,7 @@ the email policy supplied by the sweep spec.
 
 from __future__ import annotations
 
+import getpass
 import json
 import os
 import re
@@ -144,6 +145,8 @@ PERSONAL_EMAIL_DOMAINS = frozenset(
         "163.com",
     }
 )
+# What git writes when user.email is unset: user@<hostname>.local and friends.
+_HOSTNAME_DOMAIN_RE = re.compile(r"^[^.]+$|\.(?:local|localdomain|lan|home|internal)$")
 # RFC 2606/6761 reserved names used by tests and docs.
 _RESERVED_DOMAIN_RE = re.compile(
     r"(?:^|\.)(?:example\.(?:com|org|net)|test|example|invalid|localhost)$"
@@ -213,6 +216,12 @@ def _check_email(
         warn("unexpected_git_email_domain", "Git identity domain is outside the allowlist")
     elif allowed_emails and not allowed_domains and judge_unlisted:
         warn("unexpected_git_email", "Git identity email is not one of the allowed addresses")
+    elif flag_employer_domains and _HOSTNAME_DOMAIN_RE.search(domain):
+        warn(
+            "hostname_default_email",
+            "Git identity is a machine default (user@hostname), which leaks the host name; "
+            "set user.email",
+        )
     elif (
         flag_employer_domains
         and domain not in PERSONAL_EMAIL_DOMAINS
@@ -407,7 +416,12 @@ def audit_git_identity(
                 # Other contributors (e.g. upstream authors in a fork) are left to
                 # explicit policy.
                 own_emails = {*_extract_emails(global_email), *allowed_email_set}
-                user_names = {n for n in (global_name.strip().lower(),) if n}
+                user_names: set[str] = set()
+                if global_name.strip():
+                    # Common unconfigured defaults for the same person: the first
+                    # name alone and the OS account name (git's fallback author).
+                    full = global_name.strip().lower()
+                    user_names = {full, full.split()[0], getpass.getuser().lower()}
                 for email, (_, names) in samples.items():
                     if email.lower() in own_emails:
                         user_names |= names
