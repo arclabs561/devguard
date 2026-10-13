@@ -57,18 +57,34 @@ def _is_likely_public(repo: Path) -> bool:
     return False
 
 
-def _git_ls_files(repo: Path) -> list[str]:
-    """Return all tracked file paths (relative) for a repo."""
-    proc = subprocess.run(
-        ["git", "-C", str(repo), "ls-files", "-z"],
-        check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        timeout=60,
-    )
+class _GitInspectionError(RuntimeError):
+    """A bounded diagnostic without subprocess output or repository paths."""
+
+
+def _git_output(
+    repo: Path, args: list[str], *, timeout: int = 60, input_data: bytes | None = None
+) -> bytes:
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo), *args],
+            input=input_data,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        raise _GitInspectionError(f"git {args[0]} inspection timed out") from None
+    except OSError:
+        raise _GitInspectionError(f"git {args[0]} inspection could not run") from None
     if proc.returncode != 0:
-        return []
-    out = proc.stdout.decode("utf-8", errors="replace")
+        raise _GitInspectionError(f"git {args[0]} inspection failed (exit {proc.returncode})")
+    return proc.stdout
+
+
+def _git_ls_files(repo: Path) -> list[str]:
+    """Return tracked paths, preserving inspection failures for the sweep report."""
+    out = _git_output(repo, ["ls-files", "-z"]).decode("utf-8", errors="replace")
     return [p for p in out.split("\0") if p]
 
 
@@ -231,16 +247,8 @@ _SECRET_LIKE_NAME_RE = re.compile(
 
 def _check_tracked_ignored(repo: Path) -> HygieneFinding | None:
     """I: Tracked files that the repo's own ignore rules say should not be tracked."""
-    proc = subprocess.run(
-        ["git", "-C", str(repo), "ls-files", "-z", "--cached", "--ignored", "--exclude-standard"],
-        check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        timeout=60,
-    )
-    if proc.returncode != 0:
-        return None
-    files = [p for p in proc.stdout.decode("utf-8", errors="replace").split("\0") if p]
+    output = _git_output(repo, ["ls-files", "-z", "--cached", "--ignored", "--exclude-standard"])
+    files = [p for p in output.decode("utf-8", errors="replace").split("\0") if p]
     if not files:
         return None
     secret_like = [f for f in files if _SECRET_LIKE_NAME_RE.match(Path(f).name)]
@@ -336,35 +344,19 @@ def _check_history_bloat(repo: Path, tracked: list[str]) -> HygieneFinding | Non
 
     Every clone downloads them; deleting the file from HEAD does not help.
     """
-    revs = subprocess.run(
-        ["git", "-C", str(repo), "rev-list", "--objects", "--all"],
-        check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        timeout=120,
-    )
-    if revs.returncode != 0 or not revs.stdout:
+    revs = _git_output(repo, ["rev-list", "--objects", "--all"], timeout=120)
+    if not revs:
         return None
-    sizes = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(repo),
-            "cat-file",
-            "--batch-check=%(objecttype) %(objectsize) %(rest)",
-        ],
-        input=revs.stdout,
-        check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
+    sizes = _git_output(
+        repo,
+        ["cat-file", "--batch-check=%(objecttype) %(objectsize) %(rest)"],
         timeout=120,
+        input_data=revs,
     )
-    if sizes.returncode != 0:
-        return None
     in_head = set(tracked)
     big: dict[str, int] = {}
     artifacts: set[str] = set()
-    for line in sizes.stdout.decode("utf-8", errors="replace").splitlines():
+    for line in sizes.decode("utf-8", errors="replace").splitlines():
         kind, _, rest = line.partition(" ")
         if kind != "blob":
             continue
@@ -957,6 +949,9 @@ def sweep_repo_hygiene(
         try:
             is_public = _is_likely_public(repo)
             tracked = _git_ls_files(repo)
+        except _GitInspectionError as exc:
+            errors.append(str(exc))
+            continue
         except Exception as exc:
             errors.append(f"failed to read {repo}: {exc}")
             continue
@@ -986,6 +981,9 @@ def sweep_repo_hygiene(
         ):
             try:
                 finding = check_fn(repo)
+            except _GitInspectionError as exc:
+                errors.append(str(exc))
+                continue
             except Exception as exc:
                 errors.append(f"{repo}: check error: {exc}")
                 continue
