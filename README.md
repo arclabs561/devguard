@@ -105,6 +105,11 @@ Sweeps that need external access:
 | `project_flaudit` | LLM-assisted repo audit |
 | `repo_lint` | Rust workspace hygiene: own-crate pin drift, README version lines, Cargo metadata, CI gaps (off by default, never changes the exit code) |
 
+The missing-pattern check in `gitignore_audit` is a pattern-presence heuristic.
+It combines global and repository ignore patterns without evaluating Git’s rule
+ordering or negation semantics. Zero gaps does not establish that files are
+effectively excluded; a later negation can re-include an otherwise matched path.
+
 ## Pre-commit Hooks
 
 `devguard` ships `.pre-commit-hooks.yaml`:
