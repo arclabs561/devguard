@@ -1,4 +1,4 @@
-"""Reject known runtime files (email history, sweep reports) in built distributions."""
+"""Reject known runtime files and local planning sidecars in built distributions."""
 
 from __future__ import annotations
 
@@ -40,6 +40,12 @@ def check_artifacts(directory: Path) -> list[str]:
             paths = [PurePosixPath(member.replace("\\", "/")) for member in members]
             forbidden = {p.name for p in paths} & RUNTIME_FILENAMES
             forbidden |= {f"{d}/" for p in paths for d in RUNTIME_DIRS.intersection(p.parts[:-1])}
+            for path in paths:
+                directories = path.parts[:-1]
+                if ".agents" in directories:
+                    forbidden.add(".agents/")
+                if any(pair == ("docs", "design") for pair in zip(directories, directories[1:])):
+                    forbidden.add("docs/design/")
             if forbidden:
                 errors.append(
                     f"{archive.name}: forbidden runtime files: {', '.join(sorted(forbidden))}"
