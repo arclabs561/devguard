@@ -5,6 +5,7 @@ import socket
 import subprocess
 
 import pytest
+from click import unstyle
 from pydantic_settings import BaseSettings
 from typer.testing import CliRunner
 
@@ -30,6 +31,7 @@ def offline(monkeypatch, tmp_path):
     return forbidden
 
 
+@pytest.mark.parametrize("force_color", [False, True])
 @pytest.mark.parametrize("format", ["text", "json", "sarif"])
 @pytest.mark.parametrize("repo", [None, "https://github.com/example/fixture", "synthetic-repo"])
 @pytest.mark.parametrize(
@@ -40,7 +42,21 @@ def offline(monkeypatch, tmp_path):
         ["--only", "local_dev", "--only", "unknown_fixture,unknown_fixture"],
     ],
 )
-def test_unknown_selector_rejected_before_any_work(monkeypatch, offline, format, repo, selectors):
+def test_unknown_selector_rejected_before_any_work(
+    monkeypatch, offline, format, repo, selectors, force_color
+):
+    if force_color:
+        monkeypatch.setenv("FORCE_COLOR", "1")
+        monkeypatch.delenv("NO_COLOR", raising=False)
+    else:
+        monkeypatch.delenv("FORCE_COLOR", raising=False)
+        monkeypatch.setenv("NO_COLOR", "1")
+    # Typer caches terminal policy when rich_utils is first imported. Select
+    # the actual error-console mode, independent of earlier tests/imports.
+    from typer import rich_utils
+
+    monkeypatch.setattr(rich_utils, "FORCE_TERMINAL", force_color)
+    monkeypatch.setattr(rich_utils, "COLOR_SYSTEM", "standard" if force_color else None)
     monkeypatch.setattr(cli, "_is_github_url", offline)
     monkeypatch.setattr(cli, "_sweep_body", offline)
     monkeypatch.setattr(spec, "load_spec", offline)
@@ -48,12 +64,14 @@ def test_unknown_selector_rejected_before_any_work(monkeypatch, offline, format,
     if repo:
         argv += ["--repo", repo]
 
-    result = CliRunner().invoke(cli.app, argv)
+    result = CliRunner().invoke(cli.app, argv, color=force_color)
 
     assert result.exit_code == 2, result.output
     assert result.stdout == ""
-    assert "--only" in result.stderr
-    assert "unknown_fixture" in result.stderr
+    assert ("\x1b[" in result.stderr) == force_color
+    stderr = unstyle(result.stderr)
+    assert "--only" in stderr
+    assert "unknown_fixture" in stderr
 
 
 @pytest.mark.parametrize(
