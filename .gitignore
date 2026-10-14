@@ -83,3 +83,6 @@ devguard.spec.fast.yaml
 .cursorignore
 
 .claude/settings.local.json
+
+# Local agent state and reports
+.agents/
