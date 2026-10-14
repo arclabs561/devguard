@@ -1066,6 +1066,19 @@ def _clone_repo(url: str) -> tuple[Path, str]:
     return clone_path, tmpdir
 
 
+def _parse_sweep_selectors(only: list[str] | None) -> set[str]:
+    """Validate the complete selection before any repository or scanner work."""
+    from devguard.spec import SweepSpec
+
+    wanted = {s.strip() for w in (only or []) for s in w.split(",") if s.strip()}
+    unknown = wanted - SweepSpec.model_fields.keys()
+    if unknown:
+        raise typer.BadParameter(
+            f"Unknown sweep names: {', '.join(sorted(unknown))}", param_hint="--only"
+        )
+    return wanted
+
+
 @app.command()
 def sweep(
     spec_file: str = typer.Option(
@@ -1088,7 +1101,7 @@ def sweep(
     only: list[str] = typer.Option(
         None,
         "--only",
-        help="Run only these sweeps (repeatable). Known: local_dev, public_github_secrets, local_dirty_worktree_secrets, local_history_secrets, exec_config_audit, repo_lint, project_flaudit, gitignore_audit, repo_hygiene, dependency_audit, ssh_key_audit, cargo_publish_audit, ai_editor_config_audit, pre_commit_audit, git_identity_audit, credential_file_audit, mcp_security_audit",
+        help="Run only these sweeps (repeatable). Known: local_dev, public_github_secrets, local_dirty_worktree_secrets, local_history_secrets, exec_config_audit, repo_lint, project_flaudit, gitignore_audit, repo_hygiene, dependency_audit, ssh_key_audit, cargo_publish_audit, ai_editor_config_audit, publish_audit, pre_commit_audit, git_identity_audit, credential_file_audit, mcp_security_audit",
     ),
     format: str = typer.Option(
         "text",
@@ -1101,6 +1114,7 @@ def sweep(
 
     Today this runs the local dev repo sweep (and will expand over time).
     """
+    wanted = _parse_sweep_selectors(only)
     machine_output = format in ("json", "sarif")
 
     # Single-repo mode: resolve path or clone URL, verify .git, override dev_root
@@ -1125,7 +1139,9 @@ def sweep(
     sweep_reports: list[tuple[str, dict]] = []
 
     try:
-        _sweep_body(spec_file, dev_root, _single_repo, only, format, machine_output, sweep_reports)
+        _sweep_body(
+            spec_file, dev_root, _single_repo, wanted, format, machine_output, sweep_reports
+        )
     finally:
         if _cleanup_dir:
             shutil.rmtree(_cleanup_dir, ignore_errors=True)
@@ -1135,7 +1151,7 @@ def _sweep_body(
     spec_file: str,
     dev_root: str | None,
     _single_repo: Path | None,
-    only: list[str] | None,
+    wanted: set[str],
     format: str,
     machine_output: bool,
     sweep_reports: list[tuple[str, dict]],
@@ -1178,8 +1194,6 @@ def _sweep_body(
         )
     else:
         spec = load_spec(spec_path)
-
-    wanted = {s.strip() for w in (only or []) for s in w.split(",") if s.strip()}
 
     exit_code = 0
 
