@@ -56,6 +56,37 @@ def test_sweep_state_directory_blocks_upload(tmp_path, kind):
 
 
 @pytest.mark.parametrize("kind", ["whl", "tar.gz"])
+@pytest.mark.parametrize("prefix", ["", "package/nested/"])
+@pytest.mark.parametrize("separator", ["/", "\\"])
+@pytest.mark.parametrize("directory", [".agents/reports", "docs/design/features"])
+def test_planning_members_block_upload(tmp_path, kind, prefix, separator, directory):
+    member = (prefix + directory + "/synthetic.md").replace("/", separator)
+    write_archive(tmp_path, kind, member)
+    errors = check_artifacts(tmp_path)
+    assert len(errors) == 1
+    assert (".agents/" if directory.startswith(".agents") else "docs/design/") in errors[0]
+    assert "SYNTHETIC_CONTENT_MUST_NOT_APPEAR" not in errors[0]
+
+
+@pytest.mark.parametrize("kind", ["whl", "tar.gz"])
+@pytest.mark.parametrize(
+    "member",
+    [
+        "package/.agents-like/example.md",
+        "package/docs/design-notes/example.md",
+        "package/docs/other/design/example.md",
+        "package/public-docs/design/example.md",
+        "package/docs/adr/example.md",
+        "package/.agents",
+        "package/docs/design",
+    ],
+)
+def test_similarly_named_public_members_are_allowed(tmp_path, kind, member):
+    write_archive(tmp_path, kind, member)
+    assert check_artifacts(tmp_path) == []
+
+
+@pytest.mark.parametrize("kind", ["whl", "tar.gz"])
 def test_benign_members_are_allowed(tmp_path, kind):
     write_archive(tmp_path, kind, "package/tests/email_history_fixture.json")
     assert check_artifacts(tmp_path) == []
@@ -104,9 +135,25 @@ def test_package_build_excludes_runtime_files_without_git(tmp_path):
             (directory / filename).write_text("SYNTHETIC_RUNTIME_DATA")
     (tmp_path / ".state" / "devguard").mkdir(parents=True)
     (tmp_path / ".state" / "devguard" / "report.json").write_text("SYNTHETIC_RUNTIME_DATA")
+    forbidden_suffixes = [".agents/reports/synthetic.md", "docs/design/features/synthetic.md"]
+    for directory in (tmp_path, package):
+        for suffix in forbidden_suffixes:
+            sidecar = directory / suffix
+            sidecar.parent.mkdir(parents=True, exist_ok=True)
+            sidecar.write_text("SYNTHETIC_PLANNING_DATA")
     proc = subprocess.run(["uv", "build"], cwd=tmp_path, capture_output=True, text=True, timeout=60)
     assert proc.returncode == 0, proc.stderr
     archives = tmp_path / "dist"
     assert len(list(archives.glob("*.tar.gz"))) == 1
     assert len(list(archives.glob("*.whl"))) == 1
+    # Assert producer behavior independently: a permissive validator cannot hide a leak.
+    for archive in list(archives.glob("*.whl")) + list(archives.glob("*.tar.gz")):
+        if archive.suffix == ".whl":
+            with zipfile.ZipFile(archive) as wheel:
+                members = wheel.namelist()
+        else:
+            with tarfile.open(archive, "r:gz") as sdist:
+                members = sdist.getnames()
+        for member in members:
+            assert not any(member.endswith(suffix) for suffix in forbidden_suffixes)
     assert check_artifacts(archives) == []

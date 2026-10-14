@@ -76,6 +76,8 @@ exclude = [
   "**/.devguard-email-thread",
   "**/devguard_sweep_dev.json",
   ".state/",
+  "**/.agents/",
+  "**/docs/design/",
 ]
 
 [tool.hatch.build.targets.wheel]
