@@ -760,17 +760,19 @@ def discover(
     from devguard.discovery import discover_all
     from devguard.spec import load_spec
 
+    diagnostics = Console(stderr=True) if json_output else console
+
     # Load spec
     spec_path = Path(spec_file)
     if spec_path.exists():
         try:
             spec = load_spec(spec_path)
         except Exception as e:
-            console.print(f"[bold red]Error loading spec: {e}[/bold red]")
+            diagnostics.print(f"[bold red]Error loading spec: {e}[/bold red]")
             raise typer.Exit(1)
     else:
-        console.print(f"[bold yellow]Spec file not found: {spec_path}[/bold yellow]")
-        console.print("Using default spec...")
+        diagnostics.print(f"[bold yellow]Spec file not found: {spec_path}[/bold yellow]")
+        diagnostics.print("Using default spec...")
         from devguard.spec import get_default_spec
 
         spec = get_default_spec()
@@ -781,8 +783,8 @@ def discover(
     else:
         base = Path.home() / "Documents" / "dev"
 
-    console.print(f"[bold]Discovering resources from: {base}[/bold]")
-    console.print(f"[dim]Using spec: {spec.name}[/dim]\n")
+    diagnostics.print(f"[bold]Discovering resources from: {base}[/bold]")
+    diagnostics.print(f"[dim]Using spec: {spec.name}[/dim]\n")
 
     async def run_discovery():
         result = await discover_all(spec, base)
@@ -791,7 +793,7 @@ def discover(
     result = asyncio.run(run_discovery())
 
     if json_output:
-        console.print(json.dumps(result.to_dict(), indent=2))
+        typer.echo(json.dumps(result.to_dict(), indent=2))
     else:
         # Display results
         from rich.table import Table
