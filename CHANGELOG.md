@@ -2,6 +2,14 @@
 
 Earlier history has not been reconstructed in this changelog.
 
+## [Unreleased]
+
+### Fixed
+
+- Detect mixed-case tracked root `CLAUDE.md` filenames, including when a
+  correctly named file is also tracked, without combining multiple paths into
+  one diagnostic filename.
+
 ## Source history (unversioned)
 
 These entries identify source changes without assigning a package release.

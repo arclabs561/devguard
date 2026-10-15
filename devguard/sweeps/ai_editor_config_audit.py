@@ -48,28 +48,28 @@ def _is_tracked_by_git(repo: Path, rel_path: str) -> bool:
 
 
 def _git_tracks_case(repo: Path, expected: str) -> str | None:
-    """Check what case git actually tracks for a file. Returns tracked name or None."""
+    """Return a tracked root spelling, preferring the first noncanonical match.
+
+    Multiple case-distinct index paths yield one deterministic diagnostic name,
+    never a newline-joined filename. Nested paths are outside this check.
+    """
     try:
         res = subprocess.run(
-            ["git", "ls-files", expected],
+            ["git", "ls-files", "-z", "--", f":(top,icase,literal){expected}"],
             cwd=str(repo),
             capture_output=True,
             text=True,
             timeout=5,
         )
-        tracked = res.stdout.strip()
-        if tracked:
-            return tracked
-        # Try lowercase variant
-        res2 = subprocess.run(
-            ["git", "ls-files", expected.lower()],
-            cwd=str(repo),
-            capture_output=True,
-            text=True,
-            timeout=5,
+        if res.returncode != 0:
+            return None
+        matches = sorted(
+            {name for name in res.stdout.split("\0") if name.casefold() == expected.casefold()}
         )
-        tracked2 = res2.stdout.strip()
-        return tracked2 if tracked2 else None
+        return next(
+            (name for name in matches if name != expected),
+            expected if expected in matches else None,
+        )
     except Exception:
         return None
 
@@ -222,6 +222,11 @@ def _check_claude_md(repo: Path, result: RepoAuditResult) -> None:
             pass
     elif claude_dir_md.is_file():
         result.has_claude_md = True
+        result.ai_tools_detected.append("claude")
+
+    # Keep tracked casing errors visible through the default config-only filter,
+    # including on filesystems where the canonical spelling cannot be opened.
+    if tracked and tracked != "CLAUDE.md" and "claude" not in result.ai_tools_detected:
         result.ai_tools_detected.append("claude")
 
 
