@@ -142,3 +142,57 @@ def test_public_memory_directory_requires_content_review(tmp_path: Path, tracked
     for unsupported_advice in ("git rm", ".gitignore_global", "~/.claude/projects/", "belongs"):
         assert unsupported_advice not in advice
     assert (memory_dir / "README.md").is_file()
+
+
+@pytest.mark.parametrize(
+    "names, expected",
+    [
+        (["Claude.md"], "Claude.md"),
+        (["cLaUdE.Md"], "cLaUdE.Md"),
+        (["claude.md"], "claude.md"),
+        (["CLAUDE.md"], None),
+        (["nested/Claude.md"], None),
+        (["CLAUDE.md", "Claude.md", "claude.md"], "Claude.md"),
+        ([], None),
+    ],
+)
+@pytest.mark.parametrize("canonical_present", [True, False])
+def test_tracked_claude_case_public_audit(
+    tmp_path: Path, monkeypatch, names, expected, canonical_present
+) -> None:
+    from devguard.sweeps.ai_editor_config_audit import audit_ai_editor_configs
+
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", "/dev/null")
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    # Populate the real index directly: case-distinct names must work even on
+    # a case-insensitive filesystem. An untracked canonical file is a control.
+    if canonical_present:
+        (tmp_path / "CLAUDE.md").write_text("Synthetic instructions.\n")
+    blob = subprocess.run(
+        ["git", "hash-object", "-w", "--stdin"],
+        cwd=tmp_path,
+        input="Synthetic instructions.\n",
+        text=True,
+        capture_output=True,
+        check=True,
+    ).stdout.strip()
+    for name in names:
+        subprocess.run(
+            ["git", "update-index", "--add", "--cacheinfo", f"100644,{blob},{name}"],
+            cwd=tmp_path,
+            check=True,
+        )
+    report, errors = audit_ai_editor_configs(dev_root=tmp_path)
+    assert not errors
+    findings = [
+        f for repo in report["repos"] for f in repo["findings"] if f["check"] == "claude_md_case"
+    ]
+    if expected is None:
+        assert findings == []
+    else:
+        assert len(findings) == 1
+        assert findings[0]["severity"] == "error"
+        assert (
+            findings[0]["message"] == f"Git tracks '{expected}' but Claude Code expects 'CLAUDE.md'"
+        )
