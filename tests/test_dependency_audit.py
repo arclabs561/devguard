@@ -479,3 +479,60 @@ def test_skipped_pip_dependency_is_a_sanitized_report_error(tmp_path):
     assert errors
     assert report["repos"][0]["engines_run"] == []
     assert "private-skip-detail" not in json.dumps(report)
+
+
+@pytest.mark.parametrize("changed", [False, True])
+def test_explicit_package_audits_only_nested_cwd_with_input_receipt(tmp_path, changed):
+    root = tmp_path / "repo"
+    (root / ".git").mkdir(parents=True)
+    (root / "package-lock.json").write_text("root must not be audited")
+    package = root / "iac" / "cluster"
+    package.mkdir(parents=True)
+    lock = package / "package-lock.json"
+    lock.write_text("{}")
+
+    def audit(argv, **kwargs):
+        assert kwargs["cwd"] == str(package)
+        assert argv == ["npm", "--prefix", str(package), "audit", "--json", "--ignore-scripts"]
+        if changed:
+            lock.write_text('{"changed":true}')
+        return subprocess.CompletedProcess(argv, 0, '{"vulnerabilities":{}}', "")
+
+    with (
+        patch("devguard.sweeps.dependency_audit.subprocess.run", side_effect=audit) as run,
+        patch("devguard.sweeps.dependency_audit.shutil.which", return_value="npm"),
+        patch(
+            "devguard.sweeps.dependency_audit.iter_git_repos",
+            side_effect=AssertionError("discovery forbidden"),
+        ),
+    ):
+        report, errors = audit_dependencies(dev_root=root, package_roots=["iac/cluster"])
+    run.assert_called_once()
+    assert report["schema_version"] == 1
+    assert report["scope"]["package_roots_requested"] == ["iac/cluster"]
+    assert report["scope"]["package_roots_resolved"] == [str(package)]
+    result = report["repos"][0]
+    assert result["status"] == ("unknown" if changed else "complete")
+    assert result["input_changed"] is changed
+    assert bool(errors) is changed
+    assert len(result["inputs_before"]["package-lock.json"]) == 64
+    assert report["started_at"] and result["finished_at"]
+
+
+@pytest.mark.parametrize(
+    "selection", ["../outside", "/tmp", "missing", "unsupported", "escape", "lock-escape"]
+)
+def test_explicit_package_rejects_invalid_scope_before_any_audit(tmp_path, selection):
+    root = tmp_path / "repo"
+    (root / ".git").mkdir(parents=True)
+    (root / "unsupported").mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "package-lock.json").write_text("{}")
+    (root / "escape").symlink_to(outside, target_is_directory=True)
+    (root / "lock-escape").mkdir()
+    (root / "lock-escape" / "package-lock.json").symlink_to(outside / "package-lock.json")
+    with patch("devguard.sweeps.dependency_audit._audit_repo") as audit:
+        with pytest.raises(ValueError):
+            audit_dependencies(dev_root=root, package_roots=[selection])
+    audit.assert_not_called()

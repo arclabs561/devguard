@@ -1098,6 +1098,11 @@ def sweep(
         "-r",
         help="Scan a single repo (local path or GitHub URL). Overrides dev_root discovery.",
     ),
+    package_root: list[str] = typer.Option(
+        None,
+        "--package-root",
+        help="Audit this relative package directory only (repeatable; local --repo and --only dependency_audit required).",
+    ),
     only: list[str] = typer.Option(
         None,
         "--only",
@@ -1115,6 +1120,17 @@ def sweep(
     Today this runs the local dev repo sweep (and will expand over time).
     """
     wanted = _parse_sweep_selectors(only)
+    if package_root:
+        if not repo or _is_github_url(repo) or wanted != {"dependency_audit"} or dev_root:
+            raise typer.BadParameter(
+                "--package-root requires local --repo and only dependency_audit, without --dev-root"
+            )
+        from devguard.sweeps.dependency_audit import resolve_package_roots
+
+        try:
+            resolve_package_roots(Path(repo), package_root)
+        except (ValueError, OSError) as exc:
+            raise typer.BadParameter(str(exc), param_hint="--package-root") from None
     machine_output = format in ("json", "sarif")
 
     # Single-repo mode: resolve path or clone URL, verify .git, override dev_root
@@ -1140,7 +1156,14 @@ def sweep(
 
     try:
         _sweep_body(
-            spec_file, dev_root, _single_repo, wanted, format, machine_output, sweep_reports
+            spec_file,
+            dev_root,
+            _single_repo,
+            wanted,
+            format,
+            machine_output,
+            sweep_reports,
+            package_root,
         )
     finally:
         if _cleanup_dir:
@@ -1155,6 +1178,7 @@ def _sweep_body(
     format: str,
     machine_output: bool,
     sweep_reports: list[tuple[str, dict]],
+    package_roots: list[str] | None = None,
 ) -> None:
     """Inner body of sweep(), extracted to allow try/finally cleanup in caller."""
     import sys
@@ -1527,6 +1551,7 @@ def _sweep_body(
             engines=depaudit.engines,
             max_concurrency=depaudit.max_concurrency,
             timeout_s=depaudit.timeout_s,
+            **({"package_roots": package_roots} if package_roots else {}),
         )
         out_path = Path(depaudit.output).expanduser()
         write_depaudit(out_path, report)

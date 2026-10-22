@@ -313,3 +313,60 @@ def test_dependency_audit_cli_real_report_errors(runner, tmp_path, raw, tool_exi
     assert "private-output-must-not-escape" not in result.output + json.dumps(report)
     if expected_exit == 2 and report["summary"]["total_vulns"] == 0:
         assert report["errors"]
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        [],
+        ["--repo", "https://github.com/example/repo", "--only", "dependency_audit"],
+        ["--repo", ".", "--only", "dependency_audit,local_dirty_worktree_secrets"],
+        ["--repo", ".", "--only", "dependency_audit", "--dev-root", "."],
+    ],
+)
+def test_package_root_invalid_combinations_never_start_sweeps(runner, args):
+    with patch("devguard.cli._sweep_body") as sweep, patch("devguard.cli._clone_repo") as clone:
+        result = runner.invoke(app, ["sweep", "--package-root", "iac/cluster", *args])
+    assert result.exit_code != 0
+    sweep.assert_not_called()
+    clone.assert_not_called()
+
+
+def test_package_root_selection_reaches_local_audit(runner, tmp_path, monkeypatch):
+    import json
+    import subprocess
+
+    monkeypatch.chdir(tmp_path)
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    package = repo / "iac"
+    package.mkdir()
+    (package / "package-lock.json").write_text("{}")
+    with (
+        patch("devguard.sweeps.dependency_audit.shutil.which", return_value="npm"),
+        patch(
+            "devguard.sweeps.dependency_audit.subprocess.run",
+            return_value=subprocess.CompletedProcess([], 0, '{"vulnerabilities":{}}', ""),
+        ) as audit,
+        patch("devguard.reporting.Reporter") as reporter,
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "sweep",
+                "--repo",
+                str(repo),
+                "--only",
+                "dependency_audit",
+                "--package-root",
+                "iac",
+                "--format",
+                "json",
+            ],
+        )
+    assert result.exit_code == 0, result.output
+    assert audit.call_args.kwargs["cwd"] == str(package)
+    assert json.loads(result.stdout)["dependency_audit"]["scope"]["package_roots_requested"] == [
+        "iac"
+    ]
+    reporter.assert_not_called()

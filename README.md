@@ -56,6 +56,9 @@ Scan one repo:
 ```bash
 devguard sweep --repo /path/to/repo
 devguard sweep --repo https://github.com/owner/repo --format json
+
+# Explicit nested dependency scope; repeat --package-root for another package
+devguard sweep --repo /path/to/infra --only dependency_audit --package-root iac/pulumi/arclabs-cluster --format json
 ```
 
 ## Configuration
@@ -121,6 +124,18 @@ effectively excluded; a later negation can re-include an otherwise matched path.
     - id: devguard-gitignore
     - id: devguard-secrets
 ```
+
+Explicit `--package-root` requires a local `--repo` and exactly
+`--only dependency_audit`. Paths must stay inside the repository; unsupported
+inputs fail before auditing. npm requires `package-lock.json`, Cargo requires
+`Cargo.lock`, and Python requires pinned `requirements.txt`. Audit tools may
+contact their advisory services; this mode never installs or fixes packages.
+The local JSON report includes schema version 1, requested/resolved scope,
+engine coverage, timestamps, SHA-256 input hashes before/after, and omitted-row
+counts. Changed inputs or incomplete engine coverage produce an unknown result.
+No webhook or email reporter is used. Findings and audit failures retain the
+existing nonzero exit behavior; this is dependency evidence, not host or cluster
+security certification.
 
 Python dependency auditing requires a fully pinned `requirements.txt` export. It
 uses `pip-audit --no-deps --disable-pip --strict -r requirements.txt`, auditing

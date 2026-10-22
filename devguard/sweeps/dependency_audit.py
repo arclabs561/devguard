@@ -8,6 +8,7 @@ Produces a unified report with per-repo findings bucketed by severity.
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import json
 import shutil
 import subprocess
@@ -54,6 +55,60 @@ def detect_engines(repo: Path) -> list[DetectedEngine]:
             seen_engines.add(engine)
             results.append(DetectedEngine(language=lang, engine=engine))
     return results
+
+
+_INPUT_FILES = tuple(
+    dict.fromkeys(
+        [name for name, _, _ in _MANIFEST_MAP] + ["Cargo.toml", "package.json", "pyproject.toml"]
+    )
+)
+
+
+def resolve_package_roots(repo: Path, requested: list[str]) -> list[Path]:
+    """Validate the entire explicit selection before any audit subprocess runs."""
+    root = repo.resolve(strict=True)
+    if not (root / ".git").exists():
+        raise ValueError("--repo must be a local Git repository")
+    resolved: list[Path] = []
+    for value in requested:
+        relative = Path(value)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError("package roots must be relative paths without '..'")
+        try:
+            package = (root / relative).resolve(strict=True)
+        except (OSError, RuntimeError):
+            raise ValueError("package root does not exist or cannot be resolved") from None
+        if not package.is_relative_to(root) or not package.is_dir():
+            raise ValueError("package root must be a directory inside --repo")
+        for name in _INPUT_FILES:
+            candidate = package / name
+            if candidate.is_symlink() and not candidate.resolve().is_relative_to(root):
+                raise ValueError("package input symlink escapes --repo")
+        detected = detect_engines(package)
+        if not detected:
+            raise ValueError("package root has no supported audit lockfile")
+        if (
+            any(d.engine == "npm-audit" for d in detected)
+            and not (package / "package-lock.json").is_file()
+        ):
+            raise ValueError("explicit npm auditing requires package-lock.json")
+        if (
+            any(d.engine == "pip-audit" for d in detected)
+            and not (package / "requirements.txt").is_file()
+        ):
+            raise ValueError("explicit Python auditing requires pinned requirements.txt")
+        if package not in resolved:
+            resolved.append(package)
+    return resolved
+
+
+def _input_hashes(package: Path) -> dict[str, str | None]:
+    return {
+        name: hashlib.sha256((package / name).read_bytes()).hexdigest()
+        if (package / name).is_file()
+        else None
+        for name in _INPUT_FILES
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -263,16 +318,25 @@ class RepoAuditResult:
     severity_counts: dict[str, int] = field(default_factory=dict)
     skipped_engines: list[str] = field(default_factory=list)
     error: str | None = None
+    inputs_before: dict[str, str | None] = field(default_factory=dict)
+    inputs_after: dict[str, str | None] = field(default_factory=dict)
+    engine_coverage: list[dict[str, str | None]] = field(default_factory=list)
+    started_at: str | None = None
+    finished_at: str | None = None
 
 
 def _audit_repo(
     repo: Path,
     engines: list[str],
     timeout_s: int,
+    explicit: bool = False,
 ) -> RepoAuditResult:
     """Run applicable audit tools on a single repo."""
     detected = detect_engines(repo)
     result = RepoAuditResult(repo_path=str(repo))
+    result.started_at = _utc_now()
+    if explicit:
+        result.inputs_before = _input_hashes(repo)
     counts: Counter[str] = Counter()
     engine_errors: list[str] = []
 
@@ -285,6 +349,8 @@ def _audit_repo(
         if cmd_spec is None:
             continue
         argv, which_bin = cmd_spec
+        if explicit and det.engine == "npm-audit":
+            argv = ["npm", "--prefix", str(repo), "audit", "--json", "--ignore-scripts"]
 
         # Check tool availability
         if which_bin and not shutil.which(which_bin):
@@ -342,6 +408,26 @@ def _audit_repo(
             )
             counts[v.severity] += 1
 
+    if explicit:
+        result.inputs_after = _input_hashes(repo)
+        if result.inputs_before != result.inputs_after:
+            engine_errors.append("audit inputs changed during execution; result unknown")
+    for det in detected:
+        error = next((e for e in engine_errors if e.startswith(det.engine + ":")), None)
+        result.engine_coverage.append(
+            {
+                "engine": det.engine,
+                "status": "complete"
+                if det.engine in result.engines_run
+                else "error"
+                if error
+                else "skipped",
+                "error": error,
+            }
+        )
+    if explicit and result.skipped_engines:
+        engine_errors.append("audit coverage incomplete; one or more engines skipped")
+    result.finished_at = _utc_now()
     result.error = "; ".join(engine_errors) or None
     result.severity_counts = dict(counts)
     return result
@@ -360,24 +446,35 @@ def audit_dependencies(
     engines: list[str] | None = None,
     max_concurrency: int = 4,
     timeout_s: int = 120,
+    package_roots: list[str] | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """Audit dependencies across local repos for known vulnerabilities.
 
     Returns (report_dict, errors_list).
     """
+    started_at = _utc_now()
     errors: list[str] = []
     root = dev_root if dev_root is not None else _default_dev_root()
     all_engines = engines or ["cargo-audit", "npm-audit", "pip-audit"]
 
-    repos = sorted(iter_git_repos(root, max_depth=max_depth))
+    if package_roots is not None:
+        if dev_root is None or not package_roots:
+            raise ValueError(
+                "explicit package roots require a local repository and nonempty selection"
+            )
+        repos = resolve_package_roots(root, package_roots)
+    else:
+        repos = sorted(iter_git_repos(root, max_depth=max_depth))
     globs = [g for g in (exclude_repo_globs or []) if isinstance(g, str) and g.strip()]
-    if globs:
+    if globs and package_roots is None:
         repos = [r for r in repos if not any(fnmatch.fnmatch(str(r), g) for g in globs)]
 
     results: list[RepoAuditResult] = []
 
     def _run(repo: Path) -> RepoAuditResult:
         try:
+            if package_roots is not None:
+                return _audit_repo(repo, engines=all_engines, timeout_s=timeout_s, explicit=True)
             return _audit_repo(repo, engines=all_engines, timeout_s=timeout_s)
         except Exception:
             return RepoAuditResult(repo_path=str(repo), error="dependency audit failed")
@@ -407,6 +504,8 @@ def audit_dependencies(
     repos_with_vulns = [r for r in results if r.vulns]
 
     report: dict[str, Any] = {
+        "schema_version": 1,
+        "started_at": started_at,
         "generated_at": _utc_now(),
         "scope": {
             "dev_root": str(root),
@@ -414,6 +513,10 @@ def audit_dependencies(
             "max_depth": max_depth,
             "exclude_repo_globs": globs,
             "engines_requested": all_engines,
+            "package_roots_requested": package_roots,
+            "package_roots_resolved": [str(p) for p in repos]
+            if package_roots is not None
+            else None,
         },
         "summary": {
             "repos_with_vulns": len(repos_with_vulns),
@@ -427,6 +530,16 @@ def audit_dependencies(
                 "engines_run": r.engines_run,
                 "skipped_engines": r.skipped_engines,
                 "error": r.error,
+                "status": "unknown"
+                if r.error or r.skipped_engines or not r.engines_run
+                else "complete",
+                "engine_coverage": r.engine_coverage,
+                "started_at": r.started_at,
+                "finished_at": r.finished_at,
+                "inputs_before": r.inputs_before,
+                "inputs_after": r.inputs_after,
+                "input_changed": r.inputs_before != r.inputs_after,
+                "vulns_omitted": max(0, len(r.vulns) - 100),
                 "vuln_count": len(r.vulns),
                 "severity_counts": r.severity_counts,
                 "vulns": r.vulns[:100],  # cap per repo
@@ -434,6 +547,13 @@ def audit_dependencies(
             for r in results
             if r.engines_run or r.skipped_engines or r.error
         ][:200],
+        "truncation": {
+            "repos_limit": 200,
+            "vulns_per_repo_limit": 100,
+            "repos_omitted": max(
+                0, sum(bool(r.engines_run or r.skipped_engines or r.error) for r in results) - 200
+            ),
+        },
         "errors": errors,
     }
     return report, errors
