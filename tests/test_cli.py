@@ -370,3 +370,33 @@ def test_package_root_selection_reaches_local_audit(runner, tmp_path, monkeypatc
         "iac"
     ]
     reporter.assert_not_called()
+
+
+@pytest.mark.parametrize("format", ["text", "json"])
+@pytest.mark.parametrize(
+    "spec_text, category",
+    [
+        ('{"filters":{"credential":"DUMMY_SECRET_MUST_NOT_LEAK"}}', "validation error at name"),
+        (
+            '{"name":"safe","manual_resources":{"DUMMY_SECRET_MUST_NOT_LEAK":false}}',
+            "validation error at manual_resources",
+        ),
+        ("name: [DUMMY_SECRET_MUST_NOT_LEAK", "parse error"),
+        ("- DUMMY_SECRET_MUST_NOT_LEAK", "parse error"),
+    ],
+)
+def test_invalid_sweep_spec_is_redacted_before_scanning(
+    runner, tmp_path, spec_text, category, format
+):
+    spec = tmp_path / "invalid.yaml"
+    spec.write_text(spec_text)
+    with patch("devguard.sweeps.dependency_audit.audit_dependencies") as audit:
+        result = runner.invoke(
+            app, ["sweep", "--spec", str(spec), "--only", "dependency_audit", "--format", format]
+        )
+    assert result.exit_code == 2
+    assert category in result.stderr
+    assert "DUMMY_SECRET_MUST_NOT_LEAK" not in result.output + result.stderr
+    assert "Traceback" not in result.output + result.stderr
+    assert result.stdout == ""
+    audit.assert_not_called()

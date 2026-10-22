@@ -1217,7 +1217,33 @@ def _sweep_body(
             sweeps=SweepSpec.model_validate({}),
         )
     else:
-        spec = load_spec(spec_path)
+        import yaml  # type: ignore[import-untyped]
+        from pydantic import ValidationError
+
+        try:
+            spec = load_spec(spec_path)
+        except ValidationError as exc:
+            # Locations can contain user-controlled dictionary keys. Emit only
+            # schema-owned top-level fields, never values, keys, or exception reprs.
+            fields = sorted(
+                {
+                    str(error["loc"][0])
+                    if error["loc"] and error["loc"][0] in MonitorSpec.model_fields
+                    else "<root>"
+                    for error in exc.errors(include_input=False, include_context=False)
+                }
+            )
+            stderr_console.print(
+                "Invalid sweep spec: validation error at " + ", ".join(fields),
+                markup=False,
+            )
+            raise typer.Exit(code=2) from None
+        except (yaml.YAMLError, UnicodeError, AttributeError, TypeError):
+            stderr_console.print("Invalid sweep spec: parse error", markup=False)
+            raise typer.Exit(code=2) from None
+        except OSError:
+            stderr_console.print("Invalid sweep spec: file read error", markup=False)
+            raise typer.Exit(code=2) from None
 
     exit_code = 0
 
