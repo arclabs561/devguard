@@ -399,7 +399,10 @@ class PublicGitHubSecretsSweepSpec(BaseModel):
     )
     fail_on_errors: bool = Field(
         False,
-        description="If true, treat scan errors (missed repos) as a CI failure.",
+        description=(
+            "If true, treat per-repo scan errors as a CI failure (exit 3). Coverage "
+            "gaps (no token, scanner not on PATH, zero repos selected) always exit 3."
+        ),
     )
 
     output: str = Field(

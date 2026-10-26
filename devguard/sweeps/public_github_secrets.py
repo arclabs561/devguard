@@ -4,6 +4,7 @@ import fnmatch
 import json
 import logging
 import os
+import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -433,16 +434,33 @@ def scan_public_github_repos(
     max_concurrency = max(1, min(max_concurrency, 12))
 
     # 2) Run scan engines per repo.
-    if not token and any(e in ("trufflehog", "kingfisher") for e in requested_engines):
-        errors.append(
+    # Coverage errors mean a requested scan never ran; unlike per-repo errors,
+    # they always fail the sweep (see cli.sweep) instead of reading as clean.
+    coverage_errors: list[str] = []
+    if not token:
+        coverage_errors.append(
             "Missing GitHub token for public GitHub scans. "
             "Set GITHUB_TOKEN/GH_TOKEN or run `gh auth login` then rerun."
         )
+    if not repos:
+        coverage_errors.append(
+            f"no public repos selected for scanning (owners={owners}, "
+            f"discovery errors={len(discovery_errors)}; see report)"
+        )
+    runnable_engines = [e for e in requested_engines if shutil.which(e)]
+    if token and repos:
+        for engine in requested_engines:
+            if engine not in runnable_engines:
+                coverage_errors.append(
+                    f"{engine} not found on PATH; {len(repos)} repos not scanned by it"
+                )
+    errors.extend(coverage_errors)
+    scanned_repos = repos if token and runnable_engines else []
 
     findings: list[RedactedFinding] = []
     engine_summaries: dict[str, Any] = {}
 
-    if repos and token:
+    if scanned_repos and token:
         # Avoid passing tokens on argv (shows up in process lists).
         env = os.environ.copy()
         env["GITHUB_TOKEN"] = token
@@ -644,7 +662,7 @@ def scan_public_github_repos(
             per_engine_findings: list[RedactedFinding] = []
             per_engine_errors: list[str] = []
             with ThreadPoolExecutor(max_workers=max_concurrency) as ex:
-                futures = [ex.submit(scan_one_repo, r) for r in repos]
+                futures = [ex.submit(scan_one_repo, r) for r in scanned_repos]
                 for fut in as_completed(futures):
                     _repo_full, repo_findings, repo_errors = fut.result()
                     if repo_errors:
@@ -658,9 +676,9 @@ def scan_public_github_repos(
                 "errors_total": len(per_engine_errors),
             }
 
-        if "trufflehog" in requested_engines:
+        if "trufflehog" in runnable_engines:
             _run_engine("trufflehog", _scan_one_repo_trufflehog)
-        if "kingfisher" in requested_engines:
+        if "kingfisher" in runnable_engines:
             _run_engine("kingfisher", _scan_one_repo_kingfisher)
 
     # Summaries
@@ -673,8 +691,9 @@ def scan_public_github_repos(
         "scope": {
             "owners": owners,
             "owners_expanded": expanded_owners,
-            "repos_scanned": repos,
-            "repos_scanned_count": len(repos),
+            "repos_scanned": scanned_repos,
+            "repos_scanned_count": len(scanned_repos),
+            "repos_discovered_count": len(repos),
             "max_repos": max_repos,
             "include_repos": include_repos,
             "exclude_repos": exclude_repos,
@@ -687,7 +706,7 @@ def scan_public_github_repos(
         "engine": {
             "requested_engines": requested_engines,
             "max_concurrency": max_concurrency,
-            "per_repo_timeout_s": per_repo_timeout if repos and token else None,
+            "per_repo_timeout_s": per_repo_timeout if scanned_repos else None,
             "summaries": engine_summaries,
         },
         # Redacted: no secret values/snippets included.
@@ -699,6 +718,7 @@ def scan_public_github_repos(
             "unknown": unknown,
         },
         "errors": errors,
+        "coverage_errors": coverage_errors,
     }
 
     return report, errors
