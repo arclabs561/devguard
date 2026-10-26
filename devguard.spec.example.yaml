@@ -102,9 +102,9 @@ sweeps:
     deny_globs: []
   public_github_secrets:
     enabled: true
-    owners: [“@me”]
+    owners: ["@me"]
     include_forks: false
-    engines: [“trufflehog”]
+    engines: ["trufflehog"]
     max_repos: 200
     include_repos: []
     exclude_repos: []

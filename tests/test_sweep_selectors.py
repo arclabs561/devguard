@@ -136,3 +136,47 @@ def test_valid_selection_reaches_real_dispatch(
     assert calls == expected
     assert sorted(json.loads(result.stdout)) == sorted(expected)
     assert result.stderr == ""
+
+
+@pytest.mark.parametrize("spec_dev_root", [None, "spec-root"])
+def test_cli_dev_root_overrides_every_rooted_sweep(monkeypatch, tmp_path, offline, spec_dev_root):
+    cli_root = tmp_path / "cli-root"
+    roots = {}
+
+    def scan_local(root, **kwargs):
+        roots["local_dev"] = root
+        return [], {"repos_scanned": 0}
+
+    def scan_publish(*, dev_root, **kwargs):
+        roots["publish_audit"] = dev_root
+        return {"summary": {"total_errors": 0}}, []
+
+    monkeypatch.setattr(local_dev, "sweep_dev_repos", scan_local)
+    monkeypatch.setattr(local_dev, "write_report", lambda *args: None)
+    monkeypatch.setattr(publish_audit, "audit_publish", scan_publish)
+    monkeypatch.setattr(publish_audit, "write_report", lambda *args: None)
+    settings: dict[str, dict[str, object]] = {
+        name: {"enabled": False} for name in spec.SweepSpec.model_fields
+    }
+    if spec_dev_root:
+        settings["publish_audit"]["dev_root"] = str(tmp_path / spec_dev_root)
+    source = tmp_path / "spec.yaml"
+    source.write_text(json.dumps({"name": "fixture", "sweeps": settings}))
+
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "sweep",
+            "--spec",
+            str(source),
+            "--dev-root",
+            str(cli_root),
+            "--format",
+            "json",
+            "--only",
+            "local_dev,publish_audit",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert roots == {"local_dev": cli_root, "publish_audit": cli_root}

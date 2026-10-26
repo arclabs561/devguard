@@ -284,6 +284,36 @@ def _extract_git_identity_audit(report: dict) -> list[_Finding]:
     return results
 
 
+def _extract_credential_file_audit(report: dict) -> list[_Finding]:
+    results: list[_Finding] = []
+    for entry in report.get("files", []):
+        for f in entry.get("findings", []):
+            sev = f.get("severity", "warning")
+            results.append(
+                (
+                    f.get("check_id", "credential_file_issue"),
+                    _sarif_level(sev),
+                    f.get("message", ""),
+                    entry.get("path"),
+                    sev,
+                )
+            )
+    return results
+
+
+def _extract_mcp_security_audit(report: dict) -> list[_Finding]:
+    return [
+        (
+            f.get("check_id", "mcp_security_issue"),
+            _sarif_level(f.get("severity", "warning")),
+            f.get("message", ""),
+            f.get("file"),
+            f.get("severity", "warning"),
+        )
+        for f in report.get("findings", [])
+    ]
+
+
 _EXTRACTORS: dict[str, Any] = {
     "ai_editor_config_audit": _extract_ai_editor_config,
     "cargo_publish_audit": _extract_cargo_publish,
@@ -298,6 +328,8 @@ _EXTRACTORS: dict[str, Any] = {
     "repo_lint": _extract_repo_lint,
     "local_dev": _extract_local_dev,
     "project_flaudit": _extract_project_flaudit,
+    "credential_file_audit": _extract_credential_file_audit,
+    "mcp_security_audit": _extract_mcp_security_audit,
 }
 
 

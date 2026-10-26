@@ -10,6 +10,7 @@ from pathlib import Path
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.prompt import Prompt
 from rich.table import Table
 
@@ -1198,10 +1199,11 @@ def _sweep_body(
     stderr_console = Console(stderr=True)
 
     def _resolve_root(spec_dev_root: str | None) -> Path:
-        """Resolve sweep root, respecting single-repo override."""
+        """Resolve sweep root: --repo, then --dev-root, then the sweep's spec dev_root."""
         if _single_repo is not None:
             return _single_repo
-        return Path(spec_dev_root).expanduser() if spec_dev_root else default_dev_root()
+        root = dev_root or spec_dev_root
+        return Path(root).expanduser() if root else default_dev_root()
 
     spec_path = Path(spec_file)
     if not spec_path.exists():
@@ -1315,8 +1317,11 @@ def _sweep_body(
                     console.print(
                         "[bold red]Action:[/bold red] Fix scan errors (missed coverage) and rerun."
                     )
+            for gap in report["coverage_errors"]:
+                console.print(f"[bold red]Incomplete coverage:[/bold red] {escape(gap)}")
             _print_public_github_secrets_table(report)
-        if errors and pub.fail_on_errors:
+        # A sweep that scanned nothing is missed coverage, not a clean result.
+        if report["coverage_errors"] or (errors and pub.fail_on_errors):
             exit_code = max(exit_code, 3)
         if report["summary"]["findings_total"] > 0:
             exit_code = max(exit_code, 2)
