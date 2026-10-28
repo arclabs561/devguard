@@ -15,8 +15,10 @@ from rich.prompt import Prompt
 from rich.table import Table
 
 from devguard.config import get_settings
+from devguard.doc_commands_cli import doc_commands
 
 app = typer.Typer(help="devguard - Security and hygiene scanning for developer workstations")
+app.command("doc-commands")(doc_commands)
 console = Console()
 
 _MAX_TABLE_ROWS = 15
@@ -1424,7 +1426,10 @@ def _sweep_body(
         if report["summary"]["high_findings"] > 0:
             exit_code = max(exit_code, 2)
 
-    # Rust workspace hygiene lint: report only, never part of the exit code
+        if eca_errors:
+            exit_code = max(exit_code, 3)
+
+    # Rust lint findings are advisory; scan errors indicate missed coverage
     rl = spec.sweeps.repo_lint
     if (rl.enabled and not wanted) or "repo_lint" in wanted:
         from devguard.sweeps.repo_lint import lint_repos
@@ -1446,6 +1451,9 @@ def _sweep_body(
                 console.print(f"  [{f['severity']}] {Path(f['repo_path']).name}: {f['message']}")
             if rl_errors:
                 console.print(f"[yellow]Errors:[/yellow] {len(rl_errors)} (see report)")
+
+        if rl_errors:
+            exit_code = max(exit_code, 3)
 
     # project_flaudit sweep (files-to-prompt + OpenRouter/Gemini)
     flaudit = spec.sweeps.project_flaudit
@@ -1567,6 +1575,9 @@ def _sweep_body(
             _print_repo_hygiene_table(report)
         if report["summary"]["total_findings"] > 0:
             exit_code = max(exit_code, 2)
+
+        if errors:
+            exit_code = max(exit_code, 3)
 
     # dependency audit sweep
     depaudit = spec.sweeps.dependency_audit

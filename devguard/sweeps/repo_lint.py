@@ -19,7 +19,7 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from devguard.sweeps._common import iter_git_repos
+from devguard.sweeps._common import contained_file, iter_git_repos
 from devguard.sweeps._common import utc_now as _utc_now
 
 _DEP_TABLES = ("dependencies", "dev-dependencies", "build-dependencies")
@@ -78,7 +78,7 @@ def _cargo_manifests(repo: Path) -> list[Path]:
             ):
                 if len(e.relative_to(repo).parts) <= 4:
                     stack.append(e)
-            elif e.name == "Cargo.toml":
+            elif e.name == "Cargo.toml" and contained_file(e, repo):
                 out.append(e)
     return sorted(out)
 
@@ -279,7 +279,11 @@ def lint_repos(
 
 def _ci_gaps(repo: Path) -> list[dict[str, Any]]:
     wf_dir = repo / ".github" / "workflows"
-    workflows = sorted(wf_dir.glob("*.y*ml")) if wf_dir.is_dir() else []
+    workflows = (
+        sorted(w for w in wf_dir.glob("*.y*ml") if contained_file(w, repo))
+        if wf_dir.resolve().is_relative_to(repo.resolve()) and wf_dir.is_dir()
+        else []
+    )
     if not workflows:
         return [
             _finding(

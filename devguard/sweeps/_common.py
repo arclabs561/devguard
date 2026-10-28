@@ -105,3 +105,11 @@ def iter_git_repos(
                 stack.append((child, depth + 1))
         except Exception:
             continue
+
+
+def contained_file(path: Path, root: Path) -> bool:
+    """Whether a regular file resolves inside the admitted scan root."""
+    try:
+        return path.resolve().is_relative_to(root.resolve()) and path.is_file()
+    except (OSError, RuntimeError):
+        return False

@@ -96,7 +96,8 @@ def test_incomplete_scan_probe(tmp_path, monkeypatch, failure):
                 str(tmp_path / "absent.yaml"),
             ],
         )
-    assert result.exit_code == (2 if failure == "history_present" else 0), result.output
+    expected_exit = {"complete": 0, "history_present": 2}.get(failure, 3)
+    assert result.exit_code == expected_exit, result.output
     cli = json.loads(result.stdout)["repo_hygiene"]
     assert report["scope"]["repos_scanned"] == cli["scope"]["repos_scanned"] == 1
     expected_findings = 1 if failure == "history_present" else 0

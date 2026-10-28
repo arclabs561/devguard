@@ -137,9 +137,9 @@ class _Collector:
     def command(self, file: str, where: str, command: str) -> None:
         why = _danger(command)
         if why:
-            self.add(file, "dangerous_open_command", "high", f"{where} {why}: {_shorten(command)}")
+            self.add(file, "dangerous_open_command", "high", f"{where} {why} (command omitted)")
         else:
-            self.add(file, "runs_on_open", "medium", f"{where} runs: {_shorten(command)}")
+            self.add(file, "runs_on_open", "medium", f"{where} runs a command (command omitted)")
 
 
 def _audit_claude_settings(c: _Collector, rel: str, data: dict[str, Any]) -> None:
@@ -159,7 +159,7 @@ def _audit_claude_settings(c: _Collector, rel: str, data: dict[str, Any]) -> Non
                     rel,
                     "api_endpoint_override",
                     "high",
-                    f"env.{key} redirects API traffic to {_shorten(value, 80)}",
+                    f"env.{key} redirects API traffic (destination omitted)",
                 )
     if data.get("enableAllProjectMcpServers") is True:
         c.add(

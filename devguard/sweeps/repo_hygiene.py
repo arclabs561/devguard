@@ -20,8 +20,8 @@ from typing import Any
 
 from dotenv import dotenv_values
 
+from devguard.sweeps._common import contained_file, iter_git_repos
 from devguard.sweeps._common import default_dev_root as _default_dev_root
-from devguard.sweeps._common import iter_git_repos
 from devguard.sweeps._common import utc_now as _utc_now
 
 # ---------------------------------------------------------------------------
@@ -197,7 +197,11 @@ def _tracked_text(repo: Path, rel: str) -> str | None:
         return None
     path = repo / rel
     try:
-        if path.is_symlink() or not path.is_file() or path.stat().st_size > _TEXT_SCAN_MAX_BYTES:
+        if (
+            path.is_symlink()
+            or not contained_file(path, repo)
+            or path.stat().st_size > _TEXT_SCAN_MAX_BYTES
+        ):
             return None
         data = path.read_bytes()
     except OSError:
@@ -315,7 +319,11 @@ def _check_stray_files(repo: Path, tracked: list[str]) -> HygieneFinding | None:
             if other != prefix:
                 add("case_collision", f"{other} vs {prefix}")
     pkg = repo / "package.json"
-    if "package.json" in tracked and "obfuscat" in pkg.read_text(errors="replace"):
+    if (
+        "package.json" in tracked
+        and contained_file(pkg, repo)
+        and "obfuscat" in pkg.read_text(errors="replace")
+    ):
         add("obfuscated_build", "package.json")
     if not groups:
         return None
@@ -406,6 +414,8 @@ def _check_local_path_deps(repo: Path, tracked: list[str]) -> HygieneFinding | N
 
     hits: list[str] = []
     for rel in tracked:
+        if not contained_file(repo / rel, repo):
+            continue
         name = Path(rel).name
         base = (repo / rel).parent
         if name == "package.json":
@@ -622,7 +632,7 @@ def _check_public_text_patterns(
         if not _text_policy_file_selected(rel, file_globs):
             continue
         path = repo / rel
-        if not path.is_file() or path.suffix.lower() in _TEXT_POLICY_BINARY_SUFFIXES:
+        if not contained_file(path, repo) or path.suffix.lower() in _TEXT_POLICY_BINARY_SUFFIXES:
             continue
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
@@ -651,7 +661,7 @@ def _check_public_text_patterns(
 def _check_stale_rename_refs(repo: Path, tracked: list[str]) -> HygieneFinding | None:
     """G: Cargo.toml name differs from directory name; old name still appears as env var prefix."""
     cargo = repo / "Cargo.toml"
-    if not cargo.is_file():
+    if not contained_file(cargo, repo):
         return None
 
     dir_name = repo.name
@@ -682,7 +692,7 @@ def _check_stale_rename_refs(repo: Path, tracked: list[str]) -> HygieneFinding |
     count = 0
     for rel in tracked:
         path = repo / rel
-        if not path.is_file():
+        if not contained_file(path, repo):
             continue
         # Only scan text-like files; skip binaries by extension
         suffix = path.suffix.lower()
@@ -732,13 +742,13 @@ def _find_cargo_manifests(repo: Path, max_depth: int = 6) -> list[str]:
     while stack:
         cur, depth = stack.pop()
         manifest = cur / "Cargo.toml"
-        if manifest.is_file():
+        if contained_file(manifest, repo):
             found.append(str(manifest.relative_to(repo)))
         if depth >= max_depth:
             continue
         try:
             for child in cur.iterdir():
-                if not child.is_dir():
+                if child.is_symlink() or not child.is_dir():
                     continue
                 name = child.name
                 if name in _MANIFEST_WALK_JUNK or name.startswith("."):
@@ -849,7 +859,11 @@ def _resolve_member_manifests(
         if d in seen or _is_excluded(d):
             continue
         seen.add(d)
-        data = _parse_toml(d / "Cargo.toml") if d != ws_dir else root_data
+        data = (
+            (_parse_toml(d / "Cargo.toml") if contained_file(d / "Cargo.toml", ws_dir) else None)
+            if d != ws_dir
+            else root_data
+        )
         if data is None:
             all_parsed = False
             continue
