@@ -186,3 +186,99 @@ def test_no_document_command_or_package_manager_execution(tmp_path, monkeypatch)
     report = scan(tmp_path, "```sh\nnpm run check\nnpm run missing\n```\n")
     assert report["commands_checked"] == 2
     assert len(report["findings"]) == 1
+
+
+def test_standalone_workspace_examples_with_features_and_comment_arrows(tmp_path):
+    # Shape observed in rankops/gramdex READMEs: empty workspace boundary,
+    # feature-gated examples and inline comments containing arrows.
+    (tmp_path / "Cargo.toml").write_text(
+        '[package]\nname="demo"\nedition="2021"\n'
+        "[workspace]\n"
+        '[[example]]\nname="store"\nrequired-features=["storage"]\n'
+    )
+    report = scan(
+        tmp_path,
+        "```sh\ncargo run --features storage --example store # parse -> store\ncargo run --example stale --features storage # parse -> store\n```\n",
+    )
+    assert report["commands_checked"] == 2
+    assert [item["target"] for item in report["findings"]] == ["stale"]
+    assert report["skipped"] == []
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [
+        "--features storage",
+        '--features "storage, serde"',
+        "--features=storage,serde",
+        "-F storage",
+        "--all-features",
+        "--no-default-features --features storage",
+    ],
+)
+def test_literal_features_preserve_missing_target_detection(tmp_path, flags):
+    (tmp_path / "Cargo.toml").write_text('[package]\nname="demo"\nedition="2021"\n')
+    report = scan(tmp_path, f"```sh\ncargo run --example missing {flags}\n```\n")
+    assert report["commands_checked"] == 1
+    assert report["findings"][0]["target"] == "missing"
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [
+        "--features",
+        "--features=",
+        "--features --all-features",
+        "--features $FEATURES",
+        '--features "$(echo storage)"',
+        "--features '*'",
+    ],
+)
+def test_missing_or_dynamic_feature_values_stay_skipped(tmp_path, flags):
+    (tmp_path / "Cargo.toml").write_text('[package]\nname="demo"\nedition="2021"\n')
+    report = scan(tmp_path, f"```sh\ncargo run --example missing {flags}\n```\n")
+    assert report["commands_checked"] == 0
+    assert report["findings"] == []
+    assert report["skipped"]
+
+
+@pytest.mark.parametrize(
+    "workspace",
+    [
+        'members=["other"]',
+        'default-members=["other"]',
+        "members=[]",
+        'resolver="2"',
+    ],
+)
+def test_nonempty_workspaces_remain_explicitly_unsupported(tmp_path, workspace):
+    (tmp_path / "Cargo.toml").write_text(
+        f'[package]\nname="demo"\nedition="2021"\n[workspace]\n{workspace}\n'
+    )
+    report = scan(tmp_path, "```sh\ncargo run --example missing\n```\n")
+    assert report["commands_checked"] == 0
+    assert report["findings"] == []
+    assert report["skipped"]
+
+
+@pytest.mark.parametrize("suffix", ["# input -> output", "# $VAR; $(dynamic)"])
+def test_shell_operators_in_comments_are_not_commands(tmp_path, suffix):
+    (tmp_path / "package.json").write_text('{"scripts":{}}')
+    report = scan(tmp_path, f"```sh\nnpm run missing {suffix}\n```\n")
+    assert report["commands_checked"] == 1
+    assert report["findings"][0]["target"] == "missing"
+
+
+def test_quoted_hash_does_not_hide_shell_operator(tmp_path):
+    (tmp_path / "package.json").write_text('{"scripts":{}}')
+    report = scan(tmp_path, '```sh\nnpm run missing -- "#" > output\n```\n')
+    assert report["commands_checked"] == 0
+    assert report["skipped"]
+
+
+def test_hash_inside_shell_word_is_not_treated_as_a_comment(tmp_path):
+    (tmp_path / "package.json").write_text('{"scripts":{"check#suffix":"true"}}')
+    report = scan(tmp_path, "```sh\nnpm run check#suffix\n```\n")
+    assert report["commands_checked"] == 0
+    assert report["findings"] == []
+    assert report["skipped"]

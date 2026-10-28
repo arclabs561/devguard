@@ -79,12 +79,21 @@ def _command(line: str) -> tuple[str, str] | None:
     line = line.strip()
     if line.startswith("$ "):
         line = line[2:]
-    # Reject substitution, continuation, globbing and compound shell commands.
-    if any(char in line for char in "$`\\;&|<>*?{}()"):
+    # Preserve the continuation guard before shlex consumes escapes. Check other
+    # shell syntax after comment removal: prose such as "input -> output" is
+    # not a redirection when it occurs after an unquoted #.
+    if "\\" in line:
+        return None
+    # shlex treats # inside an unquoted word as a comment too; shells do not.
+    # Leave those uncommon forms unresolved instead of truncating a target.
+    comment = line.find("#")
+    if comment > 0 and not line[comment - 1].isspace():
         return None
     try:
         args = shlex.split(line, comments=True)
     except ValueError:
+        return None
+    if any(char in arg for arg in args for char in "$`;&|<>*?{}()"):
         return None
     if args[:2] == ["npm", "run"] and len(args) >= 3:
         if not _NAME.fullmatch(args[2]):
@@ -100,7 +109,28 @@ def _command(line: str) -> tuple[str, str] | None:
             option = options.pop(0)
             if option == "--example" and options and target is None:
                 target = options.pop(0)
-            elif option not in {"--release", "--offline", "--locked", "--frozen"}:
+            elif option in {"--features", "-F"} or option.startswith("--features="):
+                if option.startswith("--features="):
+                    features = option.partition("=")[2]
+                elif options:
+                    features = options.pop(0)
+                else:
+                    return None
+                # Feature flags do not add target names. Validate only literal
+                # syntax here; whether features enable a target is not this check.
+                if not features or any(
+                    not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_./:-]*", feature)
+                    for feature in re.split(r"[ ,]+", features)
+                ):
+                    return None
+            elif option not in {
+                "--release",
+                "--offline",
+                "--locked",
+                "--frozen",
+                "--all-features",
+                "--no-default-features",
+            }:
                 return None
         if target is not None and _NAME.fullmatch(target):
             return "cargo", target
@@ -124,8 +154,9 @@ def _targets(root: Path, package: Path, engine: str) -> tuple[str, set[str]]:
     pkg = data.get("package")
     if not isinstance(pkg, dict) or not isinstance(pkg.get("name"), str):
         raise ValueError("virtual or invalid Cargo package")
-    # Workspace default-members can select other packages from this directory.
-    if "workspace" in data:
+    # An empty workspace table is the common standalone-package boundary.
+    # Other workspace configurations may select default-members elsewhere.
+    if "workspace" in data and data["workspace"] != {}:
         raise ValueError("Cargo workspace selection unsupported")
     examples = data.get("example", [])
     if not isinstance(examples, list) or any(
