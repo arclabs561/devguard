@@ -14,10 +14,13 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import subprocess
 import tomllib
 from pathlib import Path
 from typing import Any
+
+import yaml  # type: ignore[import-untyped]
 
 from devguard.sweeps._common import contained_file, iter_git_repos
 from devguard.sweeps._common import utc_now as _utc_now
@@ -277,6 +280,59 @@ def lint_repos(
     return report, errors
 
 
+def _clippy_commands(text: str) -> tuple[bool, bool]:
+    """Missing explicit denial in direct commands, and unassessed coverage.
+
+    Shell wrappers, scripts, expressions and compound commands are not
+    interpreted. Workflow labels/components do not establish execution.
+    """
+    try:
+        pending = [yaml.safe_load(text)]
+    except yaml.YAMLError:
+        return False, True
+    missing = unassessed = False
+    seen: set[int] = set()
+    while pending:
+        node = pending.pop()
+        if not isinstance(node, (dict, list)) or id(node) in seen:
+            continue
+        seen.add(id(node))
+        if isinstance(node, list):
+            pending.extend(node)
+            continue
+        pending.extend(node.values())
+        run = node.get("run")
+        if not isinstance(run, str):
+            continue
+        named_clippy = "clippy" in str(node.get("name", "")).lower()
+        for line in run.splitlines():
+            try:
+                args = shlex.split(line, comments=True)
+            except ValueError:
+                unassessed |= named_clippy or "clippy" in line
+                continue
+            if not args:
+                continue
+            relevant = named_clippy or "clippy" in args
+            if any(char in line for char in "$`\\;&|<>()"):
+                unassessed |= relevant
+                continue
+            if args[0] == "cargo" and len(args) > 1:
+                command_index = 2 if args[1].startswith("+") else 1
+            else:
+                command_index = 0
+            if not command_index or args[command_index : command_index + 1] != ["clippy"]:
+                unassessed |= relevant
+                continue
+            flags = args[command_index + 1 :]
+            denied = any(flag in {"-Dwarnings", "--deny=warnings"} for flag in flags) or any(
+                flags[i : i + 2] in (["-D", "warnings"], ["--deny", "warnings"])
+                for i in range(len(flags))
+            )
+            missing |= not denied
+    return missing, unassessed
+
+
 def _ci_gaps(repo: Path) -> list[dict[str, Any]]:
     wf_dir = repo / ".github" / "workflows"
     workflows = (
@@ -290,15 +346,27 @@ def _ci_gaps(repo: Path) -> list[dict[str, Any]]:
                 repo, "ci_gaps", "low", "Rust repo with no GitHub workflows", ".github/workflows/"
             )
         ]
-    text = "\n".join(w.read_text(encoding="utf-8", errors="replace") for w in workflows)
+    texts = [w.read_text(encoding="utf-8", errors="replace") for w in workflows]
+    text = "\n".join(texts)
+    clippy = [_clippy_commands(workflow) for workflow in texts]
     out = []
-    if "clippy" in text and not re.search(r"-D\s*warnings|-Dwarnings", text):
+    if any(missing for missing, _ in clippy):
         out.append(
             _finding(
                 repo,
                 "ci_gaps",
                 "low",
-                "clippy runs without -D warnings, so lints never fail CI",
+                "A direct cargo clippy command lacks explicit warning denial (-D warnings); inherited lint settings are not assessed",
+                ".github/workflows/",
+            )
+        )
+    if any(unassessed for _, unassessed in clippy):
+        out.append(
+            _finding(
+                repo,
+                "ci_gaps",
+                "info",
+                "Clippy command coverage not assessed for delegated/unsupported commands or unreadable workflow syntax; inspect scripts and lint configuration",
                 ".github/workflows/",
             )
         )

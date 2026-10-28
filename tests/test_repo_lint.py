@@ -142,3 +142,39 @@ def test_clean_crate_has_no_findings(tmp_path: Path) -> None:
     report, _ = lint_repos(dev_root=root, max_depth=1)
 
     assert report["findings"] == []
+
+
+@pytest.mark.parametrize(
+    "workflow,expected_severities",
+    [
+        ("steps:\n  - name: Clippy\n    run: ./scripts/ci.sh clippy\n", ["info"]),
+        ("steps:\n  - name: Clippy\n    run: bash scripts/ci.sh all\n", ["info"]),
+        (
+            "steps:\n  - uses: dtolnay/rust-toolchain@stable\n    with:\n      components: clippy\n",
+            [],
+        ),
+        ("steps:\n  - run: cargo clippy --all-targets\n", ["low"]),
+        ("steps:\n  - run: cargo clippy -- -D warnings\n", []),
+        ("steps:\n  - run: cargo clippy -- --deny=warnings\n", []),
+        ("steps:\n  - run: cargo clippy # -D warnings\n", ["low"]),
+        ("steps:\n  - run: cargo clippy\n  - run: cargo check -- -D warnings\n", ["low"]),
+        ("steps:\n  - run: cargo clippy\n  - run: cargo clippy -- -D warnings\n", ["low"]),
+    ],
+)
+def test_ci_clippy_direct_commands_and_delegation(tmp_path: Path, workflow, expected_severities):
+    from devguard.sweeps.repo_lint import _ci_gaps
+
+    directory = tmp_path / ".github/workflows"
+    directory.mkdir(parents=True)
+    (directory / "ci.yml").write_text(workflow)
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    # An unrelated/unselected strict command cannot prove the delegated gate.
+    (scripts / "ci.sh").write_text("unused() { cargo clippy -- -D warnings; }\necho fixture\n")
+    findings = _ci_gaps(tmp_path)
+    assert [finding["severity"] for finding in findings] == expected_severities
+    if expected_severities == ["info"]:
+        assert "not assessed" in findings[0]["message"]
+    if expected_severities == ["low"]:
+        assert "direct cargo clippy command" in findings[0]["message"]
+        assert "never fail" not in findings[0]["message"]
