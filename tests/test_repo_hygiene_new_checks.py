@@ -209,3 +209,57 @@ def test_stray_files_quiet_for_ordinary_repo(tmp_path: Path) -> None:
     )
 
     assert _check_stray_files(repo, _git_ls_files(repo)) is None
+
+
+def test_http_reference_paths_are_not_local_home_paths(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path / "r",
+        {
+            "references.html": '<a href="https://www.usna.edu/Users/math/traves/_files/documents/Writing.pdf">Reference</a>',
+            "links.md": "[Docs](http://example.test/home/alice/docs)\n<https://example.test/Users/bob/docs>",
+            "mixed.md": "https://example.test/Users/math/docs /Users/alice/local",
+            "quoted.py": 'url="https://example.test/Users/math/docs"; local="/home/alice/work"',
+            "file.md": "file:///Users/alice/local",
+            "query.md": "https://example.test/search?path=/Users/alice/local",
+            "fragment.md": "https://example.test/page#path=/Users/alice/local",
+            "malformed.md": "https:///Users/alice/local",
+            "windows.md": r"https://example.test/Users/math/docs C:\Users\alice\local",
+        },
+    )
+    finding = _check_hardcoded_paths(repo, _git_ls_files(repo))
+    assert finding is not None
+    assert sorted(location.split(":")[0] for location in finding.files) == [
+        "file.md",
+        "fragment.md",
+        "malformed.md",
+        "mixed.md",
+        "query.md",
+        "quoted.py",
+        "windows.md",
+    ]
+
+
+def test_tracked_ignored_uses_only_repository_gitignore_files(tmp_path: Path, monkeypatch) -> None:
+    repo = _repo(
+        tmp_path / "r",
+        {
+            ".gitignore": "*.log\n",
+            "repo.log": "tracked",
+            "global.md": "tracked",
+            "local.md": "tracked",
+            "nested/.gitignore": "*.txt\n!keep.txt\n",
+            "nested/drop.txt": "tracked",
+            "nested/keep.txt": "tracked",
+        },
+    )
+    excludes = tmp_path / "global-ignore"
+    excludes.write_text("global.md\n")
+    config = tmp_path / "global-config"
+    subprocess.run(
+        ["git", "config", "--file", str(config), "core.excludesFile", str(excludes)], check=True
+    )
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    (repo / ".git/info/exclude").write_text("local.md\n")
+    finding = _check_tracked_ignored(repo)
+    assert finding is not None
+    assert set(finding.files) == {"repo.log", "nested/drop.txt"}

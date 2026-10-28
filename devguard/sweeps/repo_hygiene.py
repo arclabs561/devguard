@@ -165,6 +165,11 @@ def _check_committed_generated_data(repo: Path, tracked: list[str]) -> HygieneFi
 _HARDCODED_PATH_RE = re.compile(
     r"(?:/Users/|/home/|[A-Za-z]:\\\\?Users\\\\?)([A-Za-z0-9._-]+)[/\\]"
 )
+# A web URL's path is not a local path. Keep query/fragment values and
+# surrounding text visible: they can still contain real home directories.
+_HTTP_URL_PATH_RE = re.compile(
+    r"""\bhttps?://[^/\s"'<>`\\?#]+/[^\s"'<>`\\?#(),;]*""", re.IGNORECASE
+)
 _GENERIC_HOME_NAMES = frozenset(
     {
         "runner",
@@ -219,6 +224,7 @@ def _check_hardcoded_paths(repo: Path, tracked: list[str]) -> HygieneFinding | N
         if text is None:
             continue
         for lineno, line in enumerate(text.splitlines(), 1):
+            line = _HTTP_URL_PATH_RE.sub(" ", line)
             if any(
                 m.group(1).lower() not in _GENERIC_HOME_NAMES
                 for m in _HARDCODED_PATH_RE.finditer(line)
@@ -250,8 +256,10 @@ _SECRET_LIKE_NAME_RE = re.compile(
 
 
 def _check_tracked_ignored(repo: Path) -> HygieneFinding | None:
-    """I: Tracked files that the repo's own ignore rules say should not be tracked."""
-    output = _git_output(repo, ["ls-files", "-z", "--cached", "--ignored", "--exclude-standard"])
+    """I: Tracked files matched by repository .gitignore files, not user excludes."""
+    output = _git_output(
+        repo, ["ls-files", "-z", "--cached", "--ignored", "--exclude-per-directory=.gitignore"]
+    )
     files = [p for p in output.decode("utf-8", errors="replace").split("\0") if p]
     if not files:
         return None
@@ -261,7 +269,7 @@ def _check_tracked_ignored(repo: Path) -> HygieneFinding | None:
         check="tracked_but_ignored",
         severity="medium" if secret_like else "low",
         message=(
-            f"{len(files)} tracked file(s) match the repo's ignore rules"
+            f"{len(files)} tracked file(s) match the repo's .gitignore rules"
             + (f", {len(secret_like)} with secret-like names" if secret_like else "")
             + " -- untrack them (git rm --cached) or narrow the rule."
         ),
