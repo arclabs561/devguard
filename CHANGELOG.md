@@ -6,6 +6,7 @@ Earlier history has not been reconstructed in this changelog.
 
 ### Added
 
+- Without `--spec`, the spec is found in `./devguard.spec.yaml`, then `$DEVGUARD_SPEC`, then `~/.config/devguard/devguard.spec.yaml`.
 - `docs_quality` sweep: Vale and readcost over README and `docs/` Markdown,
   through a `docs-check`-style wrapper when on PATH or the tools directly.
   Missing tools, timeouts, and a Vale with no configured styles report

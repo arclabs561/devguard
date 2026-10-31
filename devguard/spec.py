@@ -987,6 +987,34 @@ class MonitorSpec(BaseModel):
     )
 
 
+DEFAULT_SPEC_NAME = "devguard.spec.yaml"
+
+
+def resolve_spec_path(spec_file: str | Path = DEFAULT_SPEC_NAME) -> Path:
+    """Find the spec to use.
+
+    An explicit path other than the default name is used as given. Otherwise
+    the first existing of: ./devguard.spec.yaml, $DEVGUARD_SPEC, and
+    $XDG_CONFIG_HOME/devguard/devguard.spec.yaml (default ~/.config). Personal
+    settings can live outside any repository this way. Falls back to the
+    default name when none exists.
+    """
+    import os
+
+    requested = Path(spec_file).expanduser()
+    if str(spec_file) != DEFAULT_SPEC_NAME:
+        return requested
+    candidates = [requested]
+    if env := os.environ.get("DEVGUARD_SPEC"):
+        candidates.append(Path(env).expanduser())
+    config_home = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    candidates.append(config_home / "devguard" / DEFAULT_SPEC_NAME)
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return requested
+
+
 def load_spec(spec_path: Path) -> MonitorSpec:
     """Load a monitoring spec from a file."""
     import yaml  # type: ignore[import-untyped]

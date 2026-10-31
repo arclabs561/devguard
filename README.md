@@ -71,6 +71,10 @@ Create `devguard.spec.yaml` when you need to enable or tune sweeps:
 cp devguard.spec.example.yaml devguard.spec.yaml
 ```
 
+Without `--spec`, devguard uses the first of `./devguard.spec.yaml`,
+`$DEVGUARD_SPEC`, and `~/.config/devguard/devguard.spec.yaml` (honoring
+`XDG_CONFIG_HOME`), so personal settings can live outside any repository.
+
 Environment variables can be set in `.env` or exported in the shell.
 
 Secret checking scans the current Git repository by default. Set
