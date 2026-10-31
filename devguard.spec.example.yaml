@@ -100,6 +100,10 @@ sweeps:
     max_blob_mb: 5
     output: ".state/devguard/local-dev-sweep.json"
     deny_globs: []
+    # Your users/orgs. Hits in repos whose origin belongs to someone else,
+    # or whose `upstream` remote has a different owner, are reported as
+    # upstream-owned and do not change the exit code.
+    owners: []  # e.g. ["your-github-user", "your-org"]
   public_github_secrets:
     enabled: true
     owners: ["@me"]
@@ -235,6 +239,34 @@ sweeps:
     check_user_configs: true
     trusted_domains: ["localhost", "127.0.0.1"]
     output: ".state/devguard/mcp-security-audit.json"
+  # Vale + readcost over README.md and docs/**/*.md. Findings are advisory;
+  # a missing tool, timeout, or unconfigured Vale exits 3 (incomplete coverage).
+  docs_quality:
+    enabled: false
+    max_depth: 2
+    repo_names: []
+    include_changelog: false
+    engine: "auto"  # auto | wrapper | direct
+    wrapper: "docs-check"
+    timeout_s: 120
+    output: ".state/devguard/docs-quality.json"
+  # Leaked coordination or private context in public commit messages (and,
+  # optionally, PR/issue text via gh). Keep private names in this untracked file.
+  public_text_leak:
+    enabled: false
+    owners: []  # empty: owners of the local repos' origin remotes
+    since_days: 30
+    include_prs: false
+    include_issues: false
+    patterns: null  # null keeps the built-in default list
+    private_names: []  # e.g. ["my-private-repo", "my-tailnet.ts.net"]
+    allow_patterns: []
+    output: ".state/devguard/public-text-leak.json"
+  # Static checks on .github/workflows/publish*.yml and release*.yml.
+  publish_workflow_audit:
+    enabled: true
+    max_depth: 2
+    output: ".state/devguard/publish-workflow-audit.json"
   # SSH key hygiene: weak algorithms, missing passphrases, stale GitHub keys.
   ssh_key_audit:
     enabled: true

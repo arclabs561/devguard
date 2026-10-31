@@ -84,6 +84,8 @@ Sweeps that need external access:
 | `ssh_key_audit` with `check_github: true` | `GITHUB_TOKEN` |
 | `dependency_audit` | `npm`, `pip-audit`, or `cargo-audit`, depending on repo type |
 | `project_flaudit` | `OPENROUTER_API_KEY` |
+| `docs_quality` | Vale and readcost, or a wrapper with the same `--json` output |
+| `public_text_leak` | `gh` (repo visibility; PR and issue text when enabled) |
 
 ## Sweeps
 
@@ -106,12 +108,24 @@ Sweeps that need external access:
 | `publish_audit` | PyPI and npm publish metadata and trusted-publishing setup |
 | `pre_commit_audit` | Missing or incomplete secret-scanning pre-commit hooks |
 | `project_flaudit` | LLM-assisted repo audit |
+| `docs_quality` | Vale and readcost findings in README and `docs/` Markdown (advisory; missing tools or timeouts exit 3) |
+| `public_text_leak` | Coordination vocabulary and configured private names in recent public commit messages, PR bodies, and comments |
+| `publish_workflow_audit` | Publish/release workflows: tag push without credentials, MSRV pins missing from publish, semver checks over platform-only features, unpinned action refs |
 | `repo_lint` | Rust workspace hygiene: own-crate pin drift, README version lines, Cargo metadata, CI gaps (off by default, never changes the exit code) |
 
 The missing-pattern check in `gitignore_audit` is a pattern-presence heuristic.
 It combines global and repository ignore patterns without evaluating Git’s rule
 ordering or negation semantics. Zero gaps does not establish that files are
 effectively excluded; a later negation can re-include an otherwise matched path.
+
+`sweep-dev` and `local_dev` mark hits in forks as upstream-owned: a repo whose
+`upstream` remote has a different owner than `origin`, or, when
+`sweeps.local_dev.owners` (or `sweep-dev --owner`, repeatable) is set, whose `origin`
+belongs to another owner. Those hits stay in the report but do not change the
+exit code; pass `--include-upstream` to count them.
+
+Private names for `public_text_leak` (private repo names, internal hostnames)
+belong in your untracked `devguard.spec.yaml`, not in this repository.
 
 ## Pre-commit Hooks
 

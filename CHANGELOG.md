@@ -4,6 +4,25 @@ Earlier history has not been reconstructed in this changelog.
 
 ## [Unreleased]
 
+### Added
+
+- `docs_quality` sweep: Vale and readcost over README and `docs/` Markdown,
+  through a `docs-check`-style wrapper when on PATH or the tools directly.
+  Missing tools, timeouts, and a Vale with no configured styles report
+  incomplete coverage (exit 3). `doctor` lists both tools.
+- `public_text_leak` sweep: coordination vocabulary and configured private
+  names in recent commit messages of public GitHub repos, and optionally PR
+  and issue bodies and comments via `gh`. The `Claude-Session:` attribution
+  trailer and a trailing session URL in a PR body are allowed.
+- `publish_workflow_audit` sweep: `git push` after a checkout with
+  `persist-credentials: false`, MSRV `cargo update --precise` pins in `ci.yml`
+  missing from publish, `cargo-semver-checks-action` without a feature group
+  in crates with platform-only features, and unpinned action refs in repos
+  that pin SHAs elsewhere.
+- `sweep-dev --owner` and `sweeps.local_dev.owners`: hits in forks are marked
+  upstream-owned and no longer count toward the exit code
+  (`--include-upstream` restores the old behavior).
+
 ### Fixed
 
 - Detect mixed-case tracked root `CLAUDE.md` filenames, including when a

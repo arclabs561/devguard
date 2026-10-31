@@ -20,7 +20,7 @@ import re
 import stat
 import subprocess
 from collections.abc import Iterable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 from devguard.sweeps._common import utc_now
@@ -93,6 +93,39 @@ class Hit:
     file_path: str
     reason: str
     size_bytes: int | None = None
+    # True when the repo is a fork whose content is owned upstream; such hits
+    # are reported separately and are not actionable by default.
+    upstream_owned: bool = False
+
+
+_REMOTE_OWNER_RE = re.compile(r"[:/](?P<owner>[^/:]+)/[^/]+?(?:\.git)?/?$")
+
+
+def _remote_owner(repo: Path, remote: str) -> str | None:
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo), "remote", "get-url", remote],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    m = _REMOTE_OWNER_RE.search(proc.stdout.strip())
+    return m["owner"].lower() if m else None
+
+
+def is_upstream_owned(repo: Path, owners: list[str] | None = None) -> bool:
+    """A fork: an `upstream` remote whose owner differs from the push remote's
+    (`origin`, else `fork`), or a push remote outside the configured owners."""
+    own = _remote_owner(repo, "origin") or _remote_owner(repo, "fork")
+    upstream = _remote_owner(repo, "upstream")
+    if upstream and own and upstream != own:
+        return True
+    return bool(owners and own and own not in {o.lower() for o in owners})
 
 
 def _matches_any(path: str, globs: list[str]) -> str | None:
@@ -270,8 +303,11 @@ def sweep_dev_repos(
     deny_globs: list[str] | None = None,
     max_blob_bytes: int = 5 * 1024 * 1024,
     max_depth: int = 2,
+    owners: list[str] | None = None,
 ) -> tuple[list[Hit], dict]:
     """Sweep discovered git repos under dev_root.
+
+    Hits in forks (see is_upstream_owned) carry upstream_owned=True.
 
     Returns:
         (hits, metadata) where metadata is a small dict safe to serialize.
@@ -344,6 +380,12 @@ def sweep_dev_repos(
                     )
                 )
 
+    upstream_repos = sorted(
+        r for r in {h.repo_path for h in hits} if is_upstream_owned(Path(r), owners)
+    )
+    if upstream_repos:
+        hits = [replace(h, upstream_owned=h.repo_path in upstream_repos) for h in hits]
+
     meta = {
         "generated_at": utc_now(),
         "dev_root": str(dev_root.expanduser()),
@@ -351,6 +393,10 @@ def sweep_dev_repos(
         "max_depth": max_depth,
         "max_blob_bytes": max_blob_bytes,
         "deny_globs": globs,
+        "owners": owners or [],
+        "upstream_owned_repos": upstream_repos,
+        "actionable_hits": sum(1 for h in hits if not h.upstream_owned),
+        "upstream_owned_hits": sum(1 for h in hits if h.upstream_owned),
     }
     return hits, meta
 
