@@ -7,15 +7,18 @@ credential files, and AI editor configs. It reports findings as text, JSON, or
 SARIF.
 
 ```text
-$ devguard sweep
-local_dev:                    142 repos scanned, 0 findings
-public_github_secrets:        18 repos scanned, 0 findings
-local_dirty_worktree_secrets: 47 repos scanned, 0 findings
-gitignore_audit:              3 repos with gaps
-dependency_audit:             12 vulns across 5 repos
-ssh_key_audit:                1 weak key, 2 stale GitHub keys
-ai_editor_config_audit:       47 repos checked, 2 errors
+$ devguard sweep --repo . --only local_dev --only gitignore_audit
+local_dev report: ~/.local/state/devguard/local-dev-sweep.json
+Repos scanned: 1
+Findings: 0
+gitignore_audit report: ~/.local/state/devguard/gitignore-audit.json
+Repos scanned: 1
+Repos without .gitignore: 0
+Public repos with gaps: 1
+Total gaps: 1
 ```
+
+Each sweep with findings also prints a table of them.
 
 ## Install
 
@@ -57,9 +60,22 @@ Scan one repo:
 devguard sweep --repo /path/to/repo
 devguard sweep --repo https://github.com/owner/repo --format json
 
-# Explicit nested dependency scope; repeat --package-root for another package
-devguard sweep --repo /path/to/infra --only dependency_audit --package-root iac/pulumi/arclabs-cluster --format json
+# Audit one nested package; repeat --package-root for another
+devguard sweep --repo /path/to/repo --only dependency_audit --package-root services/api --format json
 ```
+
+`--package-root` requires a local `--repo` and exactly
+`--only dependency_audit`, and paths must stay inside the repository. npm
+requires `package-lock.json`, Cargo requires `Cargo.lock`, and Python requires
+a fully pinned `requirements.txt` (audited with
+`pip-audit --no-deps --disable-pip --strict`, so include transitive
+dependencies in the export if you need them covered). Repositories with only
+`uv.lock` or `poetry.lock` report an unsupported-input error. Audit tools may
+contact their advisory services; this mode never installs or fixes packages.
+The JSON report records the resolved scope, engine coverage, and SHA-256 input
+hashes before and after the audit; changed inputs or incomplete engine coverage
+produce an unknown result. Tool failures and invalid output exit 2; missing
+tools are reported as skipped.
 
 ## Configuration
 
@@ -157,27 +173,6 @@ instead of hiding it behind a bare pragma.
     - id: devguard-gitignore
     - id: devguard-secrets
 ```
-
-Explicit `--package-root` requires a local `--repo` and exactly
-`--only dependency_audit`. Paths must stay inside the repository; unsupported
-inputs fail before auditing. npm requires `package-lock.json`, Cargo requires
-`Cargo.lock`, and Python requires pinned `requirements.txt`. Audit tools may
-contact their advisory services; this mode never installs or fixes packages.
-The local JSON report includes schema version 1, requested/resolved scope,
-engine coverage, timestamps, SHA-256 input hashes before/after, and omitted-row
-counts. Changed inputs or incomplete engine coverage produce an unknown result.
-No webhook or email reporter is used. Findings and audit failures retain the
-existing nonzero exit behavior; this is dependency evidence, not host or cluster
-security certification.
-
-Python dependency auditing requires a fully pinned `requirements.txt` export. It
-uses `pip-audit --no-deps --disable-pip --strict -r requirements.txt`, auditing
-only declared inputs without invoking pip or inspecting the host environment.
-Include transitive dependencies in the export when that coverage is needed;
-Devguard does not infer completeness. Repositories with only `uv.lock` or
-`poetry.lock` report an unsupported-input error. Tool failures, invalid output,
-and skipped dependencies produce audit errors (CLI exit 2); missing tools remain
-reported as skipped.
 
 ## Library Usage
 
