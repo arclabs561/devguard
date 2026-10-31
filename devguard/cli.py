@@ -766,7 +766,9 @@ def discover(
     diagnostics = Console(stderr=True) if json_output else console
 
     # Load spec
-    spec_path = Path(spec_file)
+    from devguard.spec import resolve_spec_path
+
+    spec_path = resolve_spec_path(spec_file)
     if spec_path.exists():
         try:
             spec = load_spec(spec_path)
@@ -1041,11 +1043,14 @@ def sweep_dev(
 
     root = Path(dev_root).expanduser() if dev_root else default_dev_root()
     report_path = Path(output).expanduser()
-    if not owner and Path(spec_file).is_file():
+    from devguard.spec import resolve_spec_path
+
+    resolved_spec = resolve_spec_path(spec_file)
+    if not owner and resolved_spec.is_file():
         from devguard.spec import load_spec
 
         try:
-            owner = load_spec(Path(spec_file)).sweeps.local_dev.owners
+            owner = load_spec(resolved_spec).sweeps.local_dev.owners
         except Exception:
             Console(stderr=True).print("Invalid spec; ignoring it for --owner", markup=False)
 
@@ -1237,10 +1242,13 @@ def _sweep_body(
         root = dev_root or spec_dev_root
         return Path(root).expanduser() if root else default_dev_root()
 
-    spec_path = Path(spec_file)
+    from devguard.spec import resolve_spec_path
+
+    spec_path = resolve_spec_path(spec_file)
     if not spec_path.exists():
         stderr_console.print(
-            "No spec file found; using defaults. Create devguard.spec.yaml to customize."
+            "No spec file found; using defaults. Create devguard.spec.yaml here, set"
+            " DEVGUARD_SPEC, or use ~/.config/devguard/devguard.spec.yaml."
         )
         spec = MonitorSpec(
             name="default",
