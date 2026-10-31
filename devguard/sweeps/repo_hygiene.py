@@ -666,6 +666,69 @@ def _check_public_text_patterns(
     )
 
 
+def _check_crate_level_test_gates(repo: Path) -> HygieneFinding | None:
+    """Flag Rust test files gated at crate level with `#![cfg(all(...))]`.
+
+    Such a gate compiles the whole file to zero tests when any listed feature is
+    off, so `cargo test` reports success having run nothing.
+    """
+    tests_dir = repo / "tests"
+    if not tests_dir.is_dir():
+        return None
+    offenders: list[str] = []
+    for path in sorted(tests_dir.rglob("*.rs")):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        head = "\n".join(text.splitlines()[:20])
+        if "#![cfg(all(" in head.replace(" ", ""):
+            offenders.append(str(path.relative_to(repo)))
+    if not offenders:
+        return None
+    return HygieneFinding(
+        repo_path=str(repo),
+        check="crate_level_test_gate",
+        severity="medium",
+        message=(
+            f"{len(offenders)} test file(s) gated with #![cfg(all(...))]: "
+            "they compile to zero tests under a partial feature set"
+        ),
+        files=offenders[:10],
+    )
+
+
+def _check_ignored_tests_without_reason(repo: Path, tracked: list[str]) -> HygieneFinding | None:
+    """Flag `#[ignore]` without a reason string.
+
+    A bare `#[ignore]` removes a test from the suite with no explanation and no
+    way to tell a queued row from an abandoned one.
+    """
+    offenders: list[str] = []
+    for rel in tracked:
+        if not rel.endswith(".rs"):
+            continue
+        path = repo / rel
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped in ("#[ignore]", "#[ignore =]"):
+                offenders.append(rel)
+                break
+    if not offenders:
+        return None
+    return HygieneFinding(
+        repo_path=str(repo),
+        check="ignored_test_without_reason",
+        severity="low",
+        message=f"{len(offenders)} file(s) carry a bare #[ignore] with no reason",
+        files=offenders[:10],
+    )
+
+
 def _check_stale_rename_refs(repo: Path, tracked: list[str]) -> HygieneFinding | None:
     """G: Cargo.toml name differs from directory name; old name still appears as env var prefix."""
     cargo = repo / "Cargo.toml"
@@ -995,6 +1058,8 @@ def sweep_repo_hygiene(
                 text_file_globs,
             ),
             lambda r: _check_stale_rename_refs(r, tracked),
+            lambda r: _check_crate_level_test_gates(r),
+            lambda r: _check_ignored_tests_without_reason(r, tracked),
             lambda r: _check_unused_workspace_deps(r),
             lambda r: _check_tracked_ignored(r),
             lambda r: _check_local_path_deps(r, tracked),
