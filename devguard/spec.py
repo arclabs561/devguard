@@ -48,6 +48,13 @@ class LocalDevSweepSpec(BaseModel):
         default_factory=list,
         description="Additional deny globs (appended to devguard defaults).",
     )
+    owners: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Your users/orgs on any git host. Repos whose origin belongs to another owner, or "
+            "whose upstream remote differs from origin, are reported as upstream-owned."
+        ),
+    )
 
 
 class LocalDirtyWorktreeSecretsSweepSpec(BaseModel):
@@ -707,6 +714,131 @@ class RepoHygieneSweepSpec(BaseModel):
     )
 
 
+_DEFAULT_EXCLUDE_REPO_GLOBS = [
+    "*/_trash/*",
+    "*/_scratch/*",
+    "*/_external/*",
+    "*/_archive/*",
+    "*/_forks/*",
+]
+
+
+class DocsQualitySweepSpec(BaseModel):
+    """Run Vale and readcost over Markdown docs. Findings are advisory.
+
+    Missing tools, timeouts, and unreadable output are reported as incomplete
+    coverage (exit 3), never as a clean pass.
+    """
+
+    enabled: bool = Field(False, description="Whether this sweep is enabled (off by default)")
+    dev_root: str | None = Field(
+        None,
+        description="Workspace root. Default: $DEV_DIR or current directory when unset.",
+    )
+    max_depth: int = Field(2, description="How deep under dev_root to look for git repos.")
+    exclude_repo_globs: list[str] = Field(
+        default_factory=lambda: list(_DEFAULT_EXCLUDE_REPO_GLOBS),
+        description="Glob patterns to exclude repos from the sweep.",
+    )
+    repo_names: list[str] = Field(
+        default_factory=list,
+        description="Only check repos whose directory name is listed (empty = all).",
+    )
+    include_changelog: bool = Field(False, description="Also check CHANGELOG.md.")
+    max_files_per_repo: int = Field(20, description="Bound on Markdown files checked per repo.")
+    engine: str = Field(
+        "auto",
+        description=(
+            "auto (wrapper when on PATH, else direct), wrapper, or direct "
+            "(vale --output=JSON and readcost check --output json)."
+        ),
+    )
+    wrapper: str = Field(
+        "docs-check",
+        description="Wrapper command that accepts files and --json (docs-check output shape).",
+    )
+    timeout_s: int = Field(120, description="Per-repo, per-tool timeout in seconds.")
+    max_concurrency: int = Field(2, description="Repos checked in parallel.")
+    output: str = Field(
+        ".state/devguard/docs-quality.json",
+        description="Where to write the JSON report.",
+    )
+
+
+class PublicTextLeakSweepSpec(BaseModel):
+    """Scan public-repo commit messages and optional PR/issue text for leaked context."""
+
+    enabled: bool = Field(False, description="Whether this sweep is enabled (off by default)")
+    dev_root: str | None = Field(
+        None,
+        description="Workspace root. Default: $DEV_DIR or current directory when unset.",
+    )
+    max_depth: int = Field(2, description="How deep under dev_root to look for git repos.")
+    exclude_repo_globs: list[str] = Field(
+        default_factory=lambda: list(_DEFAULT_EXCLUDE_REPO_GLOBS),
+        description="Glob patterns to exclude repos from the sweep.",
+    )
+    owners: list[str] = Field(
+        default_factory=list,
+        description=(
+            "GitHub owners whose public repo list decides visibility. "
+            "Empty: owners of the local repos' origin remotes."
+        ),
+    )
+    since_days: int = Field(30, description="Commit and PR window in days.")
+    max_commits_per_repo: int = Field(500, description="Bound on commits read per repo.")
+    include_prs: bool = Field(False, description="Also scan PR bodies and PR comments via gh.")
+    include_issues: bool = Field(False, description="Also scan issue bodies and comments via gh.")
+    max_prs_per_repo: int = Field(50, description="Bound on PRs/issues fetched per repo.")
+    patterns: list[str] | None = Field(
+        None,
+        description="Regexes that flag leaked context. None uses the built-in default list.",
+    )
+    private_names: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Literal names (private repos, hostnames, tailnet names) that must not appear "
+            "in public text. Set these in your untracked devguard.spec.yaml."
+        ),
+    )
+    private_names_env: str | None = Field(
+        None,
+        description="Optional environment variable with comma/newline-separated private names.",
+    )
+    allow_patterns: list[str] = Field(
+        default_factory=list,
+        description="Regexes for lines that are allowed even when a pattern matches.",
+    )
+    timeout_s: int = Field(60, description="Per-command timeout in seconds.")
+    output: str = Field(
+        ".state/devguard/public-text-leak.json",
+        description="Where to write the JSON report.",
+    )
+
+
+class PublishWorkflowAuditSweepSpec(BaseModel):
+    """Static checks on publish and release GitHub Actions workflows."""
+
+    enabled: bool = Field(True, description="Whether this sweep is enabled")
+    dev_root: str | None = Field(
+        None,
+        description="Workspace root. Default: $DEV_DIR or current directory when unset.",
+    )
+    max_depth: int = Field(2, description="How deep under dev_root to look for git repos.")
+    exclude_repo_globs: list[str] = Field(
+        default_factory=lambda: list(_DEFAULT_EXCLUDE_REPO_GLOBS),
+        description="Glob patterns to exclude repos from the sweep.",
+    )
+    workflow_globs: list[str] = Field(
+        default_factory=lambda: ["publish*.yml", "publish*.yaml", "release*.yml", "release*.yaml"],
+        description="File name globs under .github/workflows treated as publish workflows.",
+    )
+    output: str = Field(
+        ".state/devguard/publish-workflow-audit.json",
+        description="Where to write the JSON report.",
+    )
+
+
 class MCPSecurityAuditSweepSpec(BaseModel):
     """Deep MCP config security scanning.
 
@@ -818,6 +950,18 @@ class SweepSpec(BaseModel):
     repo_hygiene: RepoHygieneSweepSpec = Field(
         default_factory=lambda: RepoHygieneSweepSpec.model_validate({}),
         description="Structural hygiene sweep (scattered docs, committed data, stale renames, etc.)",
+    )
+    docs_quality: DocsQualitySweepSpec = Field(
+        default_factory=lambda: DocsQualitySweepSpec.model_validate({}),
+        description="Vale and readcost over Markdown docs (advisory)",
+    )
+    public_text_leak: PublicTextLeakSweepSpec = Field(
+        default_factory=lambda: PublicTextLeakSweepSpec.model_validate({}),
+        description="Leaked coordination or private context in public commit and PR text",
+    )
+    publish_workflow_audit: PublishWorkflowAuditSweepSpec = Field(
+        default_factory=lambda: PublishWorkflowAuditSweepSpec.model_validate({}),
+        description="Static checks on publish and release workflows",
     )
 
 

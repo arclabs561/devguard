@@ -238,11 +238,11 @@ def _print_cargo_publish_audit_table(report: dict) -> None:
     console.print(table)
 
 
-def _print_repo_hygiene_table(report: dict) -> None:
+def _print_repo_hygiene_table(report: dict, title: str = "repo_hygiene findings") -> None:
     repos = [r for r in report.get("repos", []) if r.get("findings")]
     if not repos:
         return
-    table = Table(title="repo_hygiene findings", title_style="bold")
+    table = Table(title=title, title_style="bold")
     table.add_column("repo_name", style="cyan")
     table.add_column("check")
     table.add_column("severity")
@@ -1020,6 +1020,20 @@ def sweep_dev(
         "--max-depth",
         help="How deep under dev_root to look for git repos (bounded).",
     ),
+    owner: list[str] = typer.Option(
+        None,
+        "--owner",
+        help="Your user/org (repeatable; default: sweeps.local_dev.owners in the spec). "
+        "Hits in repos owned elsewhere are reported as upstream-owned.",
+    ),
+    spec_file: str = typer.Option(
+        "devguard.spec.yaml", "--spec", "-s", help="Optional spec file (read for owner)."
+    ),
+    include_upstream: bool = typer.Option(
+        False,
+        "--include-upstream",
+        help="Count upstream-owned hits as actionable (exit 2).",
+    ),
 ) -> None:
     """Sweep local dev repos for likely accidental committed artifacts."""
     from devguard.sweeps import default_dev_root
@@ -1027,20 +1041,36 @@ def sweep_dev(
 
     root = Path(dev_root).expanduser() if dev_root else default_dev_root()
     report_path = Path(output).expanduser()
+    if not owner and Path(spec_file).is_file():
+        from devguard.spec import load_spec
+
+        try:
+            owner = load_spec(Path(spec_file)).sweeps.local_dev.owners
+        except Exception:
+            Console(stderr=True).print("Invalid spec; ignoring it for --owner", markup=False)
 
     hits, meta = sweep_dev_repos(
         root,
         max_blob_bytes=max_blob_mb * 1024 * 1024,
         max_depth=max_depth,
+        owners=owner or None,
     )
     write_report(report_path, hits, meta)
+    actionable = [h for h in hits if include_upstream or not h.upstream_owned]
+    upstream = [h for h in hits if h.upstream_owned]
 
     console.print(f"[bold]Wrote report:[/bold] {report_path}")
     console.print(f"[bold]Repos scanned:[/bold] {meta['repos_scanned']}")
-    console.print(f"[bold]Findings:[/bold] {len(hits)}")
-    _print_local_dev_table(hits)
+    console.print(f"[bold]Findings:[/bold] {len(actionable)}")
+    _print_local_dev_table(actionable)
+    if upstream and not include_upstream:
+        console.print(
+            f"[dim]Upstream-owned (not counted): {len(upstream)} hits in "
+            f"{len(meta['upstream_owned_repos'])} fork(s): "
+            f"{', '.join(Path(r).name for r in meta['upstream_owned_repos'][:10])}[/dim]"
+        )
 
-    if hits:
+    if actionable:
         console.print(
             "[bold yellow]Action:[/bold yellow] Review report and clean up flagged files."
         )
@@ -1109,7 +1139,7 @@ def sweep(
     only: list[str] = typer.Option(
         None,
         "--only",
-        help="Run only these sweeps (repeatable). Known: local_dev, public_github_secrets, local_dirty_worktree_secrets, local_history_secrets, exec_config_audit, repo_lint, project_flaudit, gitignore_audit, repo_hygiene, dependency_audit, ssh_key_audit, cargo_publish_audit, ai_editor_config_audit, publish_audit, pre_commit_audit, git_identity_audit, credential_file_audit, mcp_security_audit",
+        help="Run only these sweeps (repeatable). Known: local_dev, public_github_secrets, local_dirty_worktree_secrets, local_history_secrets, exec_config_audit, repo_lint, project_flaudit, gitignore_audit, repo_hygiene, dependency_audit, ssh_key_audit, cargo_publish_audit, ai_editor_config_audit, publish_audit, pre_commit_audit, git_identity_audit, credential_file_audit, mcp_security_audit, docs_quality, public_text_leak, publish_workflow_audit",
     ),
     format: str = typer.Option(
         "text",
@@ -1261,7 +1291,9 @@ def _sweep_body(
             deny_globs=deny,
             max_blob_bytes=local.max_blob_mb * 1024 * 1024,
             max_depth=local.max_depth,
+            owners=local.owners or None,
         )
+        actionable = [h for h in hits if not h.upstream_owned]
         out_path = Path(local.output).expanduser()
         from devguard.sweeps.local_dev import write_report
 
@@ -1278,9 +1310,13 @@ def _sweep_body(
         else:
             console.print(f"[bold]local_dev report:[/bold] {out_path}")
             console.print(f"[bold]Repos scanned:[/bold] {meta['repos_scanned']}")
-            console.print(f"[bold]Findings:[/bold] {len(hits)}")
-            _print_local_dev_table(hits)
-        if hits:
+            console.print(f"[bold]Findings:[/bold] {len(actionable)}")
+            _print_local_dev_table(actionable)
+            if len(hits) > len(actionable):
+                console.print(
+                    f"[dim]Upstream-owned (not counted): {len(hits) - len(actionable)}[/dim]"
+                )
+        if actionable:
             exit_code = max(exit_code, 2)
 
     # public-github-secrets sweep (remote-scoped, skip in single-repo mode)
@@ -1896,6 +1932,114 @@ def _sweep_body(
         if report["summary"]["total_errors"] > 0:
             exit_code = max(exit_code, 2)
 
+    # docs quality sweep (Vale + readcost; findings advisory, gaps exit 3)
+    dq = spec.sweeps.docs_quality
+    if (dq.enabled and not wanted) or "docs_quality" in wanted:
+        from devguard.sweeps.docs_quality import audit_docs_quality
+        from devguard.sweeps.docs_quality import write_report as write_dq
+
+        try:
+            report, errors = audit_docs_quality(
+                dev_root=_resolve_root(dq.dev_root),
+                max_depth=dq.max_depth,
+                exclude_repo_globs=dq.exclude_repo_globs,
+                repo_names=dq.repo_names or None,
+                include_changelog=dq.include_changelog,
+                max_files_per_repo=dq.max_files_per_repo,
+                engine=dq.engine,
+                wrapper=dq.wrapper,
+                timeout_s=dq.timeout_s,
+                max_concurrency=dq.max_concurrency,
+            )
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from None
+        out_path = Path(dq.output).expanduser()
+        write_dq(out_path, report)
+        if machine_output:
+            sweep_reports.append(("docs_quality", report))
+        else:
+            summary = report["summary"]
+            console.print(f"[bold]docs_quality report:[/bold] {out_path}")
+            console.print(
+                f"[bold]Engine:[/bold] {report['scope']['engine']}  "
+                f"[bold]Files checked:[/bold] {summary['files_checked']}"
+            )
+            console.print(f"[bold]Advisory findings:[/bold] {summary['total_findings']}")
+            if errors:
+                console.print(
+                    f"[yellow]Incomplete coverage:[/yellow] {summary['incomplete_repos']} repo(s),"
+                    f" {len(errors)} gap(s) (see report)"
+                )
+            _print_repo_hygiene_table(report, "docs_quality findings")
+        if errors:
+            exit_code = max(exit_code, 3)
+
+    # public text leak sweep (commit messages; optional PR/issue text via gh)
+    ptl = spec.sweeps.public_text_leak
+    if (ptl.enabled and not wanted) or "public_text_leak" in wanted:
+        from devguard.sweeps.public_text_leak import scan_public_text_leaks
+        from devguard.sweeps.public_text_leak import write_report as write_ptl
+
+        report, errors = scan_public_text_leaks(
+            dev_root=_resolve_root(ptl.dev_root),
+            max_depth=ptl.max_depth,
+            exclude_repo_globs=ptl.exclude_repo_globs,
+            owners=ptl.owners or None,
+            since_days=ptl.since_days,
+            max_commits_per_repo=ptl.max_commits_per_repo,
+            include_prs=ptl.include_prs,
+            include_issues=ptl.include_issues,
+            max_prs_per_repo=ptl.max_prs_per_repo,
+            patterns=ptl.patterns,
+            private_names=ptl.private_names,
+            private_names_env=ptl.private_names_env,
+            allow_patterns=ptl.allow_patterns,
+            timeout_s=ptl.timeout_s,
+        )
+        out_path = Path(ptl.output).expanduser()
+        write_ptl(out_path, report)
+        if machine_output:
+            sweep_reports.append(("public_text_leak", report))
+        else:
+            console.print(f"[bold]public_text_leak report:[/bold] {out_path}")
+            console.print(
+                f"[bold]Public repos scanned:[/bold] {report['scope']['public_repos_scanned']}"
+            )
+            console.print(f"[bold]Findings:[/bold] {report['summary']['total_findings']}")
+            if errors:
+                console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+            _print_repo_hygiene_table(report, "public_text_leak findings")
+        if report["summary"]["total_findings"] > 0:
+            exit_code = max(exit_code, 2)
+        if errors:
+            exit_code = max(exit_code, 3)
+
+    # publish workflow audit sweep
+    pwa = spec.sweeps.publish_workflow_audit
+    if (pwa.enabled and not wanted) or "publish_workflow_audit" in wanted:
+        from devguard.sweeps.publish_workflow_audit import audit_publish_workflows
+        from devguard.sweeps.publish_workflow_audit import write_report as write_pwa
+
+        report, errors = audit_publish_workflows(
+            dev_root=_resolve_root(pwa.dev_root),
+            max_depth=pwa.max_depth,
+            exclude_repo_globs=pwa.exclude_repo_globs,
+            workflow_globs=pwa.workflow_globs,
+        )
+        out_path = Path(pwa.output).expanduser()
+        write_pwa(out_path, report)
+        if machine_output:
+            sweep_reports.append(("publish_workflow_audit", report))
+        else:
+            console.print(f"[bold]publish_workflow_audit report:[/bold] {out_path}")
+            console.print(f"[bold]Repos scanned:[/bold] {report['scope']['repos_scanned']}")
+            console.print(f"[bold]Findings:[/bold] {report['summary']['total_findings']}")
+            if errors:
+                console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
+            _print_repo_hygiene_table(report, "publish_workflow_audit findings")
+        if report["summary"]["total_errors"] > 0:
+            exit_code = max(exit_code, 2)
+
     any_enabled = (
         local.enabled
         or pub.enabled
@@ -1912,6 +2056,9 @@ def _sweep_body(
         or spec.sweeps.credential_file_audit.enabled
         or spec.sweeps.mcp_security_audit.enabled
         or spec.sweeps.repo_hygiene.enabled
+        or spec.sweeps.docs_quality.enabled
+        or spec.sweeps.public_text_leak.enabled
+        or spec.sweeps.publish_workflow_audit.enabled
     )
     if not wanted and not any_enabled:
         if not machine_output:
@@ -1986,6 +2133,16 @@ def doctor() -> None:
             "git",
             "most sweeps",
             "brew install git",
+        ),
+        (
+            "vale",
+            "docs_quality",
+            "brew install vale",
+        ),
+        (
+            "readcost",
+            "docs_quality",
+            "install readcost and run `readcost setup`",
         ),
     ]
 
