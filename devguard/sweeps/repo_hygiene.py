@@ -1071,6 +1071,47 @@ def _check_ignored_tests_without_reason(repo: Path, tracked: list[str]) -> Hygie
 _FEATURE_SCAN_MAX_BYTES = 512 * 1024
 _FEATURE_SCAN_MAX_FILES = 400
 _FEATURE_FINDING_CAP = 20
+
+# A finding can be silenced at its source, but only with a stated reason. The
+# reason is what separates "this is intentional" from "the author did not look":
+# suppressing without one is not honoured, so a wipe of the pragma re-exposes the
+# finding rather than hiding it behind an empty annotation.
+_ALLOW_PRAGMA_RE = re.compile(
+    r"devguard:\s*allow(?P<scope>-file)?\s+(?P<check>[a-z_]+)(?P<rest>.*)$", re.I
+)
+_ALLOW_REASON_RE = re.compile(r"reason\s*[:=]\s*(?P<reason>[^\n]*?)\s*(?:-->|\*/|$)", re.I)
+_ALLOW_LINE_WINDOW = 6
+
+
+def _allow_ranges(text: str) -> dict[str, list[tuple[int, int]]]:
+    """Line ranges (0-based, inclusive) each check may ignore in *text*.
+
+    `devguard: allow <check> reason: ...` covers the lines that follow it, so a
+    note above one stale command excuses that command and nothing else.
+    `devguard: allow-file <check> reason: ...` covers the whole file, for a
+    document that is historical end to end. Both require a reason: an annotation
+    without one is ignored, so deleting the reason re-exposes the finding instead
+    of hiding it behind a bare pragma.
+    """
+    out: dict[str, list[tuple[int, int]]] = {}
+    lines = text.splitlines()
+    for idx, line in enumerate(lines):
+        match = _ALLOW_PRAGMA_RE.search(line)
+        if match is None:
+            continue
+        reason = _ALLOW_REASON_RE.search(match.group("rest") or "")
+        if reason is None or not reason.group("reason").strip():
+            continue
+        check = match.group("check").lower()
+        if match.group("scope"):
+            out.setdefault(check, []).append((0, len(lines)))
+        else:
+            out.setdefault(check, []).append((idx, idx + _ALLOW_LINE_WINDOW))
+    return out
+
+
+def _allowed(ranges: dict[str, list[tuple[int, int]]], check: str, lineno: int) -> bool:
+    return any(start <= lineno <= end for start, end in ranges.get(check, ()))
 # A feature value that means "whatever the manifest defaults to", not a name.
 _FEATURE_VALUE_SKIP: frozenset[str] = frozenset({"default"})
 _CARGO_FEATURES_RE = re.compile(
@@ -1244,8 +1285,11 @@ def _check_unknown_features(repo: Path, tracked: list[str]) -> HygieneFinding | 
         except OSError:
             continue
         lines = text.splitlines()
+        allow = _allow_ranges(text)
         cwd: str | None = None
         for lineno, line in enumerate(lines):
+            if _allowed(allow, "feature_name_unknown", lineno):
+                continue
             stripped = line.lstrip()
             if not stripped or stripped.startswith("#") or stripped.startswith("//"):
                 continue
@@ -1421,10 +1465,13 @@ def _check_test_target_missing_gate(repo: Path, tracked: list[str]) -> HygieneFi
             if _FILE_CFG_RE.search(text):
                 continue
             lines = text.splitlines()
+            allow = _allow_ranges(text)
             gated_ranges = _cfg_gated_ranges(lines)
             kind = "test" if rel.startswith("tests/") else "example"
             required = _target_required_features(manifest, kind, name, rel)
             for lineno, line in enumerate(lines):
+                if _allowed(allow, "test_target_missing_gate", lineno):
+                    continue
                 stripped = line.lstrip()
                 if not stripped or stripped.startswith("//"):
                     continue
@@ -1493,7 +1540,10 @@ def _check_readme_install_version(repo: Path, tracked: list[str]) -> HygieneFind
             text = readme.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
+        allow = _allow_ranges(text)
         for lineno, line in enumerate(text.splitlines(), 1):
+            if _allowed(allow, "readme_install_version", lineno - 1):
+                continue
             match = _INSTALL_LINE_RE.match(line)
             if not match or match.group(1) != crate:
                 continue

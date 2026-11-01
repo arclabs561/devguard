@@ -578,3 +578,74 @@ def test_readme_prerelease_version_is_quiet(tmp_path: Path) -> None:
         },
     )
     assert _check_readme_install_version(repo, _git_ls_files(repo)) is None
+
+
+# --- devguard:allow pragmas --------------------------------------------------
+
+
+def _feature_manifest() -> str:
+    return '[package]\nname = "demo"\nversion = "0.1.0"\n[features]\nreal = []\n'
+
+
+def test_allow_pragma_with_reason_silences_the_line(tmp_path: Path) -> None:
+    from devguard.sweeps.repo_hygiene import _check_unknown_features
+
+    repo = _repo(
+        tmp_path / "r",
+        {
+            "Cargo.toml": _feature_manifest(),
+            "justfile": (
+                "# devguard: allow feature_name_unknown reason: historical log, kept verbatim\n"
+                "cargo test --features gone\n"
+            ),
+        },
+    )
+    assert _check_unknown_features(repo, _git_ls_files(repo)) is None
+
+
+def test_allow_pragma_without_a_reason_does_not_silence(tmp_path: Path) -> None:
+    from devguard.sweeps.repo_hygiene import _check_unknown_features
+
+    repo = _repo(
+        tmp_path / "r",
+        {
+            "Cargo.toml": _feature_manifest(),
+            "justfile": "# devguard: allow feature_name_unknown\ncargo test --features gone\n",
+        },
+    )
+    finding = _check_unknown_features(repo, _git_ls_files(repo))
+    assert finding is not None, "an unreasoned pragma must not hide the finding"
+
+
+def test_allow_file_pragma_covers_the_whole_document(tmp_path: Path) -> None:
+    from devguard.sweeps.repo_hygiene import _check_unknown_features
+
+    repo = _repo(
+        tmp_path / "r",
+        {
+            "Cargo.toml": _feature_manifest(),
+            "justfile": (
+                "# devguard: allow-file feature_name_unknown reason: historical record\n"
+                "cargo test --features gone\n" + "\n" * 10 + "cargo test --features alsoGone\n"
+            ),
+        },
+    )
+    assert _check_unknown_features(repo, _git_ls_files(repo)) is None
+
+
+def test_allow_pragma_window_is_bounded(tmp_path: Path) -> None:
+    from devguard.sweeps.repo_hygiene import _check_unknown_features
+
+    repo = _repo(
+        tmp_path / "r",
+        {
+            "Cargo.toml": _feature_manifest(),
+            "justfile": (
+                "# devguard: allow feature_name_unknown reason: one old command\n"
+                "cargo test --features gone\n" + "\n" * 10 + "cargo test --features alsoGone\n"
+            ),
+        },
+    )
+    finding = _check_unknown_features(repo, _git_ls_files(repo))
+    assert finding is not None, "a pragma six lines up must not cover this command"
+    assert any("alsoGone" in f for f in finding.files)

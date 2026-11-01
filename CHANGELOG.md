@@ -6,6 +6,10 @@ Earlier history has not been reconstructed in this changelog.
 
 ### Added
 
+- `devguard: allow <check> reason: …` and `devguard: allow-file <check> reason: …`
+  pragmas, so a finding can be excused at its source. A pragma without a reason
+  is ignored, which keeps "we looked at this" distinct from "we did not".
+
 - `repo_hygiene` `feature_name_unknown`: a `cargo --features` argument in a
   workflow, justfile, Makefile, or documented command names a feature no
   manifest in the repo defines. A renamed feature leaves every job that still

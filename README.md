@@ -131,6 +131,21 @@ exit code; pass `--include-upstream` to count them.
 Private names for `public_text_leak` (private repo names, internal hostnames)
 belong in your untracked `devguard.spec.yaml`, not in this repository.
 
+### Silencing a finding at its source
+
+A finding can be excused where it is written, but only with a stated reason:
+
+```text
+# devguard: allow feature_name_unknown reason: historical log, commands kept verbatim
+<!-- devguard: allow-file readme_install_version reason: README documents the next release -->
+```
+
+`allow` covers the lines that follow it (six), so a note above one stale command
+excuses that command and not the rest of the file; `allow-file` covers the whole
+file, for a document that is historical end to end. Both require `reason:` — an
+annotation without one is ignored, so removing the reason re-exposes the finding
+instead of hiding it behind a bare pragma.
+
 ## Pre-commit Hooks
 
 `devguard` ships `.pre-commit-hooks.yaml`:
