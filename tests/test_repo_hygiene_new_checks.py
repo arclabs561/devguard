@@ -1,4 +1,4 @@
-"""Tests for tracked-but-ignored files, personal paths, and local path deps."""
+"""Tests for tracked-but-ignored files, personal paths, local path deps, untracked build inputs."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import pytest
 from devguard.sweeps.repo_hygiene import (
     _check_hardcoded_paths,
     _check_local_path_deps,
+    _check_required_file_untracked,
     _check_tracked_ignored,
     _git_ls_files,
 )
@@ -263,3 +264,133 @@ def test_tracked_ignored_uses_only_repository_gitignore_files(tmp_path: Path, mo
     finding = _check_tracked_ignored(repo)
     assert finding is not None
     assert set(finding.files) == {"repo.log", "nested/drop.txt"}
+
+
+def test_untracked_included_header_reports_ignore_rule(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path / "r",
+        {
+            ".gitignore": "vendor/\n",
+            "tools/annoy-sys/build.rs": (
+                'fn main() {\n    cc::Build::new().include("vendor").compile("annoy");\n}\n'
+            ),
+        },
+    )
+    (repo / "tools/annoy-sys/vendor").mkdir(parents=True)
+    (repo / "tools/annoy-sys/vendor/annoylib.h").write_text("// upstream header\n")
+
+    finding = _check_required_file_untracked(repo, _git_ls_files(repo))
+
+    assert finding is not None
+    assert finding.check == "required_file_untracked"
+    assert finding.severity == "medium"
+    assert finding.files == [
+        "tools/annoy-sys/vendor/annoylib.h <- tools/annoy-sys/build.rs "
+        "(include; ignored by .gitignore:1:vendor/)"
+    ]
+
+
+def test_untracked_global_exclude_names_the_global_rule(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(
+        tmp_path / "r",
+        {".gitignore": "", "build.rs": 'fn main() { cc::Build::new().include("vendor"); }\n'},
+    )
+    (repo / "vendor").mkdir()
+    (repo / "vendor" / "x.h").write_text("// h\n")
+    excludes = tmp_path / "global-ignore"
+    excludes.write_text("vendor/\n")
+    config = tmp_path / "global-config"
+    subprocess.run(
+        ["git", "config", "--file", str(config), "core.excludesFile", str(excludes)], check=True
+    )
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+
+    finding = _check_required_file_untracked(repo, _git_ls_files(repo))
+
+    assert finding is not None
+    assert finding.severity == "medium"
+    assert finding.files == [f"vendor/x.h <- build.rs (include; ignored by {excludes}:1:vendor/)"]
+
+
+def test_untracked_include_str_and_cargo_target_path(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path / "r",
+        {
+            "Cargo.toml": (
+                '[package]\nname = "r"\nversion = "0.1.0"\n'
+                '[[bin]]\nname = "tool"\npath = "src/bin/tool.rs"\n'
+            ),
+            "src/lib.rs": 'pub const GREETING: &str = include_str!("templates/greet.txt");\n',
+        },
+    )
+    (repo / "src" / "templates").mkdir(parents=True)
+    (repo / "src" / "templates" / "greet.txt").write_text("hi\n")
+    (repo / "src" / "bin").mkdir()
+    (repo / "src" / "bin" / "tool.rs").write_text("fn main() {}\n")
+
+    finding = _check_required_file_untracked(repo, _git_ls_files(repo))
+
+    assert finding is not None
+    assert finding.severity == "low"
+    assert finding.files == [
+        "src/bin/tool.rs <- Cargo.toml (Cargo.toml path =)",
+        "src/templates/greet.txt <- src/lib.rs (include_str!/include_bytes!)",
+    ]
+
+
+def test_package_data_glob_reports_untracked_file(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path / "r",
+        {
+            "pyproject.toml": (
+                '[project]\nname = "x"\nversion = "0"\n'
+                "[tool.setuptools.package-data]\n"
+                'pkg = ["data/*.json"]\n'
+            ),
+            "pkg/__init__.py": "",
+        },
+    )
+    (repo / "pkg" / "data").mkdir()
+    (repo / "pkg" / "data" / "table.json").write_text("{}\n")
+
+    finding = _check_required_file_untracked(repo, _git_ls_files(repo))
+
+    assert finding is not None
+    assert finding.files == ["pkg/data/table.json <- pyproject.toml (package_data)"]
+
+
+def test_tracked_references_are_quiet(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path / "r",
+        {
+            ".gitignore": "vendor/\n",
+            "build.rs": 'fn main() { cc::Build::new().include("vendor"); }\n',
+            "vendor/x.h": "// h\n",
+            "Cargo.toml": (
+                '[package]\nname = "r"\nversion = "0.1.0"\n'
+                '[[bin]]\nname = "tool"\npath = "src/bin/tool.rs"\n'
+            ),
+            "src/bin/tool.rs": "fn main() {}\n",
+            "src/lib.rs": 'pub const G: &str = include_str!("../README.md");\n',
+            "README.md": "hi\n",
+        },
+    )
+
+    assert _check_required_file_untracked(repo, _git_ls_files(repo)) is None
+
+
+def test_missing_referenced_file_is_not_reported(tmp_path: Path) -> None:
+    """Only files present in the working tree can be added; absent ones are other bugs."""
+    repo = _repo(
+        tmp_path / "r",
+        {
+            "Cargo.toml": (
+                '[package]\nname = "r"\nversion = "0.1.0"\n'
+                '[[bin]]\nname = "tool"\npath = "src/bin/tool.rs"\n'
+            )
+        },
+    )
+
+    assert _check_required_file_untracked(repo, _git_ls_files(repo)) is None

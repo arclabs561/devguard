@@ -3,14 +3,18 @@
 Checks each repo for scattered doc dirs, committed generated data, hardcoded
 absolute paths in shell scripts, stale .gitkeep files, tracked editor/cache
 directories, internal documents in public repos, stale rename references,
-and declaration-only [workspace.dependencies] entries.
+declaration-only [workspace.dependencies] entries, and build inputs that exist
+on disk but are not tracked by git.
 """
 
 from __future__ import annotations
 
+import ast
+import configparser
 import fnmatch
 import json
 import os
+import posixpath
 import re
 import subprocess
 import tomllib
@@ -468,6 +472,338 @@ def _check_local_path_deps(repo: Path, tracked: list[str]) -> HygieneFinding | N
             "published package cannot resolve them."
         ),
         files=hits[:20],
+    )
+
+
+_REF_MAX_FINDINGS = 20
+_REF_MAX_CANDIDATES = 400
+_REF_DIR_MAX_FILES = 200
+_REF_SOURCE_NAMES: frozenset[str] = frozenset(
+    {"build.rs", "Cargo.toml", "pyproject.toml", "setup.py", "setup.cfg"}
+)
+# Generated trees: a reference into them is output, not an input a clone needs.
+_REF_SKIP_PARTS: frozenset[str] = frozenset(
+    {"target", "node_modules", ".venv", "venv", "dist", "build", "__pycache__", ".git", ".tox"}
+)
+_BUILD_INCLUDE_RE = re.compile(r"""\.include\s*\(\s*"([^"]+)"\s*\)""")
+_RERUN_IF_CHANGED_RE = re.compile(r"""rerun-if-changed\s*=\s*(?:"([^"]+)"|([^\s"\\]+))""")
+_INCLUDE_MACRO_RE = re.compile(r"""include_(?:str|bytes)!\s*\(\s*r?#?"([^"]+)"#?\s*\)""")
+_CARGO_PATH_RE = re.compile(r"""^\s*path\s*=\s*"([^"]+)"\s*$""", re.MULTILINE)
+# Rust doc examples quote real references; a commented-out path is not an input.
+_COMMENT_LINE_RE = re.compile(r"^\s*(?://|/\*|\*)")
+
+
+@dataclass(frozen=True)
+class _RequiredRef:
+    """One build/test input named by a tracked file."""
+
+    kind: str
+    base_dir: str
+    target: str
+
+
+def _normalize_reference(base_dir: str, target: str) -> str | None:
+    """Resolve a reference target to a repo-relative POSIX path, else None.
+
+    Absolute paths, `..` escapes, env placeholders and format strings are
+    dropped: they are not a fixed input a clone can be checked for.
+    """
+    target = target.strip()
+    if not target or "://" in target:
+        return None
+    if any(token in target for token in ("$", "{", "}", "%", "\\", "~")):
+        return None
+    if target.startswith("/") or re.match(r"^[A-Za-z]:", target):
+        return None
+    rel = posixpath.normpath(posixpath.join(base_dir, target))
+    if rel in (".", "..") or rel.startswith("../"):
+        return None
+    return rel
+
+
+def _string_list(value: Any) -> list[str]:
+    """Coerce a string or a sequence of strings into a string list."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, (list, tuple)):
+        return [item for item in value if isinstance(item, str)]
+    return []
+
+
+def _package_pattern_refs(kind: str, packages: Any) -> list[_RequiredRef]:
+    """setuptools package_data/data_files mappings: package -> patterns."""
+    if not isinstance(packages, dict):
+        return []
+    refs: list[_RequiredRef] = []
+    for pkg, patterns in packages.items():
+        if not isinstance(pkg, str):
+            continue
+        base = pkg.replace(".", "/")
+        for pattern in _string_list(patterns):
+            if pattern.strip():
+                refs.append(_RequiredRef(kind, base, pattern))
+    return refs
+
+
+def _pyproject_data_refs(text: str) -> list[_RequiredRef]:
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        return []
+    tool = data.get("tool")
+    setuptools = tool.get("setuptools") if isinstance(tool, dict) else None
+    if not isinstance(setuptools, dict):
+        return []
+    refs = _package_pattern_refs("package_data", setuptools.get("package-data"))
+    refs += _package_pattern_refs("data_files", setuptools.get("data-files"))
+    return refs
+
+
+def _setup_py_data_refs(text: str) -> list[_RequiredRef]:
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return []
+    refs: list[_RequiredRef] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        for kw in node.keywords:
+            if kw.arg not in ("data_files", "package_data"):
+                continue
+            try:
+                value = ast.literal_eval(kw.value)
+            except (ValueError, SyntaxError, TypeError):
+                continue
+            if kw.arg == "package_data":
+                refs.extend(_package_pattern_refs("package_data", value))
+                continue
+            if isinstance(value, dict):
+                entries: Any = list(value.items())
+            elif isinstance(value, (list, tuple)):
+                entries = value
+            else:
+                continue
+            for entry in entries:
+                if not isinstance(entry, (list, tuple)) or len(entry) != 2:
+                    continue
+                for pattern in _string_list(entry[1]):
+                    refs.append(_RequiredRef("data_files", "", pattern))
+    return refs
+
+
+def _setup_cfg_data_refs(text: str) -> list[_RequiredRef]:
+    parser = configparser.ConfigParser()
+    try:
+        parser.read_string(text)
+    except configparser.Error:
+        return []
+    refs: list[_RequiredRef] = []
+    for section, kind, dotted in (
+        ("options.package_data", "package_data", True),
+        ("options.data_files", "data_files", False),
+    ):
+        if not parser.has_section(section):
+            continue
+        for pkg, value in parser.items(section):
+            base = pkg.replace(".", "/") if dotted else ""
+            for pattern in (item for item in re.split(r"[\s,]+", value) if item):
+                refs.append(_RequiredRef(kind, base, pattern))
+    return refs
+
+
+def _file_references(rel: str, text: str) -> list[_RequiredRef]:
+    """Build inputs one tracked reference source names."""
+    base_dir = posixpath.dirname(rel)
+    name = posixpath.basename(rel)
+    if name.endswith(".rs"):
+        # Doc comments quote sample paths; they are not build inputs.
+        code = "\n".join(line for line in text.splitlines() if not _COMMENT_LINE_RE.match(line))
+        refs = [
+            _RequiredRef("include", base_dir, m.group(1)) for m in _BUILD_INCLUDE_RE.finditer(code)
+        ]
+        refs += [
+            _RequiredRef("rerun-if-changed", base_dir, m.group(1) or m.group(2))
+            for m in _RERUN_IF_CHANGED_RE.finditer(code)
+        ]
+        refs += [
+            _RequiredRef("include_str!/include_bytes!", base_dir, m.group(1))
+            for m in _INCLUDE_MACRO_RE.finditer(code)
+        ]
+        return refs
+    if name == "Cargo.toml":
+        return [
+            _RequiredRef("Cargo.toml path =", base_dir, m.group(1))
+            for m in _CARGO_PATH_RE.finditer(text)
+        ]
+    if name == "pyproject.toml":
+        return _pyproject_data_refs(text)
+    if name == "setup.py":
+        return _setup_py_data_refs(text)
+    if name == "setup.cfg":
+        return _setup_cfg_data_refs(text)
+    return []
+
+
+def _is_reference_source(rel: str) -> bool:
+    return rel.endswith(".rs") or posixpath.basename(rel) in _REF_SOURCE_NAMES
+
+
+def _referenced_dir_files(repo: Path, rel_dir: str) -> list[str]:
+    """Bounded list of regular files inside a referenced directory."""
+    found: list[str] = []
+    stack = [repo / rel_dir]
+    while stack and len(found) < _REF_DIR_MAX_FILES:
+        try:
+            children = sorted(stack.pop().iterdir())
+        except OSError:
+            continue
+        for child in children:
+            if child.is_symlink():
+                continue
+            if child.is_dir():
+                if child.name in _REF_SKIP_PARTS or child.name.startswith("."):
+                    continue
+                stack.append(child)
+            elif contained_file(child, repo):
+                found.append(child.relative_to(repo).as_posix())
+                if len(found) >= _REF_DIR_MAX_FILES:
+                    break
+    return sorted(found)
+
+
+def _expand_glob(repo: Path, pattern: str) -> list[str]:
+    hits: list[str] = []
+    try:
+        for path in repo.glob(pattern):
+            if len(hits) >= _REF_DIR_MAX_FILES:
+                break
+            if path.is_symlink() or not contained_file(path, repo):
+                continue
+            hits.append(path.relative_to(repo).as_posix())
+    except (ValueError, OSError):
+        return []
+    return sorted(hits)
+
+
+def _untracked_of(repo: Path, rels: list[str]) -> set[str]:
+    """Of *rels*, the ones git does not track (one batched ls-files call)."""
+    if not rels:
+        return set()
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo), "ls-files", "-z", "--error-unmatch", "--", *rels],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=60,
+        )
+    except subprocess.TimeoutExpired:
+        raise _GitInspectionError("git ls-files inspection timed out") from None
+    except OSError:
+        raise _GitInspectionError("git ls-files inspection could not run") from None
+    if proc.returncode >= 128:
+        raise _GitInspectionError(f"git ls-files inspection failed (exit {proc.returncode})")
+    matched = {p for p in proc.stdout.decode("utf-8", errors="replace").split("\0") if p}
+    return {rel for rel in rels if rel not in matched}
+
+
+def _ignore_source(repo: Path, rel: str) -> str | None:
+    """The ignore rule that would skip *rel*, as `source:line:pattern`."""
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo), "check-ignore", "-v", "--", rel],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=30,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if proc.returncode != 0:
+        return None
+    lines = proc.stdout.decode("utf-8", errors="replace").splitlines()
+    if not lines:
+        return None
+    # `git check-ignore -v` prints `<source>:<line>:<pattern>\t<path>`.
+    source, _, rest = lines[0].split("\t")[0].partition(":")
+    lineno, _, pattern = rest.partition(":")
+    home = str(Path.home())
+    if source.startswith(home + os.sep):
+        source = "~" + source[len(home) :]
+    return f"{source}:{lineno}:{pattern}"
+
+
+def _check_required_file_untracked(repo: Path, tracked: list[str]) -> HygieneFinding | None:
+    """M: Files a build script or manifest reads, present on disk but untracked.
+
+    A gitignored `vendor/` makes `git add -A` skip a header that `build.rs`
+    includes: the local build passes and every fresh clone or CI run fails.
+    References come from build scripts (`include(...)`, `rerun-if-changed`),
+    `include_str!`/`include_bytes!`, `Cargo.toml` `path =`, and setuptools
+    `data_files`/`package_data`.
+    """
+    candidates: dict[str, tuple[str, str]] = {}
+
+    def add_candidate(candidate: str, referrer: str, kind: str) -> None:
+        if len(candidates) < _REF_MAX_CANDIDATES:
+            candidates.setdefault(candidate, (referrer, kind))
+
+    for referrer in tracked:
+        if not _is_reference_source(referrer):
+            continue
+        text = _tracked_text(repo, referrer)
+        if text is None:
+            continue
+        for ref in _file_references(referrer, text):
+            rel = _normalize_reference(ref.base_dir, ref.target)
+            if rel is None or any(part in _REF_SKIP_PARTS for part in rel.split("/")):
+                continue
+            if any(ch in rel for ch in "*?["):
+                for hit in _expand_glob(repo, rel):
+                    add_candidate(hit, referrer, ref.kind)
+                continue
+            path = repo / rel
+            if path.is_dir():
+                if ref.kind == "Cargo.toml path =":
+                    # A path dependency names a manifest, not a file inside.
+                    manifest = posixpath.join(rel, "Cargo.toml")
+                    if (repo / manifest).is_file():
+                        add_candidate(manifest, referrer, ref.kind)
+                    continue
+                for hit in _referenced_dir_files(repo, rel):
+                    add_candidate(hit, referrer, ref.kind)
+            elif path.is_file():
+                add_candidate(rel, referrer, ref.kind)
+
+    untracked = _untracked_of(repo, list(candidates))
+    if not untracked:
+        return None
+
+    files: list[str] = []
+    ignored = False
+    for rel, (referrer, kind) in candidates.items():
+        if rel not in untracked:
+            continue
+        rule = _ignore_source(repo, rel)
+        if rule is not None:
+            ignored = True
+            files.append(f"{rel} <- {referrer} ({kind}; ignored by {rule})")
+        else:
+            files.append(f"{rel} <- {referrer} ({kind})")
+        if len(files) >= _REF_MAX_FINDINGS:
+            break
+
+    return HygieneFinding(
+        repo_path=str(repo),
+        check="required_file_untracked",
+        severity="medium" if ignored else "low",
+        message=(
+            f"{len(files)} file(s) referenced by build scripts or manifests exist only in "
+            "the working tree -- a fresh clone or CI build will not have them. "
+            "`git add -f` them, or stop referencing them."
+        ),
+        files=files,
     )
 
 
@@ -1064,6 +1400,7 @@ def sweep_repo_hygiene(
             lambda r: _check_tracked_ignored(r),
             lambda r: _check_local_path_deps(r, tracked),
             lambda r: _check_history_bloat(r, tracked),
+            lambda r: _check_required_file_untracked(r, tracked),
             lambda r: _check_stray_files(r, tracked),
         ):
             try:
