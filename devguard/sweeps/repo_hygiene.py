@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ast
 import configparser
+import difflib
 import fnmatch
 import json
 import os
@@ -1065,6 +1066,475 @@ def _check_ignored_tests_without_reason(repo: Path, tracked: list[str]) -> Hygie
     )
 
 
+# --- Cargo feature drift ----------------------------------------------------
+
+_FEATURE_SCAN_MAX_BYTES = 512 * 1024
+_FEATURE_SCAN_MAX_FILES = 400
+_FEATURE_FINDING_CAP = 20
+# A feature value that means "whatever the manifest defaults to", not a name.
+_FEATURE_VALUE_SKIP: frozenset[str] = frozenset({"default"})
+_CARGO_FEATURES_RE = re.compile(
+    r"""(?:--features(?:=|\s+)|-F(?:=|\s+))(?:"([^"]*)"|'([^']*)'|([^\s"'`]+))"""
+)
+# `cd subdir &&` or `working-directory:` set the package a command runs against.
+_CD_RE = re.compile(r"""(?:^|&&|\bthen\s+)\s*cd\s+["']?([^\s&;"']+)""")
+_MANIFEST_PATH_RE = re.compile(r"""--manifest-path(?:=|\s+)["']?([^\s"';]+)""")
+_WORKING_DIR_RE = re.compile(r"""working-directory:\s*["']?([^\s"'}]+)""")
+# `cargo run -p pkg --features x`: the flag names the package, not the cwd.
+_PACKAGE_FLAG_RE = re.compile(r"""(?:^|\s)(?:-p|--package)(?:=|\s+)["']?([A-Za-z0-9_-]+)""")
+_CFG_MODULE_RE = re.compile(
+    r'^#\[cfg\(feature\s*=\s*"([^"]+)"\)\]\s*'
+    r"(?:pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_][A-Za-z0-9_]*)\s*[;{]",
+    re.M,
+)
+_CFG_ATTR_RE = re.compile(r"^\s*#\[cfg\(")
+_FILE_CFG_RE = re.compile(r"^\s*#!\[cfg\(", re.M)
+_VERSION_CORE_RE = re.compile(r"^[=~^]?\s*v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$")
+_INSTALL_LINE_RE = re.compile(r"^\s*([A-Za-z0-9_-]+)\s*=\s*(\"[^\"]*\"|\{[^}]*\})\s*$")
+_TOML_VERSION_RE = re.compile(r"""\bversion\s*=\s*"([^"]*)\"""")
+_TOML_REMOTE_RE = re.compile(r"\b(?:path|git)\s*=")
+
+
+@dataclass(frozen=True)
+class _CargoPackage:
+    """One `[package]` manifest and the features it defines."""
+
+    manifest_rel: str
+    dir_rel: str
+    name: str
+    features: frozenset[str]
+
+
+def _cargo_packages(repo: Path) -> list[_CargoPackage]:
+    """Every package manifest under *repo* with its declared feature names."""
+    out: list[_CargoPackage] = []
+    for rel in _find_cargo_manifests(repo):
+        data = _parse_toml(repo / rel)
+        if data is None:
+            continue
+        pkg = data.get("package")
+        name = pkg.get("name") if isinstance(pkg, dict) else None
+        if not isinstance(name, str):
+            continue
+        raw = data.get("features")
+        declared = raw if isinstance(raw, dict) else {}
+        features = {k for k in declared if isinstance(k, str)}
+        # An optional dependency creates an implicit feature of the same name
+        # unless some feature already names it as `dep:<name>`.
+        explicit = {
+            v.split("dep:", 1)[1]
+            for values in declared.values()
+            if isinstance(values, list)
+            for v in values
+            if isinstance(v, str) and v.startswith("dep:")
+        }
+        for table in _dep_tables(data):
+            for dep, spec in table.items():
+                if not isinstance(dep, str) or dep in explicit:
+                    continue
+                if isinstance(spec, dict) and spec.get("optional") is True:
+                    features.add(dep)
+        parent = str(Path(rel).parent)
+        out.append(
+            _CargoPackage(
+                manifest_rel=rel,
+                dir_rel="." if parent in ("", ".") else parent,
+                name=name,
+                features=frozenset(features),
+            )
+        )
+    return out
+
+
+def _known_features(packages: list[_CargoPackage]) -> frozenset[str]:
+    """Union of features across the repo's packages.
+
+    A feature name valid in one workspace member is valid on the command line,
+    so the union only suppresses false positives.
+    """
+    return frozenset().union(*(p.features for p in packages)) if packages else frozenset()
+
+
+def _package_for_dir(packages: list[_CargoPackage], dir_rel: str) -> _CargoPackage | None:
+    best: _CargoPackage | None = None
+    for pkg in packages:
+        inside = pkg.dir_rel == "." or (
+            dir_rel == pkg.dir_rel or dir_rel.startswith(pkg.dir_rel + "/")
+        )
+        if inside and (best is None or len(pkg.dir_rel) > len(best.dir_rel)):
+            best = pkg
+    return best
+
+
+def _feature_command_files(repo: Path, tracked: list[str]) -> list[str]:
+    """Bounded set of files that carry cargo invocations: CI, task runners, docs."""
+    out: list[str] = []
+    for rel in tracked:
+        parts = Path(rel).parts
+        name = posixpath.basename(rel).lower()
+        is_workflow = (
+            len(parts) >= 3
+            and parts[0] == ".github"
+            and parts[1] == "workflows"
+            and name.endswith((".yml", ".yaml"))
+        )
+        is_runner = name in ("justfile", "makefile", "gnumakefile", "justfile.toml")
+        is_doc = name.endswith(".md")
+        if is_workflow or is_runner or is_doc:
+            out.append(rel)
+        if len(out) >= _FEATURE_SCAN_MAX_FILES:
+            break
+    return out
+
+
+def _command_dir(repo: Path, rel: str, lines: list[str], lineno: int, cwd: str | None) -> str:
+    """Best-effort working directory for the command on *lineno* (repo-relative)."""
+    line = lines[lineno]
+    match = _MANIFEST_PATH_RE.search(line)
+    if match:
+        cwd = str(Path(match.group(1)).parent)
+    else:
+        match = _CD_RE.search(line)
+        if match:
+            cwd = match.group(1)
+        elif cwd is None:
+            for back in range(lineno - 1, -1, -1):
+                found = _WORKING_DIR_RE.search(lines[back])
+                if found:
+                    cwd = found.group(1)
+                    break
+    base = str(Path(rel).parent)
+    base = "" if base in ("", ".") else base
+    if not cwd or cwd.startswith("$"):
+        return base or "."
+    joined = posixpath.normpath(posixpath.join(base, cwd))
+    if joined.startswith(".."):
+        return base or "."
+    return joined or "."
+
+
+def _feature_values(match: re.Match[str]) -> list[str]:
+    raw = next((g for g in match.groups() if g is not None), "")
+    return [v for v in re.split(r"[,\s]+", raw) if v]
+
+
+def _check_unknown_features(repo: Path, tracked: list[str]) -> HygieneFinding | None:
+    """CI or documented `cargo --features` naming a feature no manifest defines.
+
+    A renamed feature leaves every job that still asks for the old name failing
+    before compilation, so the workflow edit and the rename must land together.
+    """
+    packages = _cargo_packages(repo)
+    if not packages:
+        return None
+    known = _known_features(packages)
+    if not known:
+        return None
+
+    hits: list[str] = []
+    seen: set[tuple[str, int, str]] = set()
+    for rel in _feature_command_files(repo, tracked):
+        path = repo / rel
+        if not contained_file(path, repo):
+            continue
+        try:
+            if path.stat().st_size > _FEATURE_SCAN_MAX_BYTES:
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        lines = text.splitlines()
+        cwd: str | None = None
+        for lineno, line in enumerate(lines):
+            stripped = line.lstrip()
+            if not stripped or stripped.startswith("#") or stripped.startswith("//"):
+                continue
+            if "cargo" not in line:
+                continue
+            cwd = _command_dir(repo, rel, lines, lineno, cwd)
+            # A command may name its packages explicitly, which beats the cwd.
+            # Several `-p` flags select several packages; the feature must exist
+            # in at least one of them, so their features union.
+            pkg_flags = _PACKAGE_FLAG_RE.findall(line)
+            if pkg_flags:
+                selected = [p for p in packages if p.name in pkg_flags]
+                allowed = frozenset().union(*(p.features for p in selected)) if selected else known
+            else:
+                local = _package_for_dir(packages, cwd)
+                allowed = local.features if local is not None else known
+            for match in _CARGO_FEATURES_RE.finditer(line):
+                for value in _feature_values(match):
+                    if value in _FEATURE_VALUE_SKIP or "/" in value or value.startswith("dep:"):
+                        continue
+                    if not re.fullmatch(r"[A-Za-z0-9_.-]+", value):
+                        continue
+                    # CI template expressions (`${{ matrix.features }}`) name a
+                    # matrix axis, not a feature the manifest must define.
+                    if "{{" in value or value.startswith("$") or value.startswith("matrix."):
+                        continue
+                    if value in allowed:
+                        continue
+                    key = (rel, lineno + 1, value)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    nearest = difflib.get_close_matches(value, sorted(known), n=1, cutoff=0.0)
+                    hint = f" (nearest: {nearest[0]})" if nearest else ""
+                    hits.append(f"{rel}:{lineno + 1}: {value}{hint}")
+                    if len(hits) >= _FEATURE_FINDING_CAP:
+                        break
+                if len(hits) >= _FEATURE_FINDING_CAP:
+                    break
+            if len(hits) >= _FEATURE_FINDING_CAP:
+                break
+
+    if not hits:
+        return None
+    return HygieneFinding(
+        repo_path=str(repo),
+        check="feature_name_unknown",
+        severity="medium",
+        message=(
+            f"{len(hits)} cargo feature reference(s) name a feature no manifest in the "
+            "repo defines -- those jobs fail before compiling."
+        ),
+        files=hits,
+    )
+
+
+def _cfg_gated_ranges(lines: list[str]) -> list[tuple[int, int]]:
+    """Line ranges covered by a `#[cfg(...)]` attribute on the following item.
+
+    Attributes may span lines (`#[cfg(any(\n feature = "a",\n))]`), so the
+    parenthesis depth decides where the attribute ends and the item begins.
+    """
+    ranges: list[tuple[int, int]] = []
+    total = len(lines)
+    for idx, line in enumerate(lines):
+        if not _CFG_ATTR_RE.match(line):
+            continue
+        item = idx
+        parens = 0
+        while item < total:
+            parens += lines[item].count("(") - lines[item].count(")")
+            item += 1
+            if parens <= 0:
+                break
+        while item < total:
+            probe = lines[item].strip()
+            if not probe or probe.startswith("//"):
+                item += 1
+                continue
+            if probe.startswith("#["):
+                parens = lines[item].count("(") - lines[item].count(")")
+                item += 1
+                while parens > 0 and item < total:
+                    parens += lines[item].count("(") - lines[item].count(")")
+                    item += 1
+                continue
+            break
+        if item >= total:
+            continue
+        start, end = item, item
+        depth = lines[item].count("{") - lines[item].count("}")
+        if depth > 0:
+            cursor = item + 1
+            while cursor < total and depth > 0:
+                depth += lines[cursor].count("{") - lines[cursor].count("}")
+                end = cursor
+                cursor += 1
+        ranges.append((start, end))
+    return ranges
+
+
+def _target_required_features(
+    manifest: dict[str, Any], kind: str, name: str, rel: str
+) -> frozenset[str]:
+    """`required-features` declared for one [[test]]/[[example]] target."""
+    for entry in manifest.get(kind, []) if isinstance(manifest.get(kind), list) else []:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("name") != name and entry.get("path") != rel:
+            continue
+        raw = entry.get("required-features")
+        if isinstance(raw, list):
+            return frozenset(v for v in raw if isinstance(v, str))
+    return frozenset()
+
+
+def _test_target_name(rel: str) -> str | None:
+    """Target name for a Rust test/example entry point, or None for a submodule."""
+    parts = Path(rel).parts
+    if len(parts) < 2 or parts[0] not in ("tests", "examples"):
+        return None
+    tail = parts[1:]
+    if len(tail) == 1 and tail[0].endswith(".rs"):
+        return tail[0][:-3]
+    if len(tail) == 2 and tail[1] == "main.rs":
+        return tail[0]
+    return None
+
+
+def _check_test_target_missing_gate(repo: Path, tracked: list[str]) -> HygieneFinding | None:
+    """A test/example that uses a feature-gated module without gating itself.
+
+    `#[cfg(feature = "x")] pub mod y;` in the crate root means the module only
+    exists with that feature. A target that names it and carries no `cfg` gate
+    fails to compile in every feature lane that omits it.
+    """
+    packages = _cargo_packages(repo)
+    if not packages:
+        return None
+
+    graders: list[str] = []
+    for pkg in packages:
+        lib = (
+            repo / pkg.dir_rel / "src" / "lib.rs" if pkg.dir_rel != "." else repo / "src" / "lib.rs"
+        )
+        if not contained_file(lib, repo):
+            continue
+        try:
+            lib_text = lib.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        gated = {module: feature for feature, module in _CFG_MODULE_RE.findall(lib_text)}
+        if not gated:
+            continue
+        manifest = _parse_toml(repo / pkg.manifest_rel) or {}
+        crate_name = pkg.name.replace("-", "_")
+        crate_re = re.compile(rf"\b{re.escape(crate_name)}::([A-Za-z_][A-Za-z0-9_]*)")
+        for rel in tracked:
+            name = _test_target_name(rel)
+            if name is None:
+                continue
+            if pkg.dir_rel != "." and not rel.startswith(pkg.dir_rel + "/"):
+                continue
+            path = repo / rel
+            if not contained_file(path, repo):
+                continue
+            try:
+                if path.stat().st_size > _FEATURE_SCAN_MAX_BYTES:
+                    continue
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            if _FILE_CFG_RE.search(text):
+                continue
+            lines = text.splitlines()
+            gated_ranges = _cfg_gated_ranges(lines)
+            kind = "test" if rel.startswith("tests/") else "example"
+            required = _target_required_features(manifest, kind, name, rel)
+            for lineno, line in enumerate(lines):
+                stripped = line.lstrip()
+                if not stripped or stripped.startswith("//"):
+                    continue
+                match = crate_re.search(line)
+                if not match:
+                    continue
+                module = match.group(1)
+                feature = gated.get(module)
+                if feature is None:
+                    continue
+                if feature in required:
+                    continue
+                if any(start <= lineno <= end for start, end in gated_ranges):
+                    continue
+                graders.append(f"{rel}: {crate_name}::{module} needs feature {feature!r}")
+                break
+
+    if not graders:
+        return None
+    return HygieneFinding(
+        repo_path=str(repo),
+        check="test_target_missing_gate",
+        severity="medium",
+        message=(
+            f"{len(graders)} test/example target(s) use a feature-gated module without a "
+            "cfg gate or required-features -- they break every lane that omits it."
+        ),
+        files=graders[:_FEATURE_FINDING_CAP],
+    )
+
+
+def _check_readme_install_version(repo: Path, tracked: list[str]) -> HygieneFinding | None:
+    """A README install pin that disagrees with the manifest version.
+
+    A stale pin sends readers to docs and an API that the release no longer has.
+    Only the crate's own manifest counts, and only exact triples are compared:
+    `crate = "1"` is a valid range, not drift.
+    """
+    hits: list[str] = []
+    seen: set[tuple[str, str]] = set()
+    for rel in tracked:
+        name = posixpath.basename(rel).lower()
+        if name != "readme.md":
+            continue
+        readme = repo / rel
+        base_rel = str(Path(rel).parent)
+        base = repo if base_rel in ("", ".") else repo / base_rel
+        manifest_path = base / "Cargo.toml"
+        if not contained_file(manifest_path, repo) or not manifest_path.is_file():
+            continue
+        manifest = _parse_toml(manifest_path)
+        if manifest is None:
+            continue
+        pkg = manifest.get("package")
+        if not isinstance(pkg, dict):
+            continue
+        crate = pkg.get("name")
+        version = pkg.get("version")
+        if not isinstance(crate, str) or not isinstance(version, str):
+            continue
+        want = _VERSION_CORE_RE.match(version)
+        if not want:
+            continue
+        manifest_rel = str(manifest_path.relative_to(repo))
+        try:
+            text = readme.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for lineno, line in enumerate(text.splitlines(), 1):
+            match = _INSTALL_LINE_RE.match(line)
+            if not match or match.group(1) != crate:
+                continue
+            spec = match.group(2)
+            if spec.startswith("{"):
+                if _TOML_REMOTE_RE.search(spec):
+                    continue
+                pinned = _TOML_VERSION_RE.search(spec)
+                if not pinned:
+                    continue
+            else:
+                pinned = re.match(r'"([^"]*)"', spec)
+                if not pinned:
+                    continue
+            got = _VERSION_CORE_RE.match(pinned.group(1).strip())
+            if got is None:
+                continue
+            if got.groups() == want.groups():
+                continue
+            key = (rel, str(lineno))
+            if key in seen:
+                continue
+            seen.add(key)
+            hits.append(
+                f"{rel}:{lineno}: README pins {pinned.group(1)}, "
+                f"manifest {manifest_rel} ships {version}"
+            )
+    if not hits:
+        return None
+    return HygieneFinding(
+        repo_path=str(repo),
+        check="readme_install_version",
+        severity="low",
+        message=(
+            f"{len(hits)} README install pin(s) disagree with the crate's manifest "
+            "version -- readers land on docs for an API the release lacks."
+        ),
+        files=hits[:_FEATURE_FINDING_CAP],
+    )
+
+
 def _check_stale_rename_refs(repo: Path, tracked: list[str]) -> HygieneFinding | None:
     """G: Cargo.toml name differs from directory name; old name still appears as env var prefix."""
     cargo = repo / "Cargo.toml"
@@ -1396,6 +1866,9 @@ def sweep_repo_hygiene(
             lambda r: _check_stale_rename_refs(r, tracked),
             lambda r: _check_crate_level_test_gates(r),
             lambda r: _check_ignored_tests_without_reason(r, tracked),
+            lambda r: _check_unknown_features(r, tracked),
+            lambda r: _check_test_target_missing_gate(r, tracked),
+            lambda r: _check_readme_install_version(r, tracked),
             lambda r: _check_unused_workspace_deps(r),
             lambda r: _check_tracked_ignored(r),
             lambda r: _check_local_path_deps(r, tracked),

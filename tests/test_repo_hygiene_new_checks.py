@@ -394,3 +394,187 @@ def test_missing_referenced_file_is_not_reported(tmp_path: Path) -> None:
     )
 
     assert _check_required_file_untracked(repo, _git_ls_files(repo)) is None
+
+
+# --- feature_name_unknown ----------------------------------------------------
+
+
+def test_unknown_feature_in_workflow_is_flagged(tmp_path: Path) -> None:
+    from devguard.sweeps.repo_hygiene import _check_unknown_features
+
+    repo = _repo(
+        tmp_path / "r",
+        {
+            "Cargo.toml": (
+                '[package]\nname = "burn-sys"\nversion = "0.1.0"\n[features]\nburn-ndarray = []\n'
+            ),
+            ".github/workflows/ci.yml": "run: cargo clippy --features burn-wgpu\n",
+        },
+    )
+    finding = _check_unknown_features(repo, _git_ls_files(repo))
+    assert finding is not None
+    assert finding.check == "feature_name_unknown"
+    assert "burn-wgpu" in finding.files[0]
+    assert "burn-ndarray" in finding.files[0]
+
+
+def test_known_feature_in_workflow_is_quiet(tmp_path: Path) -> None:
+    from devguard.sweeps.repo_hygiene import _check_unknown_features
+
+    repo = _repo(
+        tmp_path / "r",
+        {
+            "Cargo.toml": (
+                '[package]\nname = "burn-sys"\nversion = "0.1.0"\n[features]\nburn-ndarray = []\n'
+            ),
+            ".github/workflows/ci.yml": "run: cargo clippy --features burn-ndarray\n",
+        },
+    )
+    assert _check_unknown_features(repo, _git_ls_files(repo)) is None
+
+
+def test_unknown_feature_today_burn_flex_case(tmp_path: Path) -> None:
+    from devguard.sweeps.repo_hygiene import _check_unknown_features
+
+    repo = _repo(
+        tmp_path / "r",
+        {
+            "Cargo.toml": (
+                '[package]\nname = "burn-sys"\nversion = "0.1.0"\n'
+                "[features]\nburn-flex = []\nburn-wgpu = []\n"
+            ),
+            ".github/workflows/ci.yml": (
+                'run: cargo clippy --features "burn-ndarray,burn-wgpu"\n'
+                "run: cargo test --features burn-ndarray\n"
+            ),
+        },
+    )
+    finding = _check_unknown_features(repo, _git_ls_files(repo))
+    assert finding is not None
+    files = " ".join(finding.files)
+    assert "burn-ndarray" in files
+    assert "nearest:" in files
+
+
+# --- test_target_missing_gate -------------------------------------------------
+
+
+def test_ungated_test_using_feature_gated_module_is_flagged(tmp_path: Path) -> None:
+    from devguard.sweeps.repo_hygiene import _check_test_target_missing_gate
+
+    repo = _repo(
+        tmp_path / "r",
+        {
+            "Cargo.toml": (
+                '[package]\nname = "vicinity"\nversion = "0.1.0"\n[features]\nhnsw = []\n'
+            ),
+            "src/lib.rs": '#[cfg(feature = "hnsw")]\npub mod hnsw;\n',
+            "tests/ann_matrix.rs": "use vicinity::hnsw::Index;\n",
+        },
+    )
+    finding = _check_test_target_missing_gate(repo, _git_ls_files(repo))
+    assert finding is not None
+    assert finding.check == "test_target_missing_gate"
+    assert "ann_matrix.rs" in finding.files[0]
+    assert "hnsw" in finding.files[0]
+
+
+def test_gated_test_using_feature_gated_module_is_quiet(tmp_path: Path) -> None:
+    from devguard.sweeps.repo_hygiene import _check_test_target_missing_gate
+
+    repo = _repo(
+        tmp_path / "r",
+        {
+            "Cargo.toml": (
+                '[package]\nname = "vicinity"\nversion = "0.1.0"\n[features]\nhnsw = []\n'
+            ),
+            "src/lib.rs": '#[cfg(feature = "hnsw")]\npub mod hnsw;\n',
+            "tests/ann_matrix.rs": '#![cfg(feature = "hnsw")]\nuse vicinity::hnsw::Index;\n',
+        },
+    )
+    assert _check_test_target_missing_gate(repo, _git_ls_files(repo)) is None
+
+
+def test_required_features_target_is_quiet(tmp_path: Path) -> None:
+    from devguard.sweeps.repo_hygiene import _check_test_target_missing_gate
+
+    repo = _repo(
+        tmp_path / "r",
+        {
+            "Cargo.toml": (
+                '[package]\nname = "vicinity"\nversion = "0.1.0"\n'
+                "[features]\nhnsw = []\n"
+                '[[test]]\nname = "ann_matrix"\npath = "tests/ann_matrix.rs"\nrequired-features = ["hnsw"]\n'
+            ),
+            "src/lib.rs": '#[cfg(feature = "hnsw")]\npub mod hnsw;\n',
+            "tests/ann_matrix.rs": "use vicinity::hnsw::Index;\n",
+        },
+    )
+    assert _check_test_target_missing_gate(repo, _git_ls_files(repo)) is None
+
+
+def test_ann_matrix_today_case_ungated_use_with_gated_mod(tmp_path: Path) -> None:
+    from devguard.sweeps.repo_hygiene import _check_test_target_missing_gate
+
+    repo = _repo(
+        tmp_path / "r",
+        {
+            "Cargo.toml": (
+                '[package]\nname = "vicinity"\nversion = "0.1.0"\n[features]\nhnsw = []\n'
+            ),
+            "src/lib.rs": '#[cfg(feature = "hnsw")]\npub mod hnsw;\n',
+            "tests/ann_matrix.rs": (
+                "use vicinity::hnsw::Index;\n"
+                '#[cfg(feature = "hnsw")]\n'
+                "mod gated { fn helper() {} }\n"
+            ),
+        },
+    )
+    finding = _check_test_target_missing_gate(repo, _git_ls_files(repo))
+    assert finding is not None
+    assert "ann_matrix.rs" in finding.files[0]
+
+
+# --- readme_install_version ---------------------------------------------------
+
+
+def test_readme_version_mismatch_is_flagged(tmp_path: Path) -> None:
+    from devguard.sweeps.repo_hygiene import _check_readme_install_version
+
+    repo = _repo(
+        tmp_path / "r",
+        {
+            "Cargo.toml": '[package]\nname = "tnorms"\nversion = "0.2.2"\n',
+            "README.md": '```toml\ntnorms = "0.2.1"\n```\n',
+        },
+    )
+    finding = _check_readme_install_version(repo, _git_ls_files(repo))
+    assert finding is not None
+    assert finding.check == "readme_install_version"
+    assert "0.2.1" in finding.files[0]
+
+
+def test_readme_version_match_is_quiet(tmp_path: Path) -> None:
+    from devguard.sweeps.repo_hygiene import _check_readme_install_version
+
+    repo = _repo(
+        tmp_path / "r",
+        {
+            "Cargo.toml": '[package]\nname = "tnorms"\nversion = "0.2.2"\n',
+            "README.md": '```toml\ntnorms = "0.2.2"\n```\n',
+        },
+    )
+    assert _check_readme_install_version(repo, _git_ls_files(repo)) is None
+
+
+def test_readme_prerelease_version_is_quiet(tmp_path: Path) -> None:
+    from devguard.sweeps.repo_hygiene import _check_readme_install_version
+
+    repo = _repo(
+        tmp_path / "r",
+        {
+            "Cargo.toml": '[package]\nname = "tnorms"\nversion = "0.2.2-alpha.1"\n',
+            "README.md": '```toml\ntnorms = "0.2.2"\n```\n',
+        },
+    )
+    assert _check_readme_install_version(repo, _git_ls_files(repo)) is None

@@ -6,6 +6,25 @@ Earlier history has not been reconstructed in this changelog.
 
 ### Added
 
+- `repo_hygiene` `feature_name_unknown`: a `cargo --features` argument in a
+  workflow, justfile, Makefile, or documented command names a feature no
+  manifest in the repo defines. A renamed feature leaves every job that still
+  asks for the old name failing before compilation. Reports the file:line, the
+  unknown name, and the nearest existing name by edit distance. Skips
+  `default`, dependency features (`dep/feature`), comments, and CI template
+  expressions (`${{ matrix.features }}`).
+- `repo_hygiene` `test_target_missing_gate`: a test or example target uses a
+  module that `src/lib.rs` exposes only behind a feature (`#[cfg(feature =
+  "x")] pub mod y;`) while the target itself is neither feature-gated
+  (`#![cfg(...)]` / `#[cfg(...)] mod`) nor declared in `[[test]]`/`[[example]]`
+  with `required-features`. Those targets fail to compile in every lane that
+  omits the feature. Conservative: only flags when the first path segment after
+  the crate name maps to a gated module and the file has no cfg gate at all.
+- `repo_hygiene` `readme_install_version`: a README install line
+  (`crate = "1.2.3"` or `crate = { version = "1.2.3", ... }`) disagrees with
+  the crate's own manifest `version`. A stale pin sends readers to docs and an
+  API the release no longer has. Ignores path/git dependencies and prerelease
+  suffixes unless the base version differs.
 - `repo_hygiene` `required_file_untracked`: files that a build script or
   manifest reads (`build.rs` `include(...)`/`rerun-if-changed`,
   `include_str!`/`include_bytes!`, `Cargo.toml` `path =`, and setuptools
