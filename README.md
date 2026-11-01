@@ -105,7 +105,7 @@ Sweeps that need external access:
 | `dependency_audit` | Known vulnerable dependencies |
 | `ssh_key_audit` | Weak, short, or stale SSH keys |
 | `gitignore_audit` | Missing `.gitignore` files and missing language ignore patterns |
-| `repo_hygiene` | Public-text leak patterns plus structural hygiene: scattered doc dirs, committed generated data, hardcoded absolute paths in shell scripts, large blobs and build artifacts in history, declaration-only `[workspace.dependencies]` keys, path deps outside the repo, files referenced by build scripts and manifests that git does not track, crate-level `#![cfg(all(...))]` test gates, bare `#[ignore]` with no reason, stale `.gitkeep`, tracked editor/cache dirs, internal docs in public repos, tracked-but-ignored files, stray backups and OS junk. See `devguard/sweeps/repo_hygiene.py` for the full list |
+| `repo_hygiene` | Public-text leak patterns plus structural hygiene: scattered doc dirs, committed generated data, hardcoded absolute paths in shell scripts, large blobs and build artifacts in history, declaration-only `[workspace.dependencies]` keys, path deps outside the repo, files referenced by build scripts and manifests that git does not track, crate-level `#![cfg(all(...))]` test gates, bare `#[ignore]` with no reason, a `cargo --features` argument naming a feature no manifest defines, test/example targets that use a feature-gated module without a gate or `required-features`, README install pins that disagree with the manifest version, stale `.gitkeep`, tracked editor/cache dirs, internal docs in public repos, tracked-but-ignored files, stray backups and OS junk. See `devguard/sweeps/repo_hygiene.py` for the full list |
 | `git_identity_audit` | Git author emails in config, env, and history: forbidden domains, an `allowed_emails` list, or, with no policy, likely employer addresses under your own name |
 | `ai_editor_config_audit` | Cursor and Claude config consistency |
 | `cargo_publish_audit` | Rust crate publish metadata and CI blockers |
@@ -130,6 +130,21 @@ exit code; pass `--include-upstream` to count them.
 
 Private names for `public_text_leak` (private repo names, internal hostnames)
 belong in your untracked `devguard.spec.yaml`, not in this repository.
+
+### Silencing a finding at its source
+
+A finding can be excused where it is written, but only with a stated reason:
+
+```text
+# devguard: allow feature_name_unknown reason: historical log, commands kept verbatim
+<!-- devguard: allow-file readme_install_version reason: README documents the next release -->
+```
+
+`allow` covers the lines that follow it (six), so a note above one stale command
+excuses that command and not the rest of the file; `allow-file` covers the whole
+file, for a document that is historical end to end. Both require `reason:` — an
+annotation without one is ignored, so removing the reason re-exposes the finding
+instead of hiding it behind a bare pragma.
 
 ## Pre-commit Hooks
 
