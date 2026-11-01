@@ -649,3 +649,28 @@ def test_allow_pragma_window_is_bounded(tmp_path: Path) -> None:
     finding = _check_unknown_features(repo, _git_ls_files(repo))
     assert finding is not None, "a pragma six lines up must not cover this command"
     assert any("alsoGone" in f for f in finding.files)
+
+
+def test_transitively_enabled_feature_satisfies_the_gate(tmp_path: Path) -> None:
+    from devguard.sweeps.repo_hygiene import _check_test_target_missing_gate
+
+    repo = _repo(
+        tmp_path / "r",
+        {
+            "Cargo.toml": (
+                '[package]\nname = "demo"\nversion = "0.1.0"\n[features]\n'
+                'default = []\nwide = ["narrow"]\nnarrow = []\n'
+            ),
+            "src/lib.rs": '#[cfg(feature = "narrow")]\npub mod inner;\n',
+            "tests/uses_inner.rs": "use demo::inner::Thing;\n\n#[test]\nfn t() {}\n",
+        },
+    )
+    # No required-features at all: the finding stands.
+    assert _check_test_target_missing_gate(repo, _git_ls_files(repo)) is not None
+
+    manifest = (repo / "Cargo.toml").read_text()
+    (repo / "Cargo.toml").write_text(
+        manifest + '\n[[test]]\nname = "uses_inner"\nrequired-features = ["wide"]\n'
+    )
+    # `wide` enables `narrow`, so the gate is satisfied transitively.
+    assert _check_test_target_missing_gate(repo, _git_ls_files(repo)) is None

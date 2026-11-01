@@ -1145,6 +1145,7 @@ class _CargoPackage:
     name: str
     features: frozenset[str]
     default_features: frozenset[str]
+    expansions: dict[str, frozenset[str]]
 
 
 def _cargo_packages(repo: Path) -> list[_CargoPackage]:
@@ -1176,6 +1177,21 @@ def _cargo_packages(repo: Path) -> list[_CargoPackage]:
                     continue
                 if isinstance(spec, dict) and spec.get("optional") is True:
                     features.add(dep)
+        # Transitive closure per feature, so `burn-flex = ["_burn", ...]` is
+        # known to satisfy an `#[cfg(feature = "_burn")]` module.
+        expansions: dict[str, frozenset[str]] = {}
+        for feat in features:
+            seen: set[str] = set()
+            stack = [feat]
+            while stack:
+                item = stack.pop()
+                if "/" in item or item.startswith("dep:") or item in seen:
+                    continue
+                seen.add(item)
+                nested = declared.get(item)
+                if isinstance(nested, list):
+                    stack.extend(v for v in nested if isinstance(v, str))
+            expansions[feat] = frozenset(seen)
         defaults = declared.get("default")
         enabled: set[str] = set()
         pending = [v for v in (defaults if isinstance(defaults, list) else []) if isinstance(v, str)]
@@ -1195,6 +1211,7 @@ def _cargo_packages(repo: Path) -> list[_CargoPackage]:
                 name=name,
                 features=frozenset(features),
                 default_features=frozenset(enabled),
+                expansions=expansions,
             )
         )
     return out
@@ -1392,10 +1409,19 @@ def _cfg_gated_ranges(lines: list[str]) -> list[tuple[int, int]]:
             break
         if item >= total:
             continue
-        start, end = item, item
-        depth = lines[item].count("{") - lines[item].count("}")
+        start = item
+        # The item's opening brace can sit several lines below its first line
+        # (`fn f(\n  a: T,\n) -> R {`), and a body guard that stops at the
+        # signature would leave the whole body looking ungated.
+        cursor = item
+        while cursor < total and ";" not in lines[cursor]:
+            if "{" in lines[cursor]:
+                break
+            cursor += 1
+        end = min(cursor, total - 1)
+        depth = lines[end].count("{") - lines[end].count("}")
         if depth > 0:
-            cursor = item + 1
+            cursor = end + 1
             while cursor < total and depth > 0:
                 depth += lines[cursor].count("{") - lines[cursor].count("}")
                 end = cursor
@@ -1500,6 +1526,9 @@ def _check_test_target_missing_gate(repo: Path, tracked: list[str]) -> HygieneFi
                 if feature is None:
                     continue
                 if feature in required:
+                    continue
+                # A required feature may enable the gated one transitively.
+                if any(feature in pkg.expansions.get(req, frozenset()) for req in required):
                     continue
                 if any(start <= lineno <= end for start, end in gated_ranges):
                     continue
