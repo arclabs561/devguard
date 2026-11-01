@@ -6,6 +6,12 @@ Earlier history has not been reconstructed in this changelog.
 
 ### Added
 
+- `repo_hygiene` `required_file_untracked`: files that a build script or
+  manifest reads (`build.rs` `include(...)`/`rerun-if-changed`,
+  `include_str!`/`include_bytes!`, `Cargo.toml` `path =`, and setuptools
+  `data_files`/`package_data`) and that exist in the working tree but are not
+  tracked by git. The finding names the referrer and, when one applies, the
+  ignore rule that made `git add -A` skip the file.
 - Without `--spec`, the spec is found in `./devguard.spec.yaml`, then `$DEVGUARD_SPEC`, then `~/.config/devguard/devguard.spec.yaml`.
 - `docs_quality` sweep: Vale and readcost over README and `docs/` Markdown,
   through a `docs-check`-style wrapper when on PATH or the tools directly.
