@@ -1144,6 +1144,7 @@ class _CargoPackage:
     dir_rel: str
     name: str
     features: frozenset[str]
+    default_features: frozenset[str]
 
 
 def _cargo_packages(repo: Path) -> list[_CargoPackage]:
@@ -1175,6 +1176,17 @@ def _cargo_packages(repo: Path) -> list[_CargoPackage]:
                     continue
                 if isinstance(spec, dict) and spec.get("optional") is True:
                     features.add(dep)
+        defaults = declared.get("default")
+        enabled: set[str] = set()
+        pending = [v for v in (defaults if isinstance(defaults, list) else []) if isinstance(v, str)]
+        while pending:
+            item = pending.pop()
+            if "/" in item or item.startswith("dep:") or item in enabled:
+                continue
+            enabled.add(item)
+            nested = declared.get(item)
+            if isinstance(nested, list):
+                pending.extend(v for v in nested if isinstance(v, str))
         parent = str(Path(rel).parent)
         out.append(
             _CargoPackage(
@@ -1182,6 +1194,7 @@ def _cargo_packages(repo: Path) -> list[_CargoPackage]:
                 dir_rel="." if parent in ("", ".") else parent,
                 name=name,
                 features=frozenset(features),
+                default_features=frozenset(enabled),
             )
         )
     return out
@@ -1442,6 +1455,10 @@ def _check_test_target_missing_gate(repo: Path, tracked: list[str]) -> HygieneFi
         except OSError:
             continue
         gated = {module: feature for feature, module in _CFG_MODULE_RE.findall(lib_text)}
+        # A feature the default set enables is present in every default build, so
+        # an ungated target still compiles there; only non-default features
+        # vanish from a lane that omits them, which is the failure worth a gate.
+        gated = {m: f for m, f in gated.items() if f not in pkg.default_features}
         if not gated:
             continue
         manifest = _parse_toml(repo / pkg.manifest_rel) or {}
