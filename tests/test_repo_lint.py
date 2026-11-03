@@ -63,7 +63,11 @@ def _crate(
     return repo
 
 
-CI_OK = {".github/workflows/ci.yml": "steps:\n  - run: cargo clippy -- -D warnings\n"}
+CI_OK = {
+    ".github/workflows/ci.yml": (
+        "steps:\n  - uses: dtolnay/rust-toolchain@1.80\n  - run: cargo clippy -- -D warnings\n"
+    )
+}
 
 
 def test_pin_drift_against_released_version(tmp_path: Path) -> None:
@@ -142,6 +146,47 @@ def test_clean_crate_has_no_findings(tmp_path: Path) -> None:
     report, _ = lint_repos(dev_root=root, max_depth=1)
 
     assert report["findings"] == []
+
+
+def test_msrv_ci_flags_declared_version_no_workflow_installs(tmp_path: Path) -> None:
+    root = tmp_path / "ws"
+    _crate(
+        root,
+        "fresh",
+        '[package]\nname = "fresh"\nversion = "0.1.0"\nrust-version = "1.85"\n'
+        'documentation = "https://docs.rs/fresh"\n',
+        {**CI_OK, "README.md": 'fresh = "0.1"\n'},
+    )
+
+    report, _ = lint_repos(dev_root=root, max_depth=1)
+
+    msrv = [f for f in report["findings"] if f["check"] == "msrv_ci"]
+    assert [f["severity"] for f in msrv] == ["info"]
+    assert "1.85" in msrv[0]["message"]
+
+
+def test_ignored_tests_and_dead_feature_gates(tmp_path: Path) -> None:
+    root = tmp_path / "ws"
+    _crate(
+        root,
+        "gated",
+        '[package]\nname = "gated"\nversion = "0.1.0"\nrust-version = "1.80"\n'
+        'documentation = "https://docs.rs/gated"\n',
+        {
+            **CI_OK,
+            "README.md": 'gated = "0.1"\n',
+            "tests/simd.rs": '#![cfg(feature = "simd")]\n#[test]\nfn runs() {}\n',
+            "src/lib.rs": "#[cfg(test)]\nmod tests {\n    #[test]\n    #[ignore]\n    fn slow() {}\n}\n",
+        },
+    )
+
+    report, _ = lint_repos(dev_root=root, max_depth=1)
+
+    checks = sorted((f["check"], f["severity"]) for f in report["findings"])
+    assert ("dead_feature_gate", "low") in checks
+    assert ("ignored_test", "info") in checks
+    # The toolchain is installed, so MSRV is not a finding here.
+    assert not [f for f in report["findings"] if f["check"] == "msrv_ci"]
 
 
 @pytest.mark.parametrize(

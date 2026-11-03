@@ -8,6 +8,9 @@ change `devguard sweep`'s exit code. Checks:
 - readme_version_drift: a README `name = "x.y"` line older than Cargo.toml
 - cargo_metadata: `documentation` not on docs.rs; missing `rust-version`
 - ci_gaps: no workflows, clippy without -D warnings, fuzz targets CI never runs
+- msrv_ci: a declared `rust-version` no workflow installs
+- ignored_test: `#[ignore]` without a reason string
+- dead_feature_gate: `tests/` file whose required feature no workflow enables
 """
 
 from __future__ import annotations
@@ -263,6 +266,7 @@ def lint_repos(
                         break
         if entries:
             findings.extend(_ci_gaps(repo))
+            findings.extend(_verification_debt(repo, entries))
 
     report: dict[str, Any] = {
         "generated_at": _utc_now(),
@@ -333,20 +337,25 @@ def _clippy_commands(text: str) -> tuple[bool, bool]:
     return missing, unassessed
 
 
-def _ci_gaps(repo: Path) -> list[dict[str, Any]]:
+def _workflow_texts(repo: Path) -> list[str]:
     wf_dir = repo / ".github" / "workflows"
-    workflows = (
-        sorted(w for w in wf_dir.glob("*.y*ml") if contained_file(w, repo))
-        if wf_dir.resolve().is_relative_to(repo.resolve()) and wf_dir.is_dir()
-        else []
-    )
-    if not workflows:
+    if not (wf_dir.resolve().is_relative_to(repo.resolve()) and wf_dir.is_dir()):
+        return []
+    return [
+        w.read_text(encoding="utf-8", errors="replace")
+        for w in sorted(wf_dir.glob("*.y*ml"))
+        if contained_file(w, repo)
+    ]
+
+
+def _ci_gaps(repo: Path) -> list[dict[str, Any]]:
+    texts = _workflow_texts(repo)
+    if not texts:
         return [
             _finding(
                 repo, "ci_gaps", "low", "Rust repo with no GitHub workflows", ".github/workflows/"
             )
         ]
-    texts = [w.read_text(encoding="utf-8", errors="replace") for w in workflows]
     text = "\n".join(texts)
     clippy = [_clippy_commands(workflow) for workflow in texts]
     out = []
@@ -376,6 +385,93 @@ def _ci_gaps(repo: Path) -> list[dict[str, Any]]:
                 repo, "ci_gaps", "low", "fuzz/ exists but no workflow runs cargo fuzz", "fuzz/"
             )
         )
+    return out
+
+
+_IGNORE_BARE_RE = re.compile(r"#\[ignore\]")
+_GATE_RE = re.compile(r'^#!\[cfg\(feature\s*=\s*"([^"]+)"\)\]', re.M)
+
+
+def _verification_debt(
+    repo: Path, entries: list[tuple[Path, dict[str, Any], dict[str, Any] | None]]
+) -> list[dict[str, Any]]:
+    """Declared verification claims that no workflow executes.
+
+    A declared `rust-version`, an `#[ignore]` and a feature-gated test file are
+    each a promise about what CI proves; the promise is unmet when the workflow
+    never installs that toolchain, gives no reason for the skip, or never
+    enables the feature.
+    """
+    texts = _workflow_texts(repo)
+    text = "\n".join(texts)
+    out: list[dict[str, Any]] = []
+
+    versions = sorted(
+        {
+            pkg["rust-version"]
+            for _, _, pkg in entries
+            if pkg and isinstance(pkg.get("rust-version"), str)
+        }
+    )
+    # A job named "msrv" may pin through an env var, so its presence is not a gap.
+    missing = [v for v in versions if not re.search(rf"(?<![\d.]){re.escape(v)}(?![\d.])", text)]
+    if texts and missing and not re.search(r"\bmsrv\b", text, re.I):
+        out.append(
+            _finding(
+                repo,
+                "msrv_ci",
+                "info",
+                f"declared rust-version {', '.join(missing)} is not installed by any workflow",
+                "Cargo.toml",
+            )
+        )
+
+    bare = 0
+    gated: list[tuple[str, str]] = []
+    for path in repo.rglob("*.rs"):
+        rel = path.relative_to(repo)
+        if any(part in _SKIP_DIRS for part in rel.parts) or not contained_file(path, repo):
+            continue
+        try:
+            body = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        bare += len(_IGNORE_BARE_RE.findall(body))
+        if "tests" in rel.parts:
+            gate = _GATE_RE.search(body)
+            if gate:
+                gated.append((str(rel), gate.group(1)))
+    if bare:
+        out.append(
+            _finding(
+                repo,
+                "ignored_test",
+                "info",
+                f"{bare} `#[ignore]` attributes carry no reason string",
+                "tests/",
+            )
+        )
+    if gated:
+        any_features = "--all-features" in text or "--features" in text
+        dead: dict[str, list[str]] = {}
+        for test_file, feature in gated:
+            if any_features and (
+                "--all-features" in text
+                or re.search(rf"--features?\s+[^\n]*\b{re.escape(feature)}\b", text)
+            ):
+                continue
+            dead.setdefault(feature, []).append(test_file)
+        for feature, files in sorted(dead.items()):
+            example = files[0] if len(files) == 1 else f"{files[0]} (+{len(files) - 1} more)"
+            out.append(
+                _finding(
+                    repo,
+                    "dead_feature_gate",
+                    "low",
+                    f'{len(files)} test file(s) require feature "{feature}", which no workflow enables',
+                    example,
+                )
+            )
     return out
 
 
