@@ -1704,6 +1704,8 @@ def _sweep_body(
             exclude_repo_globs=cpub.exclude_repo_globs,
             only_public=cpub.only_public,
             repo_names=cpub.repo_names or None,
+            check_registry=cpub.check_registry,
+            registry_owner=cpub.registry_owner,
         )
         out_path = Path(cpub.output).expanduser()
         write_cpub(out_path, report)

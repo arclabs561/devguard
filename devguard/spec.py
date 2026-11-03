@@ -483,6 +483,16 @@ class CargoPublishAuditSweepSpec(BaseModel):
         description="When non-empty, only audit these repos (by directory name). "
         "Useful to focus on published crates.",
     )
+    check_registry: bool = Field(
+        False,
+        description="Also compare each crate with crates.io (network): foreign-owned "
+        "names, published versions without a tag, and code commits since the last publish.",
+    )
+    registry_owner: str | None = Field(
+        None,
+        description="crates.io login that should own these crates; enables the "
+        "registry_name_foreign check.",
+    )
     output: str = Field(
         ".state/devguard/cargo-publish-audit.json",
         description="Where to write the JSON report.",

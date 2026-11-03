@@ -11,6 +11,10 @@ import fnmatch
 import json
 import re
 import subprocess
+import tomllib
+import urllib.error
+import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -67,8 +71,20 @@ def _iter_rust_repos(root: Path, max_depth: int, exclude_globs: list[str]) -> li
     return sorted(repos)
 
 
+LICENSE_FILES = (
+    "LICENSE",
+    "LICENSE.md",
+    "LICENSE.txt",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+    "LICENCE",
+)
+
+
 def _is_likely_public(repo: Path) -> bool:
-    for name in ("LICENSE", "LICENSE.md", "LICENSE.txt", "LICENCE"):
+    # Same list as the no_license_file check: Rust crates usually ship only
+    # LICENSE-MIT and LICENSE-APACHE.
+    for name in LICENSE_FILES:
         if (repo / name).exists():
             return True
     return False
@@ -277,8 +293,204 @@ def _check_feature_gated_tests(repo: Path, result: RepoAuditResult) -> None:
             continue
 
 
-def _audit_repo(repo: Path) -> RepoAuditResult:
-    """Run all cargo publish checks on a single repo."""
+def _read_manifest(repo: Path) -> dict[str, Any] | None:
+    """Parse Cargo.toml, or None when it is missing or not valid TOML."""
+    try:
+        return tomllib.loads((repo / "Cargo.toml").read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+
+
+def _published_dependency_tables(manifest: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    """Dependency tables that reach users of the published crate.
+
+    `[dev-dependencies]` are left out: `cargo publish` strips them, so a git
+    dev-dependency neither blocks publishing nor changes what users build.
+    """
+    tables: list[tuple[str, dict[str, Any]]] = []
+    for key in ("dependencies", "build-dependencies"):
+        if isinstance(manifest.get(key), dict):
+            tables.append((key, manifest[key]))
+    for target, body in (manifest.get("target") or {}).items():
+        if not isinstance(body, dict):
+            continue
+        for key in ("dependencies", "build-dependencies"):
+            if isinstance(body.get(key), dict):
+                tables.append((f"target.{target}.{key}", body[key]))
+    workspace_deps = (manifest.get("workspace") or {}).get("dependencies")
+    if isinstance(workspace_deps, dict):
+        tables.append(("workspace.dependencies", workspace_deps))
+    return tables
+
+
+def _check_git_dependencies(repo: Path, result: RepoAuditResult) -> None:
+    """Flag git dependencies that block publishing or make the published build differ.
+
+    A git dependency without `version` makes `cargo publish` fail. With
+    `version`, the crate publishes against that crates.io version while local
+    builds and CI use the git source, so the tested and published builds
+    differ; `[patch.crates-io]` overrides do the same.
+    """
+    manifest = _read_manifest(repo)
+    if manifest is None:
+        return
+    for table, deps in _published_dependency_tables(manifest):
+        for dep, spec in deps.items():
+            if not isinstance(spec, dict) or "git" not in spec:
+                continue
+            if "version" not in spec:
+                result.findings.append(
+                    Finding(
+                        check="git_dependency",
+                        severity="error" if result.is_public else "warning",
+                        message=f"[{table}] `{dep}` is a git dependency with no version",
+                        detail="cargo publish rejects git dependencies without a crates.io "
+                        "version; publish the dependency or depend on a released version.",
+                    )
+                )
+            else:
+                result.findings.append(
+                    Finding(
+                        check="git_dependency_shadowed",
+                        severity="warning",
+                        message=f"[{table}] `{dep}` builds from git locally but from crates.io "
+                        f"{spec['version']} when published",
+                        detail="The tested build and the published build differ.",
+                    )
+                )
+    patches = ((manifest.get("patch") or {}).get("crates-io")) or {}
+    for dep in patches:
+        result.findings.append(
+            Finding(
+                check="git_dependency_shadowed",
+                severity="warning",
+                message=f"[patch.crates-io] overrides `{dep}`",
+                detail="cargo publish ignores [patch]; users build against crates.io, "
+                "not the patched source CI tested.",
+            )
+        )
+
+
+RegistryFetch = Callable[[str], dict[str, Any] | None]
+
+CODE_PATHS = ["src", "crates", "Cargo.toml", "build.rs"]
+
+
+def _fetch_crates_io(url: str) -> dict[str, Any] | None:
+    """GET a crates.io API URL; None on 404 or network failure."""
+    req = urllib.request.Request(url, headers={"User-Agent": "devguard (cargo_publish_audit)"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 (fixed https host)
+            data = json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _git_out(repo: Path, *args: str) -> str | None:
+    res = subprocess.run(
+        ["git", *args], cwd=str(repo), capture_output=True, text=True, timeout=20, check=False
+    )
+    return res.stdout.strip() if res.returncode == 0 else None
+
+
+def _check_registry(
+    repo: Path,
+    result: RepoAuditResult,
+    fetch: RegistryFetch,
+    owner: str | None,
+) -> None:
+    """Compare the repo with its crates.io entry.
+
+    - registry_name_foreign: the crates.io name belongs to other accounts, so
+      this repo cannot publish under it (needs `owner`).
+    - published_untagged: the newest crates.io version has no git tag.
+    - release_lag: code commits on the upstream branch after that version was
+      published, i.e. fixes users cannot install yet.
+    """
+    manifest = _read_manifest(repo) or {}
+    name = (manifest.get("package") or {}).get("name")
+    if not isinstance(name, str):
+        return
+    crate = fetch(f"https://crates.io/api/v1/crates/{name}")
+    if not crate or "crate" not in crate:
+        return
+    if owner:
+        owners = fetch(f"https://crates.io/api/v1/crates/{name}/owners") or {}
+        logins: set[str] = {
+            u["login"]
+            for u in owners.get("users", [])
+            if isinstance(u, dict) and isinstance(u.get("login"), str)
+        }
+        if logins and owner not in logins:
+            result.findings.append(
+                Finding(
+                    check="registry_name_foreign",
+                    severity="warning",
+                    message=f"crates.io `{name}` is owned by {', '.join(sorted(logins))}, "
+                    f"not {owner}",
+                    detail="This repo cannot publish under that name; rename the package "
+                    "before publishing.",
+                )
+            )
+            return
+    version = crate["crate"].get("max_version")
+    published = next(
+        (v.get("created_at") for v in crate.get("versions", []) if v.get("num") == version),
+        None,
+    )
+    if not version:
+        return
+    tags = set((_git_out(repo, "tag", "--list") or "").splitlines())
+    if not tags & {f"v{version}", version, f"{name}-v{version}", f"{name}-{version}"}:
+        result.findings.append(
+            Finding(
+                check="published_untagged",
+                severity="warning",
+                message=f"crates.io {name} {version} has no git tag",
+                detail=f"Tag the published commit `v{version}` so releases are traceable.",
+            )
+        )
+    if not published:
+        return
+    # The default branch, not the checkout's upstream: a checkout parked on a
+    # feature branch would otherwise count that branch's work.
+    ref = _git_out(repo, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD") or (
+        _git_out(repo, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
+    )
+    count = _git_out(
+        repo,
+        "rev-list",
+        "--count",
+        "--no-merges",
+        f"--since={published}",
+        ref or "HEAD",
+        "--",
+        *CODE_PATHS,
+    )
+    if count and count.isdigit() and int(count) > 0:
+        result.findings.append(
+            Finding(
+                check="release_lag",
+                severity="info",
+                message=f"{count} code commit(s) on {ref or 'HEAD'} since {name} {version} "
+                f"was published ({published[:10]})",
+                detail="Commits touching src/, crates/, Cargo.toml or build.rs that users "
+                "cannot install yet; release them or note why not.",
+            )
+        )
+
+
+def _audit_repo(
+    repo: Path,
+    *,
+    registry_fetch: RegistryFetch | None = None,
+    registry_owner: str | None = None,
+) -> RepoAuditResult:
+    """Run all cargo publish checks on a single repo.
+
+    Registry checks run only when `registry_fetch` is given.
+    """
     name = repo.name
     is_public = _is_likely_public(repo)
     cargo_version = _read_cargo_version(repo)
@@ -307,6 +519,10 @@ def _audit_repo(repo: Path) -> RepoAuditResult:
             )
         )
         return result
+
+    _check_git_dependencies(repo, result)
+    if registry_fetch is not None:
+        _check_registry(repo, result, registry_fetch, registry_owner)
 
     # Check: has any workflow files at all
     if not has_workflows:
@@ -431,17 +647,7 @@ def _audit_repo(repo: Path) -> RepoAuditResult:
 
     # Check: LICENSE file for public repos
     if is_public:
-        has_license = any(
-            (repo / name).exists()
-            for name in (
-                "LICENSE",
-                "LICENSE.md",
-                "LICENSE.txt",
-                "LICENSE-MIT",
-                "LICENSE-APACHE",
-                "LICENCE",
-            )
-        )
+        has_license = any((repo / name).exists() for name in LICENSE_FILES)
         if not has_license:
             result.findings.append(
                 Finding(
@@ -458,6 +664,17 @@ def _audit_repo(repo: Path) -> RepoAuditResult:
         ci_text = "\n".join(t for _, t in workflows if "pull_request" in t or "push:" in t)
         has_fmt = bool(re.search(r"cargo\s+fmt", ci_text))
         has_clippy = bool(re.search(r"cargo\s+clippy", ci_text))
+        has_doc = bool(re.search(r"cargo\s+(\+\S+\s+)?doc\b", ci_text))
+        if not has_doc:
+            result.findings.append(
+                Finding(
+                    check="ci_no_doc",
+                    severity="info",
+                    message="CI does not run `cargo doc`",
+                    detail="Broken intra-doc links surface only in rustdoc; run "
+                    '`RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features`.',
+                )
+            )
         if not has_fmt:
             result.findings.append(
                 Finding(
@@ -551,8 +768,16 @@ def audit_cargo_publish(
     exclude_repo_globs: list[str] | None = None,
     only_public: bool = False,
     repo_names: list[str] | None = None,
+    check_registry: bool = False,
+    registry_owner: str | None = None,
+    registry_fetch: RegistryFetch | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
-    """Audit cargo publish pipelines across repos and return a report."""
+    """Audit cargo publish pipelines across repos and return a report.
+
+    With `check_registry`, also compare each crate with crates.io (network);
+    `registry_fetch` replaces the HTTP call, for tests.
+    """
+    fetch = registry_fetch or (_fetch_crates_io if check_registry else None)
     errors: list[str] = []
     root = dev_root if dev_root is not None else _default_dev_root()
     globs = [g for g in (exclude_repo_globs or []) if isinstance(g, str) and g.strip()]
@@ -569,7 +794,7 @@ def audit_cargo_publish(
     results: list[RepoAuditResult] = []
     for repo in repos:
         try:
-            result = _audit_repo(repo)
+            result = _audit_repo(repo, registry_fetch=fetch, registry_owner=registry_owner)
             results.append(result)
         except Exception as exc:
             errors.append(f"failed to audit {repo}: {exc}")
