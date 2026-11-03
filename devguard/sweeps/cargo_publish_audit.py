@@ -67,8 +67,20 @@ def _iter_rust_repos(root: Path, max_depth: int, exclude_globs: list[str]) -> li
     return sorted(repos)
 
 
+LICENSE_FILES = (
+    "LICENSE",
+    "LICENSE.md",
+    "LICENSE.txt",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+    "LICENCE",
+)
+
+
 def _is_likely_public(repo: Path) -> bool:
-    for name in ("LICENSE", "LICENSE.md", "LICENSE.txt", "LICENCE"):
+    # Same list as the no_license_file check: Rust crates usually ship only
+    # LICENSE-MIT and LICENSE-APACHE.
+    for name in LICENSE_FILES:
         if (repo / name).exists():
             return True
     return False
@@ -431,17 +443,7 @@ def _audit_repo(repo: Path) -> RepoAuditResult:
 
     # Check: LICENSE file for public repos
     if is_public:
-        has_license = any(
-            (repo / name).exists()
-            for name in (
-                "LICENSE",
-                "LICENSE.md",
-                "LICENSE.txt",
-                "LICENSE-MIT",
-                "LICENSE-APACHE",
-                "LICENCE",
-            )
-        )
+        has_license = any((repo / name).exists() for name in LICENSE_FILES)
         if not has_license:
             result.findings.append(
                 Finding(
