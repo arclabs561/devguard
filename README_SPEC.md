@@ -49,9 +49,8 @@ discovery_rules:
   - name: github_repos
     type: github
     method: cli
-    command: gh repo list --json nameWithOwner --limit 100
-    command_parser: json
-    extract_path: "[].nameWithOwner"
+    command: gh api --paginate "user/repos?affiliation=owner&per_page=100" --jq ".[].full_name"
+    command_parser: lines
     timeout: 10
     enabled: true
 

@@ -3,6 +3,7 @@
 import json
 import socket
 import subprocess
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from pydantic_settings import BaseSettings
@@ -95,3 +96,49 @@ def test_discover_human_output_stays_on_stdout(tmp_path, offline_discovery):
     ):
         assert label in result.stdout
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize("json_output", [False, True])
+def test_discover_persists_all_owned_repos_and_manual_resources(tmp_path, monkeypatch, json_output):
+    from devguard.spec import MonitorSpec, get_default_spec
+
+    rule = next(r for r in get_default_spec().discovery_rules if r.name == "github_repos")
+    repos = [f"owner/repo-{i:03}" for i in range(122)]
+    manual = "other-owner/external"
+    expected = [*repos, manual]
+
+    process = Mock(
+        returncode=0, communicate=AsyncMock(return_value=("\n".join(repos).encode(), b""))
+    )
+    gh = AsyncMock(return_value=process)
+    monkeypatch.setattr(discovery.asyncio, "create_subprocess_exec", gh)
+    spec = MonitorSpec(
+        name="owned-repos",
+        discovery_rules=[rule],
+        manual_resources={"github": [repos[0], manual]},
+    )
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(spec.model_dump_json())
+    env_path = tmp_path / ".env"
+    env_path.write_text("OTHER=untouched\nGITHUB_REPOS_TO_MONITOR=old/repo\n")
+    args = ["discover", "--spec", str(spec_path), "--update-env", "--env-file", str(env_path)]
+    if json_output:
+        args.append("--json")
+    result = CliRunner().invoke(cli.app, args)
+
+    assert result.exit_code == 0, result.output
+    assert gh.await_args.args == (
+        "gh",
+        "api",
+        "--paginate",
+        "user/repos?affiliation=owner&per_page=100",
+        "--jq",
+        ".[].full_name",
+    )
+    assert env_path.read_text().splitlines()[:2] == [
+        "OTHER=untouched",
+        "GITHUB_REPOS_TO_MONITOR=" + ",".join(expected),
+    ]
+    if json_output:
+        assert json.loads(result.stdout)["resources"]["github"] == expected
+        assert "Updated .env file" in result.stderr

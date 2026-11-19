@@ -827,41 +827,41 @@ def discover(
                 console.print(f"  • {error}")
             console.print()
 
-        # Update .env if requested
-        if update_env:
-            env_path = Path(env_file)
-            env_content = env_path.read_text() if env_path.exists() else ""
+    # Update .env if requested
+    if update_env:
+        env_path = Path(env_file)
+        env_content = env_path.read_text() if env_path.exists() else ""
 
-            # Update npm packages
-            if "npm" in result.resources:
-                npm_packages = result.resources["npm"]
-                env_content = _update_env_var(
-                    env_content, "NPM_PACKAGES_TO_MONITOR", ",".join(npm_packages[:20])
-                )
+        # Update npm packages
+        if "npm" in result.resources:
+            npm_packages = result.resources["npm"]
+            env_content = _update_env_var(
+                env_content, "NPM_PACKAGES_TO_MONITOR", ",".join(npm_packages[:20])
+            )
 
-            # Update GitHub repos
-            if "github" in result.resources:
-                github_repos = result.resources["github"]
-                env_content = _update_env_var(
-                    env_content, "GITHUB_REPOS_TO_MONITOR", ",".join(github_repos[:20])
-                )
+        # Update GitHub repos
+        if "github" in result.resources:
+            github_repos = result.resources["github"]
+            env_content = _update_env_var(
+                env_content, "GITHUB_REPOS_TO_MONITOR", ",".join(github_repos)
+            )
 
-            # Update Vercel projects
-            if "vercel" in result.resources:
-                vercel_projects = result.resources["vercel"]
-                env_content = _update_env_var(
-                    env_content, "VERCEL_PROJECTS_TO_MONITOR", ",".join(vercel_projects[:20])
-                )
+        # Update Vercel projects
+        if "vercel" in result.resources:
+            vercel_projects = result.resources["vercel"]
+            env_content = _update_env_var(
+                env_content, "VERCEL_PROJECTS_TO_MONITOR", ",".join(vercel_projects[:20])
+            )
 
-            # Update Fly apps
-            if "fly" in result.resources:
-                fly_apps = result.resources["fly"]
-                env_content = _update_env_var(
-                    env_content, "FLY_APPS_TO_MONITOR", ",".join(fly_apps[:20])
-                )
+        # Update Fly apps
+        if "fly" in result.resources:
+            fly_apps = result.resources["fly"]
+            env_content = _update_env_var(
+                env_content, "FLY_APPS_TO_MONITOR", ",".join(fly_apps[:20])
+            )
 
-            env_path.write_text(env_content)
-            console.print("[bold green]✓[/bold green] Updated .env file with discovered resources")
+        env_path.write_text(env_content)
+        diagnostics.print("[bold green]✓[/bold green] Updated .env file with discovered resources")
 
 
 @app.command()
