@@ -42,6 +42,22 @@ Check external tools:
 devguard doctor
 ```
 
+Check the default-branch commit across all repositories owned by the signed-in
+GitHub user, including accessible private repositories, forks, and archives:
+
+```bash
+devguard github-ci
+devguard github-ci --json --fail-on-red
+```
+
+This command uses an authenticated `gh` CLI and reads GitHub's combined check
+and commit-status result. It paginates through the full visible inventory.
+`NO_REPORTED_CHECKS` means GitHub returned no checks for that particular
+commit. Pull-request-only tests may have run on another commit. `EMPTY` marks
+an empty repository. The JSON includes the branch, commit SHA and link.
+By default this is a report. With `--fail-on-red`, a reported failure or error
+exits 1. An incomplete API request exits 2.
+
 Run all enabled sweeps:
 
 ```bash
