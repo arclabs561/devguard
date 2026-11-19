@@ -52,7 +52,7 @@ class GitHubChecker(BaseChecker):
 
         try:
             # Get repositories to check
-            repos = await self._get_repositories()
+            repos, errors = await self._get_repositories()
 
             for repo in repos:
                 try:
@@ -79,9 +79,10 @@ class GitHubChecker(BaseChecker):
             errors=errors,
         )
 
-    async def _get_repositories(self) -> list:
-        """Get list of repositories to monitor."""
+    async def _get_repositories(self) -> tuple[list, list[str]]:
+        """Resolve configured repositories and report failed lookups."""
         repos = []
+        errors: list[str] = []
 
         if self.settings.github_org:
             # Get all repos in organization
@@ -92,26 +93,15 @@ class GitHubChecker(BaseChecker):
                 org_name = self.settings.github_org
                 raise Exception(f"Error accessing organization {org_name}: {str(e)}")
 
-        # Add specific repos if configured
-        if self.settings.github_repos_to_monitor:
-            for repo_name in self.settings.github_repos_to_monitor:
-                try:
-                    repo = self.github.get_repo(repo_name)
-                    if repo not in repos:
-                        repos.append(repo)
-                except GithubException:
-                    # Repo might not exist or not accessible
-                    pass
-
-        # If no specific repos configured, get user's repos
-        if not repos:
+        for repo_name in self.settings.github_repos_to_monitor:
             try:
-                user = self.github.get_user()
-                repos.extend(list(user.get_repos()))
-            except GithubException:
-                pass
+                repo = self.github.get_repo(repo_name)
+                if repo not in repos:
+                    repos.append(repo)
+            except GithubException as e:
+                errors.append(f"Error accessing repository {repo_name}: HTTP {e.status}")
 
-        return repos
+        return repos, errors
 
     async def _get_dependabot_alerts(self, repo) -> list[RepositoryAlert]:
         """Get Dependabot alerts for a repository."""
