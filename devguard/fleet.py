@@ -298,9 +298,21 @@ def _locked(path: Path) -> Iterator[None]:
         yield
 
 
+def _path_component(part: str) -> str:
+    """One directory name for the cache: no separators, and never `.`/`..` or hidden."""
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", part).lstrip(".")
+    return safe or "_"
+
+
 def cached_clone_path(ref: RepoRef, root: Path | None = None) -> Path:
-    safe = [re.sub(r"[^A-Za-z0-9._-]", "_", part) or "_" for part in ref.name.split("/")]
-    if len(safe) == 1:
+    """Where *ref*'s clone lives. Always two levels below `<root>/repos`.
+
+    The name comes from a URL or a file the user did not necessarily write, and
+    a stale clone at this path is deleted before recloning, so a name such as
+    `../..` must not be able to point outside the cache.
+    """
+    safe = [_path_component(part) for part in ref.name.split("/") if part]
+    while len(safe) < 2:
         safe.insert(0, "_")
     return (root or cache_root()) / "repos" / safe[-2] / safe[-1]
 

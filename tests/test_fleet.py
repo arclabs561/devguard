@@ -168,6 +168,26 @@ def test_sync_repo_replaces_a_broken_or_foreign_clone(tmp_path: Path) -> None:
     assert path2 == path and (path / "b.txt").exists() and not (path / "a.txt").exists()
 
 
+@pytest.mark.parametrize(
+    "name", ["../..", "owner/..", "..", ".", "a/../../b", "/etc/passwd", "o/.git", "", "o//"]
+)
+def test_cached_clone_path_stays_inside_the_cache(tmp_path: Path, name: str) -> None:
+    repos = (tmp_path / "cache" / "repos").resolve()
+    dest = fl.cached_clone_path(fl.RepoRef(name=name, url="u")).resolve()
+    assert dest.parent.parent == repos, dest
+    assert not dest.name.startswith(".")
+
+
+def test_hostile_url_cannot_delete_outside_the_cache(tmp_path: Path) -> None:
+    keep = tmp_path / "keep.txt"
+    keep.write_text("still here\n")
+    (tmp_path / "cache").mkdir()
+    ref = fl.parse_target(f"file://{tmp_path}/nope/../..")
+    with pytest.raises(RuntimeError):
+        fl.sync_repo(ref)
+    assert keep.read_text() == "still here\n"
+
+
 def test_sync_repo_reports_a_missing_remote(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match="git clone failed"):
         fl.sync_repo(fl.RepoRef(name="o/missing", url=f"file://{tmp_path}/nope"))
