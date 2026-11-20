@@ -303,3 +303,70 @@ def test_cli_rejects_bad_input(tmp_path: Path) -> None:
     assert runner.invoke(app, ["fleet", "o/r", "--only", "nope"]).exit_code != 0
     assert runner.invoke(app, ["fleet", "o/r", "--fail-on", "loud"]).exit_code != 0
     assert runner.invoke(app, ["fleet", str(tmp_path / "missing dir")]).exit_code == 1
+
+
+def test_fleet_retries_invalid_spec_instead_of_reporting_clean(tmp_path: Path) -> None:
+    repo = _make_origin(tmp_path, "docs", {"README.md": "fixture\n"})
+    spec = tmp_path / "broken.yaml"
+    spec.write_text("name: [\n")
+    sweeps = ["repo_hygiene"]
+    key = fl.result_key(
+        head=_git(repo, "rev-parse", "HEAD"),
+        sweeps=sweeps,
+        spec_path=spec,
+        full_history=False,
+        name=repo.name,
+    )
+    # A cache created by the previous fleet implementation.
+    fl._write_cached_result(fl.cache_root(), key, {"exit_code": 2, "reports": {}})
+    runner = CliRunner()
+    args = ["fleet", str(repo), "--only", "repo_hygiene", "--spec", str(spec), "--format", "json"]
+    for _ in range(2):
+        run = runner.invoke(app, args)
+        assert run.exit_code == 3
+        report = json.loads(run.stdout)
+        assert report["summary"]["errors"] == 1
+        assert report["summary"]["clean"] == report["summary"]["cached"] == 0
+        assert "Invalid sweep spec" in report["repos"][0]["errors"][0]
+
+
+@pytest.mark.parametrize("name", ["missing.yaml", "devguard.spec.yaml", "directory"])
+def test_explicit_spec_must_be_a_file(
+    name: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    repo = _make_origin(tmp_path, "docs", {"README.md": "fixture\n"})
+    (tmp_path / "directory").mkdir()
+    fallback = tmp_path / "personal.yaml"
+    fallback.write_text("{}\n")
+    monkeypatch.setenv("DEVGUARD_SPEC", str(fallback))
+    args = ["fleet", str(repo), "--only", "repo_hygiene", "--dry-run"]
+    runner = CliRunner()
+    assert runner.invoke(app, args).exit_code == 0
+    run = runner.invoke(app, [*args, "--spec", name])
+    assert run.exit_code != 0
+    assert name in run.output
+
+
+def test_partial_report_is_neither_clean_nor_cached(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _make_origin(tmp_path, "docs", {"README.md": "fixture\n"})
+    ref = fl.parse_target(str(repo))
+    sweeps = ["repo_hygiene"]
+    results = iter(
+        [
+            (3, {"repo_hygiene": {"errors": ["temporarily unavailable"]}}, ""),
+            (0, {"repo_hygiene": {"findings": []}}, ""),
+        ]
+    )
+    monkeypatch.setattr(fl, "run_sweeps", lambda *_: next(results))
+    first = fl.scan_fleet([ref], sweeps=sweeps)
+    summary = fl.fleet_report(first, sweeps=sweeps, seconds=0.0)["summary"]
+    assert summary["incomplete"] == 1
+    assert summary["clean"] == 0
+    assert fl.fleet_exit_code(first, "never") == 3
+    recovered = fl.scan_fleet([ref], sweeps=sweeps)
+    assert recovered[0].status == "scanned"
+    assert fl.fleet_exit_code(recovered, "high") == 0
+    assert fl.scan_fleet([ref], sweeps=sweeps)[0].status == "cached"

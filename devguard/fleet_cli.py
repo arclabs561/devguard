@@ -212,7 +212,7 @@ def fleet(
     only: list[str] = typer.Option(
         None, "--only", help="Sweeps to run (repeatable). Default: the repo-scoped sweeps."
     ),
-    spec_file: str = typer.Option("devguard.spec.yaml", "--spec", "-s", help="Spec file."),
+    spec_file: Path | None = typer.Option(None, "--spec", "-s", help="Spec file."),
     jobs: int = typer.Option(
         0, "--jobs", "-j", help="Repositories scanned at once (default: CPU count, at most 8)."
     ),
@@ -282,7 +282,12 @@ def fleet(
 
     from devguard.spec import resolve_spec_path
 
-    spec_path = resolve_spec_path(spec_file)
+    if spec_file is None:
+        spec_path = resolve_spec_path()
+    else:
+        spec_path = spec_file.expanduser()
+        if not spec_path.is_file():
+            raise typer.BadParameter(f"Expected a spec file at {spec_path}", param_hint="--spec")
 
     try:
         refs = _collect_refs(targets, owner, mine, root_dir, repos_file, max_depth=3)
