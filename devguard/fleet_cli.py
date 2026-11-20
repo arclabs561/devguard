@@ -226,7 +226,9 @@ def fleet(
     ),
     include_archived: bool = typer.Option(False, "--include-archived"),
     include_forks: bool = typer.Option(False, "--include-forks"),
-    limit: int = typer.Option(None, "--limit", help="Scan at most this many, newest push first."),
+    limit: int = typer.Option(
+        None, "--limit", min=1, help="Scan at most this many, newest push first."
+    ),
     full_history: bool = typer.Option(
         False,
         "--full-history",

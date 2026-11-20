@@ -350,6 +350,14 @@ def test_cli_dry_run_json_and_cache_commands(tmp_path: Path) -> None:
     assert json.loads(runner.invoke(app, ["cache", "info", "--json"]).stdout)["results"] == 0
 
 
+@pytest.mark.parametrize("limit", ["0", "-1"])
+def test_cli_rejects_nonpositive_limit(limit: str) -> None:
+    run = CliRunner().invoke(app, ["fleet", "o/a", "o/b", "--dry-run", "--limit", limit])
+    assert run.exit_code == 2
+    assert "--limit" in run.output
+    assert not run.stdout
+
+
 def test_cli_rejects_bad_input(tmp_path: Path) -> None:
     runner = CliRunner()
     assert runner.invoke(app, ["fleet"]).exit_code == 1
