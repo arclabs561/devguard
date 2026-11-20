@@ -1403,6 +1403,9 @@ def _sweep_body(
             _print_local_dirty_worktree_table(report)
         if report["summary"]["findings_total"] > 0:
             exit_code = max(exit_code, 2)
+        if errors:
+            # A missing or failed scanner means the worktree was not checked.
+            exit_code = max(exit_code, 3)
 
     # local full-history secret sweep
     hist = spec.sweeps.local_history_secrets

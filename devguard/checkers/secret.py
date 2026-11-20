@@ -32,9 +32,12 @@ class SecretChecker(BaseChecker):
     # AWS_ACCESS_KEY_ID=, so keys passed as kwargs or kept in fixture files count.
     FALLBACK_PATTERNS = [
         (r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b", "AWS Access Key"),
-        (r"AWS_SECRET_ACCESS_KEY\s*=\s*['\"]?([0-9a-zA-Z/+]{40})['\"]?", "AWS Secret Key"),
-        (r"-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----", "Private Key"),
-        (r"\bgh[pousr]_[A-Za-z0-9]{36}\b", "GitHub Token"),
+        (
+            r"(?i:aws_secret_access_key)['\"]?\s*[:=]\s*['\"]?([0-9a-zA-Z/+]{40})",
+            "AWS Secret Key",
+        ),
+        (r"-----BEGIN (?:[A-Z]+ )*PRIVATE KEY(?: BLOCK)?-----", "Private Key"),
+        (r"\bgh[pousr]_[A-Za-z0-9]{36,255}\b", "GitHub Token"),
         (r"\bgithub_pat_[A-Za-z0-9_]{82}\b", "GitHub Fine-grained Token"),
         (r"\bsk-ant-(?:api|admin)\d\d-[A-Za-z0-9_-]{80,}", "Anthropic API Key"),
         (r"\bsk-proj-[A-Za-z0-9_-]{40,}", "OpenAI Project Key"),
@@ -44,7 +47,9 @@ class SecretChecker(BaseChecker):
         (r"\bhf_[A-Za-z]{34}\b", "Hugging Face Token"),
         (r"\bnpm_[A-Za-z0-9]{36}\b", "npm Token"),
         (r"\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9_-]{50,}", "PyPI Token"),
-        (r"api_key\s*=\s*['\"]?([a-zA-Z0-9]{32,})['\"]?", "Generic API Key"),
+        (r"\bAIza[0-9A-Za-z_-]{35}\b", "Google API Key"),
+        (r"\bsk-[A-Za-z0-9]{48}\b", "OpenAI API Key"),
+        (r"(?i:api_key)['\"]?\s*[:=]\s*['\"]?([a-zA-Z0-9]{32,})['\"]?", "Generic API Key"),
     ]
     _SKIP_DIR_NAMES = frozenset({".git", "node_modules", "venv", ".venv", "__pycache__"})
 
@@ -173,7 +178,8 @@ class SecretChecker(BaseChecker):
                     await proc.wait()
                 except ProcessLookupError:
                     pass  # Process already terminated
-            return []
+            # An unscanned repository must not be reported as clean.
+            raise RuntimeError("trufflehog timed out after 60s; history not scanned") from None
         except Exception as e:
             logger.warning(f"Error running trufflehog on {repo_path}: {e}")
             if proc:
@@ -182,7 +188,7 @@ class SecretChecker(BaseChecker):
                     await proc.wait()
                 except ProcessLookupError:
                     pass
-            return []
+            raise RuntimeError(f"trufflehog failed: {e}; history not scanned") from e
 
         # Parse JSON lines output
         for line in stdout.decode("utf-8", errors="replace").splitlines():
@@ -254,7 +260,9 @@ class SecretChecker(BaseChecker):
 
             # Redact the actual secret
             raw = finding.get("Raw", "")
-            redacted = raw[:4] + "..." + raw[-4:] if len(raw) > 8 else "[redacted]"
+            # Show only a short prefix, and only of a secret long enough that the
+            # prefix identifies the key type without narrowing the value.
+            redacted = raw[:4] + "..." if len(raw) >= 24 else "[redacted]"
 
             summary = f"Verified {detector_type} secret in {repo_path.name}/{file_path}"
             if commit:
