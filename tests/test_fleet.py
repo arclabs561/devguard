@@ -330,6 +330,24 @@ def test_fleet_retries_invalid_spec_instead_of_reporting_clean(tmp_path: Path) -
         assert "Invalid sweep spec" in report["repos"][0]["errors"][0]
 
 
+@pytest.mark.parametrize("name", ["missing.yaml", "devguard.spec.yaml", "directory"])
+def test_explicit_spec_must_be_a_file(
+    name: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    repo = _make_origin(tmp_path, "docs", {"README.md": "fixture\n"})
+    (tmp_path / "directory").mkdir()
+    fallback = tmp_path / "personal.yaml"
+    fallback.write_text("{}\n")
+    monkeypatch.setenv("DEVGUARD_SPEC", str(fallback))
+    args = ["fleet", str(repo), "--only", "repo_hygiene", "--dry-run"]
+    runner = CliRunner()
+    assert runner.invoke(app, args).exit_code == 0
+    run = runner.invoke(app, [*args, "--spec", name])
+    assert run.exit_code != 0
+    assert name in run.output
+
+
 def test_partial_report_is_neither_clean_nor_cached(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
