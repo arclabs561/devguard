@@ -6,6 +6,23 @@ Earlier history has not been reconstructed in this changelog.
 
 ### Added
 
+- `devguard fleet`: run the repo-scoped sweeps over many repositories in
+  parallel. Repositories come from the signed-in GitHub user (`--mine`), an
+  owner (`--owner`), URLs or `owner/name` slugs, a file (`--repos-file`), or
+  local checkouts (`--root`). Clones are cached and refreshed with a shallow
+  fetch; results are cached per head commit, devguard version, sweep
+  selection, spec contents and installed scanners. Each repository is scanned
+  in its own process, so one failure does not lose the others. Text output is
+  a per-repository table, the most frequent checks and the findings at
+  `--details` or worse; `--format json` and `--output` give one combined
+  document. Exit 3 when any repository was not fully scanned.
+- `devguard cache info|clear` for the clone and result cache.
+- `devguard sweep --repo <GitHub URL>` now uses the clone cache instead of a
+  fresh temporary clone each time; `--no-cache` restores the old behaviour.
+- Fallback secret patterns: Google API keys, legacy `sk-` OpenAI keys, PGP and
+  multi-word private-key headers, and `aws_secret_access_key` / `api_key` in
+  any letter case with `:` or `=`.
+
 - `devguard: allow <check> reason: …` and `devguard: allow-file <check> reason: …`
   pragmas, so a finding can be excused at its source. A pragma without a reason
   is ignored, which keeps "we looked at this" distinct from "we did not".
@@ -55,6 +72,26 @@ Earlier history has not been reconstructed in this changelog.
 
 ### Fixed
 
+- `local_dirty_worktree_secrets` exited 0 with "Findings: 0" when the scanner
+  was missing or failed. It now exits 3, as the history and public sweeps do.
+- `local_history_secrets` (regex engine) skipped every file with a non-ASCII
+  name, recorded names containing a space with a trailing tab (so a secret
+  still in HEAD was reported as history-only), and reported the newest commit
+  that added a matching line instead of the first.
+- `local_history_secrets` (regex engine) reported redactions and vendor
+  examples such as `AKIAXXXXXXXXXXXXXXXX` as high-severity keys. Key-shaped
+  placeholders are now skipped.
+- `local_history_secrets` rated a key in `tests.rs` / `test.py` as high; those
+  files now count as fixtures, like `test_x.py`.
+- `mcp_security_audit` reported `mcp_command_injection` for a `;`-separated
+  list of URLs or hosts passed as one argument.
+- The fallback GitHub token pattern missed tokens longer than 36 characters.
+- `SecretChecker` reported a repository as scanned and clean when trufflehog
+  timed out or failed; the failure is now an error and the repository is not
+  listed as scanned.
+- Verified-secret descriptions showed the first and last four characters of
+  the secret, and all of a nine-character one. They now show at most a
+  four-character prefix, and only for secrets of 24 characters or more.
 - Detect mixed-case tracked root `CLAUDE.md` filenames, including when a
   correctly named file is also tracked, without combining multiple paths into
   one diagnostic filename.

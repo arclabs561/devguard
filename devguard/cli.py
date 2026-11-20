@@ -16,11 +16,15 @@ from rich.table import Table
 
 from devguard.config import get_settings
 from devguard.doc_commands_cli import doc_commands
+from devguard.fleet_cli import cache as cache_command
+from devguard.fleet_cli import fleet
 from devguard.github_ci import github_ci
 
 app = typer.Typer(help="devguard - Security and hygiene scanning for developer workstations")
 app.command("doc-commands")(doc_commands)
 app.command("github-ci")(github_ci)
+app.command("fleet")(fleet)
+app.command("cache")(cache_command)
 console = Console()
 
 _MAX_TABLE_ROWS = 15
@@ -1089,8 +1093,22 @@ def _is_github_url(s: str) -> bool:
     return s.startswith(("https://github.com/", "http://github.com/", "git@github.com:"))
 
 
-def _clone_repo(url: str) -> tuple[Path, str]:
-    """Shallow clone a GitHub repo to a temp dir. Returns (path, cleanup_dir)."""
+def _clone_repo(url: str, *, use_cache: bool = True) -> tuple[Path, str | None]:
+    """Fetch a GitHub repo for scanning. Returns (path, directory to remove afterwards).
+
+    By default the clone lives in the devguard cache and is refreshed with a
+    shallow fetch, so a second scan of the same URL does not download it again;
+    nothing is removed afterwards. With *use_cache* false it is cloned into a
+    temporary directory that the caller removes.
+    """
+    if use_cache:
+        from devguard.fleet import parse_target, sync_repo
+
+        try:
+            path, _head = sync_repo(parse_target(url))
+        except (RuntimeError, ValueError, OSError, subprocess.SubprocessError) as exc:
+            raise typer.BadParameter(f"Failed to clone {url}: {exc}") from None
+        return path, None
     tmpdir = tempfile.mkdtemp(prefix="devguard-")
     repo_name = url.rstrip("/").split("/")[-1].removesuffix(".git")
     clone_path = Path(tmpdir) / repo_name
@@ -1154,6 +1172,11 @@ def sweep(
         "-f",
         help="Output format: text, json, sarif",
     ),
+    no_cache: bool = typer.Option(
+        False,
+        "--no-cache",
+        help="With a GitHub URL: clone into a temporary directory instead of the clone cache.",
+    ),
 ) -> None:
     """Run spec-driven sweeps (policy checks).
 
@@ -1179,7 +1202,7 @@ def sweep(
     if repo is not None and _is_github_url(repo):
         if not machine_output:
             console.print(f"Cloning {repo}...")
-        _single_repo, _cleanup_dir = _clone_repo(repo)
+        _single_repo, _cleanup_dir = _clone_repo(repo, use_cache=not no_cache)
         if not machine_output:
             console.print(f"Scanning {_single_repo.name}")
         dev_root = str(_single_repo)

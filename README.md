@@ -80,6 +80,64 @@ devguard sweep --repo https://github.com/owner/repo --format json
 devguard sweep --repo /path/to/repo --only dependency_audit --package-root services/api --format json
 ```
 
+A GitHub URL is cloned once into the devguard cache and refreshed with a
+shallow fetch on later runs. `--no-cache` clones into a temporary directory
+instead.
+
+Scan many repos:
+
+```bash
+# Every repository of the signed-in GitHub user (needs an authenticated gh)
+devguard fleet --mine
+
+# Named repositories, an org, a list in a file, or local checkouts
+devguard fleet owner/one owner/two https://github.com/owner/three
+devguard fleet --owner some-org --pushed-since 2026-01-01 --exclude 'archive-*'
+devguard fleet --repos-file repos.txt --jobs 8 --output fleet.json
+devguard fleet --root ~/code
+```
+
+```text
+$ devguard fleet --repos-file repos.txt --min-severity high --details none
+Repositories (owner)
+repo      ┃ crit ┃ high ┃ medi ┃ low ┃ info ┃ state  ┃ worst finding
+deformat  │    · │    8 │    4 │  10 │    4 │ cached │ cargo_publish_audit/ungated_feature_test
+readcost  │    · │    1 │    3 │   1 │    8 │ cached │ publish_audit/no_license_file
+94 repositories with nothing at high or worse not listed (--min-severity info lists all).
+
+96 repositories: 0 scanned, 96 from cache, 0 failed, 0 clean. 68 high, 218 medium, 543 low, 370 info. 16.8s.
+```
+
+`fleet` runs the repo-scoped sweeps (override with `--only`) on up to `--jobs`
+repositories at once. Each repository is scanned by its own `devguard sweep`
+process, so a crash or timeout in one is reported for that repository and the
+rest still finish.
+
+Two caches live under `$DEVGUARD_CACHE_DIR`, else `$XDG_CACHE_HOME/devguard`,
+else `~/.cache/devguard`:
+
+- Clones. A repository is cloned once (shallow) and updated with one fetch per
+  run. `--offline` skips the fetch. `--full-history` clones every commit, which
+  `local_history_secrets` needs to see anything beyond the head commit.
+- Results. A result is reused while the head commit, the devguard version, the
+  sweep selection, the spec file and the set of installed scanners are all
+  unchanged. A local checkout with uncommitted changes is always rescanned.
+  `--no-cache` ignores and does not write results.
+
+`devguard cache info` shows the size of both; `devguard cache clear` removes
+them (`--results` keeps the clones).
+
+The tables leave out repositories and checks with nothing at `--min-severity`
+(default `low`) or worse; the totals count everything. `--details` (default
+`high`) lists individual findings. `--format json` prints one document with
+per-repository findings, counts and errors; `--full-reports` adds each sweep's
+raw report. Exit codes: 0, 2 when a finding is at `--fail-on` (default `high`)
+or worse, 3 when some repository was not fully scanned.
+
+On one cold run over 96 repositories (2 cores, `--jobs 6`) the sweep took 134
+seconds; the next run, with every clone fetched and no changes, took 17
+seconds, and 1 second with `--offline`.
+
 `--package-root` requires a local `--repo` and exactly
 `--only dependency_audit`, and paths must stay inside the repository. npm
 requires `package-lock.json`, Cargo requires `Cargo.lock`, and Python requires

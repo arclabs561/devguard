@@ -210,7 +210,7 @@ class TestCloneRepo:
         mock_mkdtemp.return_value = "/tmp/devguard-abc"
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
-        path, cleanup = _clone_repo("https://github.com/owner/my-repo")
+        path, cleanup = _clone_repo("https://github.com/owner/my-repo", use_cache=False)
 
         assert path == Path("/tmp/devguard-abc/my-repo")
         assert cleanup == "/tmp/devguard-abc"
@@ -238,7 +238,7 @@ class TestCloneRepo:
         import typer
 
         with pytest.raises(typer.BadParameter, match="Failed to clone"):
-            _clone_repo("https://github.com/owner/nonexistent")
+            _clone_repo("https://github.com/owner/nonexistent", use_cache=False)
 
         mock_rmtree.assert_called_once_with("/tmp/devguard-abc", ignore_errors=True)
 
@@ -248,7 +248,7 @@ class TestCloneRepo:
         mock_mkdtemp.return_value = "/tmp/devguard-xyz"
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
-        path, _ = _clone_repo("https://github.com/owner/my-repo.git")
+        path, _ = _clone_repo("https://github.com/owner/my-repo.git", use_cache=False)
 
         assert path == Path("/tmp/devguard-xyz/my-repo")
 
@@ -258,7 +258,7 @@ class TestCloneRepo:
         mock_mkdtemp.return_value = "/tmp/devguard-xyz"
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
-        path, _ = _clone_repo("https://github.com/owner/my-repo/")
+        path, _ = _clone_repo("https://github.com/owner/my-repo/", use_cache=False)
 
         assert path == Path("/tmp/devguard-xyz/my-repo")
 
