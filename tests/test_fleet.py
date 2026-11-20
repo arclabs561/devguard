@@ -423,3 +423,22 @@ def test_partial_report_is_neither_clean_nor_cached(
     assert recovered[0].status == "scanned"
     assert fl.fleet_exit_code(recovered, "high") == 0
     assert fl.scan_fleet([ref], sweeps=sweeps)[0].status == "cached"
+
+
+def test_partial_repo_without_findings_is_not_displayed_as_clean(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _make_origin(tmp_path, "docs", {"README.md": "fixture\n"})
+    monkeypatch.setattr(
+        fl,
+        "run_sweeps",
+        lambda *_: (3, {"repo_hygiene": {"errors": ["temporarily unavailable"]}}, ""),
+    )
+    run = CliRunner().invoke(
+        app, ["fleet", str(repo), "--only", "repo_hygiene"], env={"COLUMNS": "140"}
+    )
+    assert run.exit_code == 3
+    row = next(line for line in run.output.splitlines() if "(partial)" in line)
+    assert "clean" not in row
+    assert "temporarily unavailable" in run.output
+    assert "0 clean" in run.output
