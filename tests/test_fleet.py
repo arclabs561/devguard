@@ -449,3 +449,26 @@ def test_partial_repo_without_findings_is_not_displayed_as_clean(
     assert "clean" not in row
     assert "temporarily unavailable" in run.output
     assert "0 clean" in run.output
+
+
+def test_result_key_changes_when_a_docs_tool_is_installed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """docs_quality marks a repo incomplete without vale or readcost.
+
+    A result cached in that state has to miss once the tool is on PATH.
+    """
+    base = {
+        "head": "abc",
+        "sweeps": ["docs_quality"],
+        "spec_path": None,
+        "full_history": False,
+        "name": "o/r",
+    }
+    installed: set[str] = set()
+    monkeypatch.setattr(fl.shutil, "which", lambda tool: tool if tool in installed else None)
+    without = fl.result_key(**base)
+    for tool in ("readcost", "vale"):
+        installed.add(tool)
+        assert fl.result_key(**base) != without, tool
+        installed.discard(tool)

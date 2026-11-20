@@ -113,6 +113,11 @@ repositories at once. Each repository is scanned by its own `devguard sweep`
 process, so a crash or timeout in one is reported for that repository and the
 rest still finish.
 
+`docs_quality` is not in that default set, because it reports a repository as
+not fully scanned unless both Vale and readcost are installed and Vale has
+styles configured for it. To check READMEs across repositories, ask for it by
+name: `devguard fleet --mine --only docs_quality`.
+
 Two caches live under `$DEVGUARD_CACHE_DIR`, else `$XDG_CACHE_HOME/devguard`,
 else `~/.cache/devguard`:
 

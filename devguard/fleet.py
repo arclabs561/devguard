@@ -58,7 +58,18 @@ REPO_SCOPED_SWEEPS: tuple[str, ...] = (
 )
 
 # External scanners whose presence changes what a sweep can find.
-_RESULT_AFFECTING_TOOLS = ("gitleaks", "trufflehog", "cargo-audit", "pip-audit", "npm", "gh")
+_RESULT_AFFECTING_TOOLS = (
+    "gitleaks",
+    "trufflehog",
+    "cargo-audit",
+    "pip-audit",
+    "npm",
+    "gh",
+    # docs_quality reports a repository incomplete when either is missing, so
+    # a result cached before one was installed must not be served afterwards.
+    "vale",
+    "readcost",
+)
 
 SEVERITIES = ("critical", "high", "medium", "low", "info")
 _SEVERITY_ALIASES = {"error": "high", "warning": "medium", "warn": "medium", "note": "info"}
