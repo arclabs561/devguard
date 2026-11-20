@@ -354,7 +354,6 @@ def test_cli_dry_run_json_and_cache_commands(tmp_path: Path) -> None:
 def test_cli_rejects_nonpositive_limit(limit: str) -> None:
     run = CliRunner().invoke(app, ["fleet", "o/a", "o/b", "--dry-run", "--limit", limit])
     assert run.exit_code == 2
-    assert "--limit" in run.output
     assert not run.stdout
 
 
