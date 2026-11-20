@@ -113,7 +113,7 @@ def _print_text(
             first = res.findings[0]
             note = escape(f"{first['sweep']}/{first['check']}")
         else:
-            note = "[green]clean[/green]"
+            note = "—"
         table.add_row(escape(res.name.removeprefix(strip)), *_counts_cells(res.counts), state, note)
     if table.row_count:
         if strip:
