@@ -121,7 +121,9 @@ else `~/.cache/devguard`:
   `local_history_secrets` needs to see anything beyond the head commit.
 - Results. A result is reused while the head commit, the devguard version, the
   sweep selection, the spec file and the set of installed scanners are all
-  unchanged. A local checkout with uncommitted changes is always rescanned.
+  unchanged. Local checkouts with staged changes, modified tracked files, or
+  any untracked paths (including ignored files and empty directories) are
+  rescanned because sweeps can inspect them.
   `--no-cache` ignores and does not write results.
 
 `devguard cache info` shows the size of both; `devguard cache clear` removes

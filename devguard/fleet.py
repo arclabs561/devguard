@@ -367,8 +367,13 @@ def sync_repo(
 
 
 def _worktree_dirty(path: Path) -> bool:
-    done = _git(["status", "--porcelain"], path, 60)
-    return done.returncode != 0 or bool(done.stdout.strip())
+    # Filesystem sweeps can see ignored files and empty directories. Without
+    # exclude rules, ls-files includes both and collapses untracked subtrees.
+    extra = _git(["ls-files", "--others", "--directory"], path, 60)
+    if extra.returncode or extra.stdout:
+        return True
+    tracked = _git(["status", "--porcelain", "--untracked-files=no"], path, 60)
+    return tracked.returncode != 0 or bool(tracked.stdout)
 
 
 # ---------------------------------------------------------------------------
@@ -383,6 +388,7 @@ def result_key(
     if spec_path is not None and spec_path.is_file():
         spec_digest = hashlib.sha256(spec_path.read_bytes()).hexdigest()
     material = {
+        "cache_format": 2,  # Older entries could include ignored checkout contents.
         "devguard": __version__,
         "repo": name,
         "head": head,

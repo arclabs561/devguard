@@ -270,6 +270,28 @@ def test_dirty_local_checkout_is_never_served_from_cache(tmp_path: Path) -> None
     assert not (local / ".state").exists(), "a scan must not write into the checkout"
 
 
+@pytest.mark.parametrize("ignore_rule", ["doc/", ""])
+def test_empty_doc_directory_invalidates_local_hygiene_cache(tmp_path: Path, ignore_rule: str) -> None:
+    repo = _make_origin(tmp_path, "manual", {".gitignore": ignore_rule + "\n"})
+    (repo / "docs").mkdir()
+    (repo / "docs" / "guide.md").write_text("Guide\n")
+    _git(repo, "add", "docs")
+    _git(repo, "commit", "-qm", "Add manual")
+    ref = fl.RepoRef(name="manual", path=repo)
+
+    def scan() -> tuple[str, bool]:
+        result = fl.scan_fleet([ref], sweeps=["repo_hygiene"])[0]
+        return result.status, any(f["check"] == "scattered_docs" for f in result.findings)
+
+    assert scan() == ("scanned", False)
+    assert scan() == ("cached", False)
+    (repo / "doc").mkdir()
+    assert scan() == ("scanned", True)
+    assert scan() == ("scanned", True)
+    (repo / "doc").rmdir()
+    assert scan() == ("cached", False)
+
+
 def test_child_crash_is_one_repo_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     origin = _make_origin(tmp_path, "alpha", {"main.py": "print(1)\n"})
 
