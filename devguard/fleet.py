@@ -389,7 +389,10 @@ def _read_cached_result(root: Path, key: str) -> dict[str, Any] | None:
         data = json.loads((root / "results" / f"{key}.json").read_text())
     except (OSError, json.JSONDecodeError):
         return None
-    return data if isinstance(data, dict) and "reports" in data else None
+    if not isinstance(data, dict) or data.get("exit_code") not in (0, 2):
+        return None
+    reports = data.get("reports")
+    return data if isinstance(reports, dict) and reports else None
 
 
 def _write_cached_result(root: Path, key: str, payload: dict[str, Any]) -> None:
@@ -494,14 +497,14 @@ def run_sweeps(
             done = subprocess.run(cmd, cwd=workdir, capture_output=True, text=True, timeout=timeout)
         except subprocess.TimeoutExpired:
             return 3, {}, f"timed out after {timeout}s"
-    if done.returncode < 0 or done.returncode > 3:
+    if done.returncode not in (0, 2, 3) or not done.stdout.strip():
         tail = (done.stderr.strip().splitlines() or ["no output"])[-1][:300]
-        return 3, {}, f"sweep exited {done.returncode}: {tail}"
+        return 3, {}, f"sweep exited {done.returncode} without a usable report: {tail}"
     try:
-        reports = json.loads(done.stdout) if done.stdout.strip() else {}
+        reports = json.loads(done.stdout)
     except json.JSONDecodeError:
         return 3, {}, "sweep wrote output that is not JSON"
-    if not isinstance(reports, dict):
+    if not isinstance(reports, dict) or not reports:
         return 3, {}, "sweep wrote an unexpected JSON shape"
     return done.returncode, reports, ""
 
@@ -555,7 +558,7 @@ def scan_one(
     code, reports, error = run_sweeps(path, sweeps, spec_path, timeout)
     if error:
         return result("error", 3, head, errors=[error])
-    if use_cache and cacheable:
+    if cacheable and code in (0, 2):
         _write_cached_result(root, key, {"exit_code": code, "reports": reports})
     return result(
         "scanned",
@@ -661,7 +664,7 @@ def fleet_report(
             "cached": sum(r.status == "cached" for r in results),
             "errors": sum(r.status == "error" for r in results),
             "incomplete": sum(r.status != "error" and r.exit_code == 3 for r in results),
-            "clean": sum(r.status != "error" and not r.findings for r in results),
+            "clean": sum(r.exit_code == 0 and not r.findings for r in results),
             "findings": {s: totals.get(s, 0) for s in SEVERITIES},
             "seconds": round(seconds, 1),
         },
