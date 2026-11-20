@@ -197,11 +197,27 @@ def _check_value_for_secret(key_name: str, value: str) -> str | None:
     return None
 
 
+# One URL or host[:port], as found in a `;`-separated list argument.
+_URL_LIST_ITEM_RE = re.compile(r"^(?:[a-z][a-z0-9+.-]*://)?[\w.\-\[\]:/*%@~?=&#+]+$", re.IGNORECASE)
+
+
+def _is_url_list(part: str) -> bool:
+    """True for values like `http://localhost:9090;http://127.0.0.1:9090`.
+
+    Some servers take a `;`-separated list of origins as one argument. Arguments
+    reach the server as an argv array, not through a shell, so the separator
+    alone does not chain commands.
+    """
+    items = part.split(";")
+    return len(items) > 1 and all(_URL_LIST_ITEM_RE.match(item) for item in items)
+
+
 def _check_command_injection(parts: list[str]) -> bool:
     """True if any part contains shell metacharacters."""
     for part in parts:
+        candidate = part.replace(";", "") if _is_url_list(part) else part
         for pattern in _SHELL_META_PATTERNS:
-            if pattern.search(part):
+            if pattern.search(candidate):
                 return True
     return False
 

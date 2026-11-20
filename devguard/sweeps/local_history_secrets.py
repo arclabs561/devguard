@@ -40,10 +40,21 @@ _SKIP_DIR_PARTS = frozenset({"target", "node_modules", "dist", "build"})
 # Hits here are usually test fixtures: still reported, at low severity.
 _FIXTURE_DIR_PARTS = frozenset({"tests", "test", "fixtures", "testdata", "examples"})
 # Test files kept beside the code they test (test_x.py, test-x.sh, x.test.ts, x_test.go).
-_TEST_FILE_RE = re.compile(r"^test[_-]|[._-]test\.[^.]+$|[._]spec\.[^.]+$")
+_TEST_FILE_RE = re.compile(r"^tests?[_-]|^tests?\.[^.]+$|[._-]tests?\.[^.]+$|[._]spec\.[^.]+$")
 # Entropy-only rules: on an 80-repo workspace gitleaks' generic-api-key made up
 # 369 of 443 high findings, nearly all dataset strings and doc examples.
 _HEURISTIC_RULES = frozenset({"generic-api-key", "Generic API Key"})
+
+# Key-shaped text that documentation uses in place of a real key: the vendor's
+# published examples, a redaction such as AKIAXXXXXXXXXXXXXXXX, or a counting run.
+_PLACEHOLDER_RE = re.compile(
+    r"EXAMPLE|(?i:x{6,})|(.)\1{7,}|0123456789|1234567890|(?i:abcdefgh)|(?i:redacted|placeholder|your[_-])"
+)
+
+
+def _is_placeholder(matched: str) -> bool:
+    return bool(_PLACEHOLDER_RE.search(matched))
+
 
 _REGEX_PATTERNS = [
     (re.compile(p), name)
@@ -202,9 +213,16 @@ def _scan_regex(repo: Path, timeout_s: int) -> list[tuple[str, str, str | None, 
     res = subprocess.run(
         [
             "git",
+            # Without this git C-quotes non-ASCII paths ("b/caf\303\251.txt"),
+            # which the +++ parser below would not recognize.
+            "-c",
+            "core.quotePath=false",
             "log",
             "-p",
             "--all",
+            # Oldest first, so the commit kept per (rule, file) is the one that
+            # introduced the secret.
+            "--reverse",
             "--no-textconv",
             "--no-color",
             "--no-ext-diff",
@@ -227,13 +245,17 @@ def _scan_regex(repo: Path, timeout_s: int) -> list[tuple[str, str, str | None, 
         if raw.startswith("commit "):
             commit, path = raw[7:].strip(), None
         elif raw.startswith("+++ "):
-            path = raw[6:] if raw.startswith("+++ b/") else None
+            # git appends a tab to names that contain a space.
+            path = raw[6:].rstrip("\t") if raw.startswith("+++ b/") else None
         elif m := _HUNK_RE.match(raw):
             line_no = int(m.group(1))
         elif raw.startswith("+") and path:
             for rx, name in _REGEX_PATTERNS:
                 # Report each rule once per file: the first commit that added it.
-                if rx.search(raw) and (name, path) not in seen:
+                if (name, path) in seen:
+                    continue
+                m_secret = rx.search(raw)
+                if m_secret and not _is_placeholder(m_secret.group(0)):
                     seen.add((name, path))
                     hits.append((name, path, commit, line_no))
             line_no += 1
