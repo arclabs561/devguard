@@ -84,6 +84,37 @@ def test_filter_repos_defaults_and_order() -> None:
     assert "o/secret" not in [r.name for r in fl.filter_repos(refs, visibility="public")]
 
 
+def test_cli_keeps_same_named_local_checkouts_and_deduplicates_aliases(tmp_path: Path) -> None:
+    first = _make_origin(tmp_path, "one/widget", {"README.md": "fixture\n"})
+    second = tmp_path / "origins" / "two" / "widget"
+    second.parent.mkdir()
+    _git(second.parent, "clone", "-q", str(first), str(second))
+    alias = tmp_path / "alias"
+    alias.symlink_to(first, target_is_directory=True)
+    runner = CliRunner()
+    args = ["fleet", str(alias), "--root", str(tmp_path / "origins"), "--match", "widget"]
+    dry = runner.invoke(app, [*args, "--dry-run"])
+    assert dry.exit_code == 0, dry.output
+    assert [row.split("\t")[0] for row in dry.stdout.splitlines()] == [str(first), str(second)]
+
+    out = tmp_path / "report.json"
+    scan = ["--only", "repo_hygiene", "--jobs", "1", "--format", "json", "--output", str(out)]
+    for status in ("scanned", "cached"):
+        run = runner.invoke(app, [*args, *scan])
+        assert run.exit_code == 0, run.output
+        rows = json.loads(out.read_text())["repos"]
+        assert [(r["name"], r["status"]) for r in rows] == [
+            (str(first), status),
+            (str(second), status),
+        ]
+
+    # Selecting either checkout alone still uses its own cached result.
+    for checkout in (alias, second):
+        run = runner.invoke(app, ["fleet", str(checkout), *scan])
+        assert run.exit_code == 0, run.output
+        assert json.loads(out.read_text())["repos"][0]["status"] == "cached"
+
+
 def test_extract_findings_reads_every_report_shape() -> None:
     reports = {
         "repo_lint": {"findings": [{"check": "ci_gaps", "severity": "low", "file": "ci.yml"}]},

@@ -63,7 +63,9 @@ def _collect_refs(
         base = Path(root_dir).expanduser()
         if not base.is_dir():
             raise ValueError(f"{root_dir}: not a directory")
-        refs += [fl.RepoRef(name=p.name, path=p) for p in sorted(iter_git_repos(base, max_depth))]
+        for checkout in sorted(iter_git_repos(base, max_depth)):
+            path = checkout.resolve()
+            refs.append(fl.RepoRef(name=path.name, path=path))
     return refs
 
 
@@ -82,7 +84,7 @@ def _print_text(
     top: int,
     min_severity: str,
 ) -> None:
-    owners = {r.name.split("/", 1)[0] for r in results if "/" in r.name}
+    owners = {r.name.split("/", 1)[0] for r in results if r.url and "/" in r.name}
     strip = f"{next(iter(owners))}/" if len(owners) == 1 else ""
     table = Table(title="Repositories", title_justify="left", show_edge=False, pad_edge=False)
     table.add_column("repo", no_wrap=True, min_width=12)

@@ -32,7 +32,7 @@ import time
 from collections import Counter
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -80,6 +80,10 @@ class RepoRef:
     fork: bool = False
     empty: bool = False
     pushed_at: str = ""
+
+    @property
+    def identity(self) -> str:
+        return str(self.path.resolve()) if self.path is not None else self.name
 
 
 @dataclass
@@ -258,10 +262,16 @@ def filter_repos(
     unique: list[RepoRef] = []
     seen: set[str] = set()
     for ref in kept:
-        if ref.name not in seen:
-            seen.add(ref.name)
+        identity = ref.identity
+        if identity not in seen:
+            seen.add(identity)
             unique.append(ref)
-    return unique[:limit] if limit else unique
+    names = Counter(ref.name for ref in unique)
+    selected = unique[:limit] if limit else unique
+    return [
+        replace(ref, name=ref.identity) if ref.path is not None and names[ref.name] > 1 else ref
+        for ref in selected
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -539,7 +549,7 @@ def scan_one(
     # A local checkout with uncommitted changes has no stable identity to cache under.
     cacheable = use_cache and not (ref.path is not None and _worktree_dirty(path))
     key = result_key(
-        head=head, sweeps=sweeps, spec_path=spec_path, full_history=full_history, name=ref.name
+        head=head, sweeps=sweeps, spec_path=spec_path, full_history=full_history, name=ref.identity
     )
     if cacheable and (hit := _read_cached_result(root, key)):
         reports = hit["reports"]
