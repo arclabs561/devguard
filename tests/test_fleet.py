@@ -271,7 +271,9 @@ def test_dirty_local_checkout_is_never_served_from_cache(tmp_path: Path) -> None
 
 
 @pytest.mark.parametrize("ignore_rule", ["doc/", ""])
-def test_empty_doc_directory_invalidates_local_hygiene_cache(tmp_path: Path, ignore_rule: str) -> None:
+def test_empty_doc_directory_invalidates_local_hygiene_cache(
+    tmp_path: Path, ignore_rule: str
+) -> None:
     repo = _make_origin(tmp_path, "manual", {".gitignore": ignore_rule + "\n"})
     (repo / "docs").mkdir()
     (repo / "docs" / "guide.md").write_text("Guide\n")
@@ -348,6 +350,60 @@ def test_cli_dry_run_json_and_cache_commands(tmp_path: Path) -> None:
     assert json.loads(info.stdout)["results"] == 2
     assert runner.invoke(app, ["cache", "clear", "--results"]).exit_code == 0
     assert json.loads(runner.invoke(app, ["cache", "info", "--json"]).stdout)["results"] == 0
+
+
+@pytest.mark.parametrize("limit", [1, 2])
+def test_dry_run_json_selects_in_order(tmp_path: Path, limit: int) -> None:
+    checkout = _make_origin(tmp_path, "alpha", {"readme": "ok"})
+    saved = tmp_path / "nested" / "inventory.json"
+    run = CliRunner().invoke(
+        app,
+        [
+            "fleet",
+            str(checkout),
+            "owner/beta",
+            str(checkout),
+            "--dry-run",
+            "--format",
+            "json",
+            "--limit",
+            str(limit),
+            "--output",
+            str(saved),
+        ],
+    )
+    assert run.exit_code == 0, run.output
+    expected = [
+        {"name": "alpha", "path": str(checkout.resolve()), "visibility": None, "pushed_at": None},
+        {"name": "owner/beta", "path": None, "visibility": None, "pushed_at": None},
+    ]
+    assert json.loads(run.stdout) == expected[:limit]
+    assert saved.read_text() == run.stdout
+    assert "repositories selected" in run.stderr
+
+
+def test_dry_run_text_can_save_github_inventory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pushed = "2026-03-02T12:34:56Z"
+    ref = fl.RepoRef(name="owner/alpha", visibility="private", pushed_at=pushed)
+    monkeypatch.setattr(fl, "list_owner_repos", lambda _owner: [ref])
+    saved = tmp_path / "inventory.json"
+    run = CliRunner().invoke(app, ["fleet", "--mine", "--dry-run", "--output", str(saved)])
+    assert run.exit_code == 0, run.output
+    assert run.stdout == "owner/alpha\tprivate\t2026-03-02\n"
+    assert json.loads(saved.read_text()) == [
+        {"name": "owner/alpha", "path": None, "visibility": "private", "pushed_at": pushed}
+    ]
+
+
+def test_dry_run_json_empty_selection(tmp_path: Path) -> None:
+    listing = tmp_path / "empty.txt"
+    listing.write_text("# no repositories yet\n")
+    for args in [["o/r", "--match", "unmatched"], ["--repos-file", str(listing)]]:
+        run = CliRunner().invoke(app, ["fleet", "--dry-run", "--format", "json", *args])
+        assert run.exit_code == 0, run.output
+        assert json.loads(run.stdout) == []
 
 
 @pytest.mark.parametrize("limit", ["0", "-1"])
