@@ -97,6 +97,33 @@ devguard fleet --repos-file repos.txt --jobs 8 --output fleet.json
 devguard fleet --root ~/code
 ```
 
+Preview a selection before scanning it. This example works offline with explicit
+GitHub names. Dry runs list repositories without cloning them.
+
+```bash
+devguard fleet arclabs561/logp arclabs561/clump --match 'cl*' --dry-run --format json
+```
+
+```json
+[
+  {"name": "arclabs561/clump", "path": null, "visibility": null, "pushed_at": null}
+]
+```
+
+With an authenticated GitHub CLI, save the public repositories you intend to
+scan. The count goes to stderr. An empty selection writes `[]`.
+
+```bash
+devguard fleet --mine --visibility public --dry-run --format json > inventory.json
+jq -r '.[].name' inventory.json > repos.txt
+# Inspect repos.txt, then run a hygiene scan on those repositories.
+devguard fleet --repos-file repos.txt --only repo_hygiene --output report.json
+```
+
+A local checkout has an absolute `path`. GitHub discovery supplies visibility
+and the full push timestamp. Explicit targets can have unknown metadata, as
+above. The default dry-run format is tab-separated text.
+
 ```text
 $ devguard fleet --repos-file repos.txt --min-severity high --details none
 Repositories (owner)

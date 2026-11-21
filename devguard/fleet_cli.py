@@ -69,6 +69,17 @@ def _collect_refs(
     return refs
 
 
+def _emit_json(data: list | dict, *, stdout: bool, output: str | None) -> None:
+    if stdout or output:
+        payload = json.dumps(data, indent=2) + "\n"
+        if output:
+            out_path = Path(output).expanduser()
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(payload, encoding="utf-8")
+        if stdout:
+            sys.stdout.write(payload)
+
+
 def _counts_cells(counts: dict[str, int]) -> list[str]:
     return [
         f"[{_STYLE[s]}]{counts[s]}[/{_STYLE[s]}]" if counts[s] else "[dim]·[/dim]"
@@ -242,7 +253,9 @@ def fleet(
     ),
     timeout: int = typer.Option(900, "--timeout", help="Seconds allowed per repository."),
     format: str = typer.Option("text", "--format", "-f", help="text or json."),
-    output: str = typer.Option(None, "--output", "-o", help="Also write the JSON report here."),
+    output: str = typer.Option(
+        None, "--output", "-o", help="Also write the JSON report or dry-run inventory here."
+    ),
     details: str = typer.Option(
         "high",
         "--details",
@@ -298,7 +311,7 @@ def fleet(
     except (ValueError, OSError) as exc:
         err.print(f"[bold red]Error:[/bold red] {escape(str(exc))}", highlight=False)
         raise typer.Exit(code=1) from None
-    if not refs:
+    if not refs and not (dry_run and (mine or owner or root_dir or repos_file)):
         err.print(
             "Nothing to scan. Name repositories, or pass --mine, --owner, --root or --repos-file."
         )
@@ -315,8 +328,22 @@ def fleet(
         limit=limit,
     )
     if dry_run:
-        for ref in refs:
-            sys.stdout.write(f"{ref.name}\t{ref.visibility or '-'}\t{ref.pushed_at[:10] or '-'}\n")
+        if format == "json" or output:
+            inventory = [
+                {
+                    "name": ref.name,
+                    "path": str(ref.path) if ref.path is not None else None,
+                    "visibility": ref.visibility or None,
+                    "pushed_at": ref.pushed_at or None,
+                }
+                for ref in refs
+            ]
+            _emit_json(inventory, stdout=format == "json", output=output)
+        if format == "text":
+            for ref in refs:
+                sys.stdout.write(
+                    f"{ref.name}\t{ref.visibility or '-'}\t{ref.pushed_at[:10] or '-'}\n"
+                )
         err.print(f"{len(refs)} of {total} repositories selected.", highlight=False)
         return
     if not refs:
@@ -364,13 +391,8 @@ def fleet(
     report = fl.fleet_report(
         results, sweeps=sweeps, seconds=time.monotonic() - started, include_reports=full_reports
     )
-    if output:
-        out_path = Path(output).expanduser()
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(json.dumps(report, indent=2) + "\n")
-    if format == "json":
-        sys.stdout.write(json.dumps(report, indent=2) + "\n")
-    else:
+    _emit_json(report, stdout=format == "json", output=output)
+    if format == "text":
         out = Console()
         if not out.is_terminal:
             # Piped or captured: do not fold the tables to the 80-column default.
