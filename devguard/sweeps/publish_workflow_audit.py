@@ -51,8 +51,18 @@ _OS_CFG_RE = re.compile(r"target_os|target_vendor|target_family|\bwindows\b|\bun
 _PLATFORM_DEP_RE = re.compile(r"^(objc2.*|metal.*|cudarc|cuda.*|core-foundation.*|windows.*)$")
 
 
-def _finding(check: str, severity: str, workflow: str, message: str) -> dict[str, Any]:
+def _finding(
+    check: str,
+    severity: str,
+    workflow: str,
+    message: str,
+    *,
+    job: str | None = None,
+    step: int | None = None,
+) -> dict[str, Any]:
     return {
+        **({"job": job} if job is not None else {}),
+        **({"step": step} if step is not None else {}),
         "check": check,
         "severity": severity,
         "file": f".github/workflows/{workflow}",
@@ -84,7 +94,7 @@ def _check_tag_push(name: str, doc: Any) -> list[dict[str, Any]]:
         steps = [s for s in (job or {}).get("steps") or [] if isinstance(s, dict)]
         no_creds = False
         authed = False
-        for step in steps:
+        for index, step in enumerate(steps, start=1):
             run = str(step.get("run") or "")
             if _is_checkout(step):
                 no_creds = _persist_false(step)
@@ -101,6 +111,8 @@ def _check_tag_push(name: str, doc: Any) -> list[dict[str, Any]]:
                         name,
                         f"job '{job_id}' step '{label}' runs git push after checkout with "
                         "persist-credentials: false and no token-bearing remote",
+                        job=job_id,
+                        step=index,
                     )
                 )
     return out
@@ -174,6 +186,7 @@ def _check_semver_features(name: str, doc: Any, repo: Path) -> list[dict[str, An
                         name,
                         f"job '{job_id}' runs cargo-semver-checks-action without feature-group "
                         f"or features; crate has {reasons[0]}",
+                        job=job_id,
                     )
                 )
     return out
@@ -228,6 +241,7 @@ def _privileged_refs(name: str, doc: Any) -> list[dict[str, Any]]:
                     "error",
                     name,
                     f"job '{job_id}' uses mutable refs with write permissions or secrets: {', '.join(sorted(refs))}",
+                    job=job_id,
                 )
             )
     return findings
@@ -334,6 +348,7 @@ def _workflow_trust(name: str, doc: Any) -> list[dict[str, Any]]:
                     name,
                     f"job '{job_id}' may grant OIDC token access on pull requests. "
                     "Check the cloud role's trust policy and scope the permission to a trusted job.",
+                    job=job_id,
                 )
             )
         pr_write = permissions == "write-all" or (
@@ -347,6 +362,7 @@ def _workflow_trust(name: str, doc: Any) -> list[dict[str, Any]]:
                     name,
                     f"job '{job_id}' can write PR metadata on pull_request_target. "
                     "Verify which senders may start it and whose contributions it may edit.",
+                    job=job_id,
                 )
             )
         steps = [step for step in job.get("steps") or [] if isinstance(step, dict)]
@@ -370,6 +386,8 @@ def _workflow_trust(name: str, doc: Any) -> list[dict[str, Any]]:
                         name,
                         f"{label} selects checkout code from the event in a trusted workflow context. "
                         "Check out the trusted revision or verify its provenance first.",
+                        job=job_id,
+                        step=index,
                     )
                 )
             script = str(step.get("run") or "")
@@ -388,6 +406,8 @@ def _workflow_trust(name: str, doc: Any) -> list[dict[str, Any]]:
                         name,
                         f"{label} can report success after its security check fails. "
                         "Propagate the scanner's exit status or document the advisory-only policy.",
+                        job=job_id,
+                        step=index,
                     )
                 )
             if _EVENT_TEXT.search(script):
@@ -398,6 +418,8 @@ def _workflow_trust(name: str, doc: Any) -> list[dict[str, Any]]:
                         name,
                         f"{label} interpolates contributor-controlled text into a script. "
                         "Pass the value through an environment variable or read the event as data.",
+                        job=job_id,
+                        step=index,
                     )
                 )
             if "repository_dispatch" not in events or not script:
@@ -423,6 +445,8 @@ def _workflow_trust(name: str, doc: Any) -> list[dict[str, Any]]:
                             name,
                             f"{label} passes an event-selected destination ({key}) to a credentialed command. "
                             "Use a configured origin or validate it against an independently trusted allowlist.",
+                            job=job_id,
+                            step=index,
                         )
                     )
                     break
@@ -444,6 +468,44 @@ def _shape_error(doc: Any) -> str | None:
         if any("with" in step and not isinstance(step["with"], dict) for step in steps):
             return f"expected a step inputs mapping for job '{job_id}'"
     return None
+
+
+def _add_source_lines(text: str, findings: list[dict[str, Any]]) -> None:
+    """Resolve YAML job/step positions from the scanned input, including quoted job IDs."""
+    indexed = [f for f in findings if f.get("job") and "line" not in f]
+    if not indexed:
+        return
+
+    def mapping(node: yaml.Node | None) -> dict[str, yaml.Node]:
+        return (
+            {key.value: value for key, value in node.value}
+            if isinstance(node, yaml.MappingNode)
+            else {}
+        )
+
+    jobs = mapping(yaml.compose(text)).get("jobs")
+    if not isinstance(jobs, yaml.MappingNode):
+        return
+    positions = {key.value: (key, value) for key, value in jobs.value}
+    for finding in indexed:
+        entry = positions.get(finding["job"])
+        if entry is None:
+            continue
+        key, job = entry
+        point = key.start_mark
+        steps = mapping(job).get("steps")
+        index = finding.get("step")
+        if (
+            isinstance(steps, yaml.SequenceNode)
+            and isinstance(index, int)
+            and 1 <= index <= len(steps.value)
+        ):
+            step = steps.value[index - 1]
+            point = step.start_mark
+            step_id = mapping(step).get("id")
+            if isinstance(step_id, yaml.ScalarNode):
+                finding["step_id"] = step_id.value
+        finding["line"] = point.line + 1
 
 
 def _scan_workflows(
@@ -488,14 +550,14 @@ def _scan_workflows(
             findings.append(_finding("workflow_parse_error", "warning", name, problem))
             continue
         scanned += 1
-        findings += _privileged_refs(name, doc)
-        findings += _workflow_trust(name, doc)
-        if not any(fnmatch.fnmatch(name, g) for g in globs):
-            continue
-        findings += _check_tag_push(name, doc)
-        findings += _check_msrv_pins(name, text, ci_pins)
-        findings += _check_semver_features(name, doc, repo)
-        findings += _check_unpinned(name, text, repo_pins_shas)
+        current = _privileged_refs(name, doc) + _workflow_trust(name, doc)
+        if any(fnmatch.fnmatch(name, g) for g in globs):
+            current += _check_tag_push(name, doc)
+            current += _check_msrv_pins(name, text, ci_pins)
+            current += _check_semver_features(name, doc, repo)
+            current += _check_unpinned(name, text, repo_pins_shas)
+        _add_source_lines(text, current)
+        findings.extend(current)
     return findings, len(paths), scanned
 
 

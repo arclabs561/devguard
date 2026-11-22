@@ -307,6 +307,16 @@ file, for a document that is historical end to end. Both require `reason:` — a
 annotation without one is ignored, so removing the reason re-exposes the finding
 instead of hiding it behind a bare pragma.
 
+For repository findings, JSON includes a `finding_id` for comparing observations
+within the same repository. The matching SARIF fingerprint is `devguard/v1`.
+GitHub's upload action can add its own source-line hash. Workflow findings point
+to the job or step where the check observed the condition. Additional affected
+files appear as related locations. Reports can carry an explicit HTTP(S)
+`source_url` for the originating issue and `evidence_url` for a caller fixture.
+Legacy diagnostics without a structured subject may use the diagnostic text to
+distinguish multiple findings at the same path.
+
+
 ## Pre-commit Hooks
 
 `devguard` ships `.pre-commit-hooks.yaml`:
