@@ -201,3 +201,23 @@ def test_npm_publish_job_dry_run_with_step_overrides(step_env, command, kind):
     for source, branch, changes, expected in cases:
         (effect,) = _workflow(source, "workflow.yml", branch, changes)
         assert (effect["effect"], effect["status"]) == (kind, expected)
+
+
+@pytest.mark.parametrize(
+    ("prelude", "expected"),
+    [
+        ("export npm_config_dry_run=false\n          npm publish", "unresolved-publish-mode"),
+        ("unset npm_config_dry_run && npm publish --dry-run", "dry-run"),
+        (
+            'echo "npm_config_dry_run=false" >> "$GITHUB_ENV"\n      - run: npm publish',
+            "unresolved-publish-mode",
+        ),
+    ],
+)
+def test_runtime_environment_cannot_prove_publish_dry_run(prelude, expected):
+    wf = (
+        "on: push\njobs:\n  ship:\n    env: {npm_config_dry_run: 'true'}\n"
+        "    runs-on: ubuntu-latest\n    steps:\n      - run: |\n          " + prelude + "\n"
+    )
+    rows = _workflow(wf, "wf", "trunk", ["src/index.js"])
+    assert [e["effect"] for e in rows if e["destination"] == "npm"] == [expected]

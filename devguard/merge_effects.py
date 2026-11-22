@@ -172,7 +172,7 @@ def _segments(line: str) -> list[str]:
     return [chunk.strip() for chunk in chunks if chunk.strip()]
 
 
-def _npm_publish_mode(args: list[str], scopes: tuple[dict, ...]) -> str:
+def _npm_publish_mode(args: list[str], scopes: tuple[dict, ...], runtime_env: bool) -> str:
     # npm CLI flags take precedence over environment configuration. GitHub
     # overlays step environment variables on the job and workflow scopes.
     env: dict[str, str] = {}
@@ -181,7 +181,8 @@ def _npm_publish_mode(args: list[str], scopes: tuple[dict, ...]) -> str:
         if values is None:
             continue
         if not isinstance(values, dict):
-            return "unresolved-publish-mode"
+            runtime_env = True
+            continue
         env.update(
             {
                 k: str(v).lower()
@@ -189,7 +190,7 @@ def _npm_publish_mode(args: list[str], scopes: tuple[dict, ...]) -> str:
                 if isinstance(k, str) and k.lower() == "npm_config_dry_run"
             }
         )
-    settings = set(env.values()) or {"false"}
+    settings = {"unknown"} if runtime_env else set(env.values()) or {"false"}
     for i, arg in enumerate(args):
         if arg == "--":
             break
@@ -206,7 +207,7 @@ def _npm_publish_mode(args: list[str], scopes: tuple[dict, ...]) -> str:
     return "unresolved-publish-mode"
 
 
-def _classify(line: str, scopes: tuple[dict, ...]) -> tuple[str, str] | None:
+def _classify(line: str, scopes: tuple[dict, ...], runtime_env: bool) -> tuple[str, str] | None:
     try:
         args = shlex.split(line, comments=True)
     except ValueError:
@@ -219,7 +220,7 @@ def _classify(line: str, scopes: tuple[dict, ...]) -> tuple[str, str] | None:
         return None
     tool, command = args[0].rsplit("/", 1)[-1], args[1]
     if (tool, command) == ("npm", "publish"):
-        return _npm_publish_mode(args[2:], scopes), tool
+        return _npm_publish_mode(args[2:], scopes, runtime_env), tool
     if (tool, command) in {("cargo", "publish"), ("twine", "upload")}:
         return ("dry-run", tool) if "--dry-run" in args else ("publish", tool)
     if tool == "vercel" and command == "deploy":
@@ -327,6 +328,7 @@ def _workflow(text: str, path: str, branch: str, changes: list[str] | None) -> l
 
         if "uses" in job:
             add("unresolved-reusable-workflow", None, loc[(*job_path, "uses")])
+        inherited_runtime_env = False
         for i, step in enumerate(job.get("steps") or []):
             if not isinstance(step, dict):
                 raise ValueError("Invalid workflow step")
@@ -344,9 +346,14 @@ def _workflow(text: str, path: str, branch: str, changes: list[str] | None) -> l
                         run,
                     )
                 )
+                runtime_env = inherited_runtime_env
                 for offset, line in enumerate(run.splitlines()):
                     for command in _segments(line):
-                        found = _classify(command, (doc, job, step))
+                        if re.match(
+                            r"(?:export\s+|unset\s+)?npm_config_dry_run(?:=|\s|$)", command, re.I
+                        ):
+                            runtime_env = True
+                        found = _classify(command, (doc, job, step), runtime_env)
                         if found:
                             add(
                                 *found,
@@ -356,6 +363,8 @@ def _workflow(text: str, path: str, branch: str, changes: list[str] | None) -> l
                             )
                         elif not command.startswith(("echo ", "printf ")):
                             add("unresolved-command", None, source, step.get("if"))
+                if "GITHUB_ENV" in run and ">" in run:
+                    inherited_runtime_env = True
             elif isinstance(step.get("uses"), str):
                 action = step["uses"].split("@", 1)[0]
                 if action in {"pypa/gh-action-pypi-publish", "softprops/action-gh-release"}:
