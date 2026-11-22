@@ -18,6 +18,7 @@ DESCRIPTIONS = {
     "conflicting_subprocess_output": "A subprocess.run call combines capture_output=True with an explicit output stream",
     "swallowed_test_assertion": "A test discards an assertion failure or converts it to a skip in a broad exception handler",
     "copied_test_subject": "A test calls a local copy of a named production function without exercising the original",
+    "flattened_shell": "A command follows set -euo pipefail without a shell separator",
     "flattened_python": "A shebang or a long comment contains a flattened Python implementation",
     "missing_just_script": "A root justfile recipe runs a literal local script missing from the git index",
     "masked_test_command": "A test command discards its failure status",
@@ -136,6 +137,34 @@ def _pre_commit_checks(source: str) -> set[str]:
     return set()
 
 
+def _workflow_checks(source: str) -> set[str]:
+    try:
+        workflow = yaml.safe_load(source)
+    except (yaml.YAMLError, RecursionError):
+        return set()
+    def default_shell(owner: dict, fallback: str) -> str:
+        defaults = owner.get("defaults")
+        run = defaults.get("run") if isinstance(defaults, dict) else None
+        return run.get("shell", fallback) if isinstance(run, dict) else fallback
+
+    jobs = workflow.get("jobs") if isinstance(workflow, dict) else None
+    findings: set[str] = set()
+    for job in jobs.values() if isinstance(jobs, dict) else ():
+        if not isinstance(job, dict) or not isinstance(job.get("steps"), list):
+            continue
+        inherited = default_shell(job, default_shell(workflow, ""))
+        for step in job["steps"]:
+            if not isinstance(step, dict) or not isinstance(step.get("run"), str):
+                continue
+            shell = step.get("shell", inherited)
+            if not isinstance(shell, str):
+                continue
+            tokens = shell.split()
+            if not tokens or Path(tokens[0]).name in ("bash", "sh"):
+                findings.update(_shell_checks(step["run"]))
+    return findings
+
+
 def _shell_checks(source: str) -> set[str]:
     findings: set[str] = set()
     end = ""
@@ -149,6 +178,8 @@ def _shell_checks(source: str) -> set[str]:
         line = line.strip()
         if not line or line.startswith("#"):
             continue
+        if re.match(r"^set\s+-[eu]+o\s+pipefail\s+(?:echo|printf|python3?|cargo)\s", line):
+            findings.add("flattened_shell")
         doc = _HEREDOC.search(line)
         if doc:
             end = doc[3]
@@ -399,8 +430,10 @@ def find_false_passes(repo: Path, tracked: list[str]) -> dict[str, list[str]]:
                 )
     for rel in tracked:
         path = repo / rel
+        workflow = path.parent == repo / ".github/workflows" and path.suffix in {".yaml", ".yml"}
         if (
-            path.name != ".pre-commit-config.yaml"
+            not workflow
+            and path.name != ".pre-commit-config.yaml"
             and path.suffix
             not in {
                 ".py",
@@ -424,6 +457,8 @@ def find_false_passes(repo: Path, tracked: list[str]) -> dict[str, list[str]]:
                 if _copied_subject(source):
                     checks.add("copied_test_subject")
                 checks.update(_assertion_checks(source))
+        elif workflow:
+            checks = _workflow_checks(source)
         elif path.name == ".pre-commit-config.yaml":
             checks = _pre_commit_checks(source)
         elif path.suffix == ".rs":

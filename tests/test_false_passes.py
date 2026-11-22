@@ -168,3 +168,19 @@ def test_root_justfile_names_missing_literal_scripts(tmp_path: Path) -> None:
         '[working-directory: "sub"]\nrun:\n    bash scripts/local.sh'
     )
     assert find_false_passes(tmp_path, ["justfile"]) == {}
+
+
+def test_workflow_run_body_and_swallowed_shell_command(tmp_path: Path) -> None:
+    workflow = ".github/workflows/ci.yml"
+    path = tmp_path / workflow
+    path.parent.mkdir(parents=True)
+    path.write_text("jobs:\n  test:\n    steps:\n      - run: |\n          pytest || true\n")
+    script = tmp_path / "fix.sh"
+    script.write_text('#!/bin/bash\nset -euo pipefail echo "Starting" # python3 fix.py\n')
+    assert find_false_passes(tmp_path, [workflow, script.name]) == {
+        "masked_test_command": [workflow],
+        "flattened_shell": [script.name],
+    }
+    path.write_text("jobs:\n  test:\n    steps:\n      - run: echo 'pytest || true'\n")
+    script.write_text("set -euo pipefail; echo ok\n")
+    assert not find_false_passes(tmp_path, [workflow, script.name])
