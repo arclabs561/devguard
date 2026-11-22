@@ -253,7 +253,7 @@ Sweeps that need external access:
 | `project_flaudit` | LLM-assisted repo audit |
 | `docs_quality` | Vale and readcost findings in README and `docs/` Markdown (advisory; missing tools or timeouts exit 3) |
 | `public_text_leak` | Coordination vocabulary and configured private names in recent public commit messages, PR bodies, and comments |
-| `publish_workflow_audit` | Publish/release workflows: tag push without credentials, MSRV pins missing from publish, semver checks over platform-only features, unpinned action refs. Across all workflows: event-selected checkouts in trusted contexts, contributor text in scripts, and dispatch URLs used by credentialed commands |
+| `publish_workflow_audit` | Publish/release workflows: tag push without credentials, MSRV pins missing from publish, semver checks over platform-only features, unpinned action refs. Across all workflows: event-selected checkouts in trusted contexts, contributor text in scripts, dispatch URLs used by credentialed commands, and PR-target jobs with permission to edit PRs that need an authorization review |
 | `repo_lint` | Rust workspace hygiene: own-crate pin drift, README version lines, Cargo metadata, CI gaps (off by default, never changes the exit code) |
 
 The missing-pattern check in `gitignore_audit` is a pattern-presence heuristic.

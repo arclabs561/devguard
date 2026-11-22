@@ -297,3 +297,25 @@ jobs:
 """.replace("@SHA", "@" + SHA)
     )
     assert [f["check"] for f in audit_workflows(tmp_path)] == ["event_text_in_script"]
+
+
+def test_target_pr_metadata_write_is_a_review_prompt(tmp_path):
+    import yaml
+
+    path = tmp_path / ".github/workflows/cleanup.yml"
+    path.parent.mkdir(parents=True)
+    job = {"permissions": {"pull-requests": "write"}, "steps": [{"run": "python tools/cleanup.py"}]}
+    workflow = {"on": "pull_request_target", "jobs": {"cleanup": job}}
+    for guard, expect_warning in [
+        (None, True),
+        ("github.event.sender.id == github.event.repository.owner.id", False),
+        ("github.event.sender.id == github.event.repository.owner.id || always()", True),
+    ]:
+        job["if"] = guard
+        path.write_text(yaml.safe_dump(workflow))
+        assert [(f["check"], f["severity"]) for f in audit_workflows(tmp_path)] == (
+            [("review_pr_target_write", "warning")] if expect_warning else []
+        )
+    job["permissions"] = {"pull-requests": "read"}
+    path.write_text(yaml.safe_dump(workflow))
+    assert not audit_workflows(tmp_path)

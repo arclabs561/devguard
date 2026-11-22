@@ -251,6 +251,13 @@ _TRUSTED_CONTEXT_EVENTS = {
 }
 
 
+def _owner_event_only(condition: Any) -> bool:
+    # Recognize the simple owner-only job guard. Compound conditions need review.
+    value = str(condition).strip().removeprefix("${{").removesuffix("}}").strip()
+    terms = [part.strip().lower() for part in value.split("==")]
+    return sorted(terms) == ["github.event.repository.owner.id", "github.event.sender.id"]
+
+
 def _workflow_trust(name: str, doc: Any) -> list[dict[str, Any]]:
     """Flag direct data flows. A trigger name alone cannot establish misuse."""
     if not isinstance(doc, dict):
@@ -269,6 +276,20 @@ def _workflow_trust(name: str, doc: Any) -> list[dict[str, Any]]:
     for job_id, job in _jobs(doc).items():
         if not isinstance(job, dict):
             continue
+        permissions = job.get("permissions", doc.get("permissions"))
+        pr_write = permissions == "write-all" or (
+            isinstance(permissions, dict) and permissions.get("pull-requests") == "write"
+        )
+        if "pull_request_target" in events and pr_write and not _owner_event_only(job.get("if")):
+            findings.append(
+                _finding(
+                    "review_pr_target_write",
+                    "warning",
+                    name,
+                    f"job '{job_id}' can write PR metadata on pull_request_target. "
+                    "Verify which senders may start it and whose contributions it may edit.",
+                )
+            )
         steps = [step for step in job.get("steps") or [] if isinstance(step, dict)]
         for index, step in enumerate(steps, start=1):
             label = f"job '{job_id}', step {index}"
