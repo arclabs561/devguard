@@ -53,6 +53,10 @@ GitHub user, including accessible private repositories, forks, and archives:
 devguard github-ci
 devguard github-ci --json --fail-on-red
 devguard github-ci --branch-protection --json
+
+# Read local Git revisions to see configured effects of a default-branch merge.
+devguard merge-effects . --base origin/main --head topic --branch main
+devguard merge-effects . --base origin/main --branch main --hypothetical --changed-path src/lib.rs --json
 ```
 
 This command uses an authenticated `gh` CLI and reads GitHub's combined check
