@@ -66,3 +66,58 @@ def test_explicit_placeholder_trait_preserves_markers(tmp_path: Path) -> None:
     for name, src in cases.items():
         (tmp_path / name).write_text(src)
     assert find_false_passes(tmp_path, list(cases)) == {"placeholder_rust_trait": ["empty.rs"]}
+
+
+def test_assertion_exception_must_reach_a_silent_handler(tmp_path: Path) -> None:
+    cases = {
+        "test_caught.py": "async def test_it():\n    try:\n        assert await go()\n    except (ValueError, Exception):\n        pass",
+        "test_bare.py": "class TestValue:\n    def test_it(self):\n        try:\n            if ready():\n                assert go()\n        except:\n            pass",
+        "test_specific.py": "def test_it():\n    try:\n        assert go()\n    except ValueError:\n        pass",
+        "test_order.py": "def test_it():\n    try:\n        assert go()\n    except AssertionError:\n        raise\n    except Exception:\n        pass",
+        "test_inner.py": "def test_it():\n    try:\n        with pytest.raises(AssertionError):\n            assert go()\n    except Exception:\n        pass",
+        "test_nested.py": "def test_it():\n    try:\n        def inner():\n            assert go()\n    except Exception:\n        pass",
+        "test_helper.py": "def helper():\n    try:\n        assert go()\n    except Exception:\n        pass",
+        "test_skip.py": "def test_it():\n    try:\n        assert go()\n    except AssertionError:\n        pytest.skip('external fixture')",
+    }
+    for name, source in cases.items():
+        (tmp_path / name).write_text(source)
+    assert find_false_passes(tmp_path, list(cases)) == {
+        "swallowed_test_assertion": ["test_caught.py", "test_bare.py"]
+    }
+
+
+def test_pre_commit_only_checks_shell_commands_in_local_hook_entries(tmp_path: Path) -> None:
+    import yaml
+
+    path = tmp_path / ".pre-commit-config.yaml"
+
+    def check(entry, repo="local"):
+        path.write_text(yaml.safe_dump({"repos": [{"repo": repo, "hooks": [{"entry": entry}]}]}))
+        return find_false_passes(tmp_path, [path.name])
+
+    assert check("""bash -c 'cd src/ml && uv run pytest -m "not slow" || true'""") == {
+        "masked_test_command": [path.name]
+    }
+    assert check("sh -c 'cargo test||:'") == {"masked_test_command": [path.name]}
+    assert check("""bash -c 'echo "cd src/ml && pytest || true"'""") == {}
+    assert check("bash -c 'pytest || exit 1'") == {}
+    assert check("bash -c 'pytest && cleanup || true'") == {"masked_test_command": [path.name]}
+    assert check("bash -c 'pytest || exit 1; cleanup || true'") == {}
+    assert check("bash -c 'pytest || true'", repo="https://example.org/upstream") == {}
+    assert check("echo 'pytest || true'") == {}
+
+
+def test_partial_flattening_must_be_a_comment_token(tmp_path: Path) -> None:
+    fragment = (
+        " class Cache: def get(self, k): return self.data[k] def count(self): return len(self.data)"
+    )
+    comment = "# " + fragment * 5
+    cases = {
+        "partial.py": "class Price:\n    amount: float  " + comment,
+        "manual.py": '"""Example: ' + comment + '"""',
+        "string.py": "payload = " + repr(comment),
+        "long.py": "# " + "padding " * 50 + " def one(): pass",
+    }
+    for name, source in cases.items():
+        (tmp_path / name).write_text(source)
+    assert find_false_passes(tmp_path, list(cases)) == {"flattened_python": ["partial.py"]}
