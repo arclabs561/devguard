@@ -252,10 +252,12 @@ _TRUSTED_CONTEXT_EVENTS = {
 
 
 _SECURITY_COMMAND = re.compile(
-    r"^\s*(?:cargo\s+audit|gitleaks\s+(?:git|dir|detect)|trufflehog\s+(?:git|filesystem)"
+    r"^\s*(?:cargo\s+audit|cargo\s+test\b[^|&#\n]*\bsecret_scanning\b|gitleaks\s+(?:git|dir|detect)|trufflehog\s+(?:git|filesystem)"
     r"|npm\s+run\s+(?:test:security|check:secrets:ci))(?:\s|$)"
 )
-_IGNORE_EXIT = re.compile(r"\|\|\s*(?:true|:)\s*(?:#.*)?$")
+_IGNORE_EXIT = re.compile(
+    r"""\|\|\s*(?:true|:|echo\s+(?:"[^"$`]*"|'[^']*'|[\w .()-]+))\s*(?:#.*)?$"""
+)
 
 
 def _owner_event_only(condition: Any) -> bool:
@@ -284,6 +286,23 @@ def _workflow_trust(name: str, doc: Any) -> list[dict[str, Any]]:
         if not isinstance(job, dict):
             continue
         permissions = job.get("permissions", doc.get("permissions"))
+        oidc_write = permissions == "write-all" or (
+            isinstance(permissions, dict) and permissions.get("id-token") == "write"
+        )
+        condition = str(job.get("if", "")).strip().removeprefix("${{").removesuffix("}}").strip()
+        pr_job = condition.lower() in {"", "true", "always()", "success()"} or bool(
+            re.fullmatch(r"github\.event_name\s*==\s*'pull_request'", condition, re.I)
+        )
+        if "pull_request" in events and oidc_write and pr_job:
+            findings.append(
+                _finding(
+                    "review_pr_oidc_permission",
+                    "warning",
+                    name,
+                    f"job '{job_id}' grants OIDC token access on pull requests. "
+                    "Check the cloud role's trust policy and scope the permission to a trusted job.",
+                )
+            )
         pr_write = permissions == "write-all" or (
             isinstance(permissions, dict) and permissions.get("pull-requests") == "write"
         )

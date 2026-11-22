@@ -336,5 +336,29 @@ jobs:
           cargo audit
           echo diagnostic || true
       - run: cargo test || true
+      - run: cargo test --features e2e secret_scanning --lib || echo "skipped"
+      - run: cargo test --features e2e secret_scanning --lib || echo "failed" && exit 1
 """)
-    assert [f["check"] for f in audit_workflows(tmp_path)] == ["nonblocking_security_check"] * 2
+    assert [f["check"] for f in audit_workflows(tmp_path)] == ["nonblocking_security_check"] * 3
+
+
+def test_pr_oidc_privilege_starts_at_job_boundary(tmp_path):
+    import yaml
+
+    file = tmp_path / ".github/workflows/ci.yml"
+    file.parent.mkdir(parents=True)
+    steps = [{"run": "echo test", "if": "github.event_name == 'push'"}]
+    jobs = {
+        "unguarded": {"steps": steps},
+        "pr-only": {"if": "${{ github.event_name == 'pull_request' }}", "steps": steps},
+        "push-only": {"if": "github.event_name == 'push'", "steps": steps},
+        "no-token": {"permissions": {"contents": "read"}, "steps": steps},
+    }
+    workflow = {"on": ["push", "pull_request"], "permissions": {"id-token": "write"}, "jobs": jobs}
+    file.write_text(yaml.safe_dump(workflow))
+    findings = [f for f in audit_workflows(tmp_path) if f["check"] == "review_pr_oidc_permission"]
+    assert len(findings) == 2
+    assert all(any(name in f["message"] for f in findings) for name in ["'unguarded'", "'pr-only'"])
+    workflow["on"] = ["push"]
+    file.write_text(yaml.safe_dump(workflow))
+    assert not audit_workflows(tmp_path)
