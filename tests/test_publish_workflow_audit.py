@@ -248,3 +248,52 @@ jobs:
     found = audit_workflows(tmp_path)
     assert [f["check"] for f in found] == ["privileged_unpinned_action"] * 2
     assert "publish" in found[0]["message"] and "upload" in found[1]["message"]
+
+
+def test_dispatch_checkout_and_secret_destination_survive_normal_sweep(tmp_path):
+    import yaml
+
+    directory = tmp_path / ".github/workflows"
+    directory.mkdir(parents=True)
+    checkout = {
+        "uses": f"actions/checkout@{SHA}",
+        "with": {"ref": "${{ github.event.client_payload.git.sha }}"},
+    }
+    probe = {"env": {"AUTH": "${{ secrets.TEST_KEY }}"}, "run": 'probe "$SERVICE_URL"'}
+    job = {
+        "env": {"SERVICE_URL": "${{ github.event.client_payload.url }}"},
+        "steps": [checkout, probe],
+    }
+    workflow = {"on": {"repository_dispatch": {"types": ["deployment"]}}, "jobs": {"test": job}}
+    dest = directory / "integration.yaml"
+    for secure in [False, True]:
+        if secure:
+            checkout["with"]["ref"] = "${{ github.sha }}"
+            probe["env"]["SERVICE_URL"] = "${{ vars.SERVICE_ORIGIN }}"
+        dest.write_text(yaml.safe_dump(workflow))
+        assert {f["check"] for f in audit_workflows(tmp_path)} == (
+            set()
+            if secure
+            else {"event_selected_checkout", "dispatch_destination_with_credentials"}
+        )
+
+
+def test_comment_text_passed_as_data_and_default_branch_checkout(tmp_path):
+    directory = tmp_path / ".github/workflows"
+    directory.mkdir(parents=True)
+    (directory / "triage.yml").write_text(
+        """
+on: issue_comment
+jobs:
+  check:
+    steps:
+      - uses: actions/checkout@SHA
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - run: 'echo ${{ github.event.comment.body }}'
+      - env:
+          BODY: ${{ github.event.comment.body }}
+        run: 'printf "%s" "$BODY"'
+""".replace("@SHA", "@" + SHA)
+    )
+    assert [f["check"] for f in audit_workflows(tmp_path)] == ["event_text_in_script"]

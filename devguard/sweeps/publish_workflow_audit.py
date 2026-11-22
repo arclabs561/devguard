@@ -233,6 +233,107 @@ def _privileged_refs(name: str, doc: Any) -> list[dict[str, Any]]:
     return findings
 
 
+_EVENT_CODE = re.compile(
+    r"\$\{\{[^}]*\bgithub\.(?:head_ref\b|event\.(?:pull_request\.head|client_payload|workflow_run\.head_(?:sha|branch|repository))\b)",
+    re.I,
+)
+_EVENT_TEXT = re.compile(
+    r"\$\{\{[^}]*\bgithub\.(?:head_ref\b|event\.(?:(?:pull_request|issue)\.(?:title|body)|(?:review|comment)\.body|head_commit\.message)\b)",
+    re.I,
+)
+_EVENT_DESTINATION = re.compile(r"\$\{\{[^}]*\bgithub\.event\.client_payload\b", re.I)
+_SECRET_REF = re.compile(r"\$\{\{[^}]*\bsecrets\s*[.\[]", re.I)
+_TRUSTED_CONTEXT_EVENTS = {
+    "pull_request_target",
+    "workflow_run",
+    "repository_dispatch",
+    "issue_comment",
+}
+
+
+def _workflow_trust(name: str, doc: Any) -> list[dict[str, Any]]:
+    """Flag direct data flows. A trigger name alone cannot establish misuse."""
+    if not isinstance(doc, dict):
+        return []
+    # PyYAML's YAML 1.1 loader reads an unquoted 'on' as True.
+    trigger = doc.get("on", doc.get(True)) or []
+    events = (
+        {trigger}
+        if isinstance(trigger, str)
+        else set(trigger)
+        if isinstance(trigger, (list, dict))
+        else set()
+    )
+    trusted_context = bool(events & _TRUSTED_CONTEXT_EVENTS)
+    findings = []
+    for job_id, job in _jobs(doc).items():
+        if not isinstance(job, dict):
+            continue
+        steps = [step for step in job.get("steps") or [] if isinstance(step, dict)]
+        for index, step in enumerate(steps, start=1):
+            label = f"job '{job_id}', step {index}"
+            action = str(step.get("uses", "")).split("@")[0].lower()
+            inputs = step.get("with") or {}
+            if not isinstance(inputs, dict):
+                continue
+            if (
+                trusted_context
+                and action == "actions/checkout"
+                and any(
+                    _EVENT_CODE.search(str(inputs.get(key, ""))) for key in ("ref", "repository")
+                )
+            ):
+                findings.append(
+                    _finding(
+                        "event_selected_checkout",
+                        "error",
+                        name,
+                        f"{label} selects checkout code from the event in a trusted workflow context. "
+                        "Check out the trusted revision or verify its provenance first.",
+                    )
+                )
+            script = str(step.get("run") or "")
+            if action == "actions/github-script":
+                script = str(inputs.get("script") or "")
+            if _EVENT_TEXT.search(script):
+                findings.append(
+                    _finding(
+                        "event_text_in_script",
+                        "error",
+                        name,
+                        f"{label} interpolates contributor-controlled text into a script. "
+                        "Pass the value through an environment variable or read the event as data.",
+                    )
+                )
+            if "repository_dispatch" not in events or not script:
+                continue
+            env = {}
+            for scope in (doc, job, step):
+                if isinstance(scope.get("env"), dict):
+                    env.update(scope["env"])
+            if not _SECRET_REF.search(json.dumps([env, script])):
+                continue
+            for key, value in env.items():
+                if not re.search(r"(?:^|_)(?:URL|URI|ORIGIN|HOST|ENDPOINT)$", str(key), re.I):
+                    continue
+                if not _EVENT_DESTINATION.search(str(value)):
+                    continue
+                if re.search(
+                    r"\$(?:\{" + re.escape(str(key)) + r"\}|" + re.escape(str(key)) + r"\b)", script
+                ) or re.search(r"\b(?:pytest|npm|node|python3?)\b", script):
+                    findings.append(
+                        _finding(
+                            "dispatch_destination_with_credentials",
+                            "error",
+                            name,
+                            f"{label} passes an event-selected destination ({key}) to a credentialed command. "
+                            "Use a configured origin or validate it against an independently trusted allowlist.",
+                        )
+                    )
+                    break
+    return findings
+
+
 def audit_workflows(repo: Path, workflow_globs: list[str] | None = None) -> list[dict[str, Any]]:
     """Audit one repo's publish/release workflows. Raises nothing for unreadable YAML."""
     wf_dir = repo / ".github" / "workflows"
@@ -258,6 +359,7 @@ def audit_workflows(repo: Path, workflow_globs: list[str] | None = None) -> list
             findings.append(_finding("workflow_parse_error", "warning", name, "YAML parse error"))
             continue
         findings += _privileged_refs(name, doc)
+        findings += _workflow_trust(name, doc)
         if name not in targets:
             continue
         findings += _check_tag_push(name, doc)

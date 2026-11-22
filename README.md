@@ -48,6 +48,7 @@ GitHub user, including accessible private repositories, forks, and archives:
 ```bash
 devguard github-ci
 devguard github-ci --json --fail-on-red
+devguard github-ci --branch-protection --json
 ```
 
 This command uses an authenticated `gh` CLI and reads GitHub's combined check
@@ -57,6 +58,11 @@ commit. Pull-request-only tests may have run on another commit. `EMPTY` marks
 an empty repository. The JSON includes the branch, commit SHA and link.
 By default this is a report. With `--fail-on-red`, a reported failure or error
 exits 1. An incomplete API request exits 2.
+
+With `--branch-protection`, DevGuard reads the protection flag for each default
+branch. The report distinguishes protected, unprotected, empty repositories,
+and unknown coverage. Any unknown protection result exits 2. This flag does
+not enumerate required checks, bypass actors or fork approval policies.
 
 Run all enabled sweeps:
 
@@ -247,7 +253,7 @@ Sweeps that need external access:
 | `project_flaudit` | LLM-assisted repo audit |
 | `docs_quality` | Vale and readcost findings in README and `docs/` Markdown (advisory; missing tools or timeouts exit 3) |
 | `public_text_leak` | Coordination vocabulary and configured private names in recent public commit messages, PR bodies, and comments |
-| `publish_workflow_audit` | Publish/release workflows: tag push without credentials, MSRV pins missing from publish, semver checks over platform-only features, unpinned action refs |
+| `publish_workflow_audit` | Publish/release workflows: tag push without credentials, MSRV pins missing from publish, semver checks over platform-only features, unpinned action refs. Across all workflows: event-selected checkouts in trusted contexts, contributor text in scripts, and dispatch URLs used by credentialed commands |
 | `repo_lint` | Rust workspace hygiene: own-crate pin drift, README version lines, Cargo metadata, CI gaps (off by default, never changes the exit code) |
 
 The missing-pattern check in `gitignore_audit` is a pattern-presence heuristic.

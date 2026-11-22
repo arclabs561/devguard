@@ -58,9 +58,11 @@ jobs:
       - name: Run devguard sweep
         run: |
           status=0
-          uv run --locked devguard sweep --repo . --only local_dev,gitignore_audit,dependency_audit,ai_editor_config_audit --format sarif > devguard-results.sarif || status=$?
+          uv run --locked devguard sweep --repo . --only local_dev,gitignore_audit,dependency_audit,ai_editor_config_audit,publish_workflow_audit --format sarif > devguard-results.sarif || status=$?
           # Findings are uploaded to code scanning. An incomplete scan must fail CI.
           if [ "$status" != 2 ]; then exit "$status"; fi
+      - name: Check for high-severity workflow findings
+        run: uv run --locked devguard fleet . --only publish_workflow_audit --no-cache --fail-on high
       - name: Upload SARIF
         if: always()
         uses: github/codeql-action/upload-sarif@02c5e83432fe5497fd85b873b6c9f16a8578e1d9 # v3.37.0

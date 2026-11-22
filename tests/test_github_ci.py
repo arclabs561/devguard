@@ -97,3 +97,46 @@ def test_empty_account(monkeypatch):
     use_pages(monkeypatch, page([]))
     result = CliRunner().invoke(app, ["github-ci", "--json"])
     assert result.exit_code == 0 and json.loads(result.stdout)["repositories"] == []
+
+
+def test_branch_protection_has_independent_coverage(monkeypatch):
+    nodes = [repo(i) for i in range(5)]
+    nodes[0]["defaultBranchRef"]["name"] = "release/v1"
+    nodes[4].update(defaultBranchRef=None, isEmpty=True)
+    answers = {
+        "repos/reader/r0/branches/release%2Fv1": (0, "true"),
+        "repos/reader/r1/branches/trunk": (0, "false"),
+        "repos/reader/r2/branches/trunk": (1, ""),
+        "repos/reader/r3/branches/trunk": (0, "null"),
+    }
+
+    def gh(args, **kwargs):
+        if args[2] == "graphql":
+            return subprocess.CompletedProcess(args, 0, json.dumps(page(nodes)), "")
+        assert args[3:] == ["--jq", ".protected"]
+        code, output = answers[args[2]]
+        return subprocess.CompletedProcess(args, code, output, "")
+
+    monkeypatch.setattr("devguard.github_ci.subprocess.run", gh)
+    result = CliRunner().invoke(app, ["github-ci", "--json", "--branch-protection"])
+    assert result.exit_code == 2
+    rows = json.loads(result.stdout)["repositories"]
+    assert [r["branch_protection"] for r in rows] == [
+        "PROTECTED",
+        "UNPROTECTED",
+        "UNKNOWN",
+        "UNKNOWN",
+        "NO_BRANCH",
+    ]
+
+
+def test_unprotected_branch_is_reported(monkeypatch):
+    nodes = [repo(1)]
+
+    def gh(args, **kwargs):
+        output = json.dumps(page(nodes)) if args[2] == "graphql" else "false"
+        return subprocess.CompletedProcess(args, 0, output, "")
+
+    monkeypatch.setattr("devguard.github_ci.subprocess.run", gh)
+    result = CliRunner().invoke(app, ["github-ci", "--branch-protection"])
+    assert result.exit_code == 0 and "UNPROTECTED" in result.stdout
