@@ -401,7 +401,7 @@ def result_key(
     if spec_path is not None and spec_path.is_file():
         spec_digest = hashlib.sha256(spec_path.read_bytes()).hexdigest()
     material = {
-        "cache_format": 3,  # Older entries could include ignored checkout contents.
+        "cache_format": 4,  # Earlier workflow reports could omit incomplete inputs.
         "devguard": __version__,
         "repo": name,
         "head": head,

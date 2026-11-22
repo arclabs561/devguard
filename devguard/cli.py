@@ -2103,6 +2103,8 @@ def _sweep_body(
             _print_repo_hygiene_table(report, "publish_workflow_audit findings")
         if report["summary"]["total_errors"] > 0:
             exit_code = max(exit_code, 2)
+        if errors:
+            exit_code = max(exit_code, 3)
 
     any_enabled = (
         local.enabled

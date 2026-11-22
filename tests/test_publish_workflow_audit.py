@@ -362,3 +362,79 @@ def test_pr_oidc_privilege_starts_at_job_boundary(tmp_path):
     workflow["on"] = ["push"]
     file.write_text(yaml.safe_dump(workflow))
     assert not audit_workflows(tmp_path)
+
+
+def test_conditional_oidc_requires_a_job_guard_that_excludes_prs(tmp_path):
+    import yaml
+
+    workflows = tmp_path / ".github/workflows"
+    workflows.mkdir(parents=True)
+    guards = {
+        "status": "always() && !cancelled()",
+        "manual-or-pr": "github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'",
+        "variable": "vars.RUN_TESTS == 'enabled'",
+        "quoted": "contains('a || b', 'b')",
+        "trusted-branches": "github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')",
+        "two-trusted-events": "github.event_name == 'push' || github.event_name == 'workflow_dispatch'",
+        "disabled": False,
+    }
+    jobs = {key: {"if": value, "steps": [{"run": "echo test"}]} for key, value in guards.items()}
+    workflow = {"on": ["pull_request", "push"], "permissions": {"id-token": "write"}, "jobs": jobs}
+    (workflows / "ci.yml").write_text(yaml.safe_dump(workflow))
+    found = [f["message"].split("'")[1] for f in audit_workflows(tmp_path)]
+    assert sorted(found) == ["manual-or-pr", "quoted", "status", "variable"]
+
+
+def test_partial_workflows_preserve_findings_and_fail_both_commands(tmp_path, monkeypatch):
+    import json
+
+    from typer.testing import CliRunner
+
+    from devguard.cli import app
+
+    repo = _repo(
+        tmp_path / "fixture",
+        {
+            "publish.yml": TAG_PUSH_NO_CREDS,
+            "broken.yml": "jobs: [",
+            "empty.yml": "jobs: []",
+            "shape.yml": "jobs: {build: {steps: 42}}",
+        },
+    )
+    (repo / ".github/workflows/unreadable.yml").write_bytes(b"\xff")
+    (repo / ".github/workflows/external.yml").symlink_to(tmp_path / "other.yml")
+    (tmp_path / "other.yml").write_text(TAG_PUSH_DEFAULT_CHECKOUT)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.org",
+            "commit",
+            "-qm",
+            "fixtures",
+        ],
+        check=True,
+    )
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    only = ["--only", "publish_workflow_audit", "--format", "json"]
+    result = runner.invoke(app, ["sweep", "--repo", str(repo), *only])
+    assert result.exit_code == 3, result.output
+    report = json.loads(result.stdout)["publish_workflow_audit"]
+    assert report["scope"]["workflows_discovered"] == 6
+    assert report["scope"]["workflows_scanned"] == 1
+    assert len(report["errors"]) == 5
+    assert set(_checks(report["repos"][0]["findings"])) == {
+        "workflow_parse_error",
+        "workflow_read_error",
+        "tag_push_without_credentials",
+    }
+    result = runner.invoke(app, ["fleet", str(repo), "--no-cache", "--fail-on", "never", *only])
+    assert result.exit_code == 3, result.output
+    assert json.loads(result.stdout)["summary"]["incomplete"] == 1
