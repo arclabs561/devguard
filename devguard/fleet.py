@@ -395,6 +395,9 @@ def _worktree_dirty(path: Path) -> bool:
 # ---------------------------------------------------------------------------
 
 
+_CARGO_RELEASE_EVIDENCE_VERSION = 1
+
+
 def result_key(
     *, head: str, sweeps: list[str], spec_path: Path | None, full_history: bool, name: str
 ) -> str:
@@ -405,6 +408,11 @@ def result_key(
         "cache_format": 5,  # Recheck reports produced before coverage and severity checks.
         "devguard": __version__,
         "repo": name,
+        **(
+            {"cargo_release_evidence": _CARGO_RELEASE_EVIDENCE_VERSION}
+            if "cargo_publish_audit" in sweeps
+            else {}
+        ),
         "head": head,
         "sweeps": sorted(sweeps),
         "spec": spec_digest,
