@@ -54,3 +54,15 @@ def test_empty_scan_documents(tmp_path: Path) -> None:
     assert find_false_passes(tmp_path, list(cases)) == {
         "fabricated_scan_report": ["array.sh", "results.sh", "group.sh"]
     }
+
+
+def test_explicit_placeholder_trait_preserves_markers(tmp_path: Path) -> None:
+    cases = {
+        "empty.rs": "/// Placeholder for a future visitor.\npub trait Visitor {\n // TODO: define visit.\n}\n",
+        "marker.rs": "/// Marks validated inputs.\npub trait Checked {}\n",
+        "extension.rs": "/// Placeholder policy for optional calls.\npub trait Policy {\n // TODO: defaults.\n fn name(&self);\n}\n",
+        "compat.rs": '/// Placeholder from v1.\n#[deprecated(note = "retained for compatibility")]\npub trait Previous {}\n',
+    }
+    for name, src in cases.items():
+        (tmp_path / name).write_text(src)
+    assert find_false_passes(tmp_path, list(cases)) == {"placeholder_rust_trait": ["empty.rs"]}

@@ -13,6 +13,7 @@ DESCRIPTIONS = {
     "copied_test_subject": "A test calls a local copy of a named production function without exercising the original",
     "flattened_python": "Python source is swallowed by a single shebang comment",
     "masked_test_command": "A test command discards its failure status",
+    "placeholder_rust_trait": "A public trait describes future behavior and contains only an implementation TODO",
     "fabricated_scan_report": "A failed scanner is replaced with an empty JSON report",
     "masked_search_error": "A count treats search errors (including missing inputs) as zero",
     "aliased_tier_costs": "Every comparison tier is populated from the same cost variable",
@@ -32,6 +33,24 @@ _ALIASED_COST = re.compile(
     r"(?m)^\s*(?:const|let)\s+\w+(?:\s*:\s*[\w<>]+)?\s*=\s*"
     r"\{\s*fast:\s*(\w*[Cc]ost\w*)\s*,\s*balanced:\s*\1\s*,\s*best:\s*\1\s*,?\s*\}"
 )
+
+
+# Require both explicit placeholder docs and an unimplemented body. An empty
+# trait by itself is a valid Rust marker.
+_PLACEHOLDER_TRAIT = re.compile(
+    r"(?m)^(?P<docs>(?:[ \t]*///[^\n]*\n)+)"
+    r"[ \t]*pub[ \t]+trait[ \t]+[A-Za-z_]\w*[ \t]*\{"
+    r"(?P<body>(?:\s|//[^\n]*\n)*)\}"
+)
+
+
+def _placeholder_trait(source: str) -> bool:
+    if "placeholder" not in source.lower() or "TODO" not in source:
+        return False
+    return any(
+        "placeholder" in m["docs"].lower() and "TODO" in m["body"]
+        for m in _PLACEHOLDER_TRAIT.finditer(source)
+    )
 
 
 _SCAN_COMMAND = re.compile(r"^(?:cargo geiger|opengrep scan|ast-grep scan|semgrep scan)\b")
@@ -146,9 +165,15 @@ def find_false_passes(repo: Path, tracked: list[str]) -> dict[str, list[str]]:
     findings: dict[str, list[str]] = {}
     for rel in tracked:
         path = repo / rel
-        if path.suffix not in {".py", ".sh", ".bash", ".ts", ".mjs", ".js"} or not contained_file(
-            path, repo
-        ):
+        if path.suffix not in {
+            ".py",
+            ".sh",
+            ".bash",
+            ".ts",
+            ".mjs",
+            ".js",
+            ".rs",
+        } or not contained_file(path, repo):
             continue
         if path.stat().st_size > 1024 * 1024:
             continue
@@ -159,6 +184,8 @@ def find_false_passes(repo: Path, tracked: list[str]) -> dict[str, list[str]]:
                 source
             ):
                 checks.add("copied_test_subject")
+        elif path.suffix == ".rs":
+            checks = {"placeholder_rust_trait"} if _placeholder_trait(source) else set()
         elif path.suffix in {".sh", ".bash"}:
             checks = _shell_checks(source)
         else:
