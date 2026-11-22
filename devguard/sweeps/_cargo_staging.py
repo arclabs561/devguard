@@ -47,52 +47,117 @@ def _options(args: list[str], *names: str) -> list[str]:
     return values
 
 
-def _multi_package(repo: Path, cwd: Path, args: list[str]) -> bool:
-    packages = set(_options(args, "-p", "--package"))
-    if len(packages) > 1:
-        return True
-    manifest = _inside(repo, cwd, (_options(args, "--manifest-path") or ["Cargo.toml"])[-1])
-    if not manifest or not manifest.is_file():
-        return False
+def _manifest_data(path: Path) -> dict:
     try:
-        config = tomllib.loads(manifest.read_text())
+        return tomllib.loads(path.read_text())
     except (OSError, UnicodeError, tomllib.TOMLDecodeError):
-        return False
+        return {}
+
+
+def _path_dependencies(config: dict, workspace: dict, root: Path, member: Path) -> Iterator[Path]:
+    # Cargo implicitly adds in-tree path dependencies to the workspace,
+    # including platform-specific, development, and build dependencies.
+    targets = config.get("target", {})
+    tables = [config, *(targets.values() if isinstance(targets, dict) else [])]
+    for table in tables:
+        if not isinstance(table, dict):
+            continue
+        for kind in (
+            "dependencies",
+            "dev-dependencies",
+            "build-dependencies",
+            "dev_dependencies",
+            "build_dependencies",
+        ):
+            dependencies = table.get(kind, {})
+            if not isinstance(dependencies, dict):
+                continue
+            for alias, spec in dependencies.items():
+                if not isinstance(spec, dict):
+                    continue
+                base = member
+                if spec.get("workspace") is True:
+                    inherited = workspace.get("dependencies", {})
+                    spec = inherited.get(alias) if isinstance(inherited, dict) else None
+                    base = root
+                if isinstance(spec, dict) and isinstance(spec.get("path"), str):
+                    yield base / spec["path"] / "Cargo.toml"
+
+
+def _selected_packages(repo: Path, cwd: Path, args: list[str]) -> frozenset[Path]:
+    if not cwd.is_dir():
+        return frozenset()
+    packages = set(_options(args, "-p", "--package"))
+    explicit = _options(args, "--manifest-path")
+    if explicit:
+        manifest = _inside(repo, cwd, explicit[-1])
+    else:
+        manifest = next(
+            (
+                d / "Cargo.toml"
+                for d in (cwd, *cwd.parents)
+                if d.is_relative_to(repo) and (d / "Cargo.toml").is_file()
+            ),
+            None,
+        )
+        if manifest:
+            manifest = _inside(repo, cwd, str(manifest))
+    if not manifest:
+        return frozenset()
+    config = _manifest_data(manifest)
     workspace = config.get("workspace")
+    root_name = config.get("package", {}).get("name")
+    whole = "--workspace" in args or "--all" in args
     if not isinstance(workspace, dict):
-        return False
-    root = config.get("package", {}).get("name")
-    members = workspace.get("members", [])
-    if not packages and "--workspace" not in args and "--all" not in args:
-        members = workspace.get("default-members", ["."] if root else members)
-    elif root:
-        members = [".", *members]
-    names = set()
-    excluded = _options(args, "--exclude")
-    for pattern in members:
+        if not root_name or (packages and packages != {root_name}) or whole:
+            return frozenset()
+        return frozenset([manifest])
+
+    root = manifest.parent
+    defaults = (
+        None
+        if whole or packages
+        else workspace.get("default-members", ["."] if root_name else None)
+    )
+    if defaults is None:
+        patterns = workspace.get("members", [])
+        pending = [manifest] if root_name else []
+    else:
+        patterns = defaults
+        pending = []
+    for pattern in patterns:
         if (
             not isinstance(pattern, str)
             or Path(pattern).is_absolute()
             or ".." in Path(pattern).parts
         ):
+            return frozenset()
+        pending.extend(root.glob(f"{pattern}/Cargo.toml"))
+    selected: set[Path] = set()
+    matched: set[str] = set()
+    seen: set[Path] = set()
+    excluded = _options(args, "--exclude")
+    while pending:
+        member = pending.pop().resolve()
+        if member in seen or not member.is_relative_to(root):
             continue
-        for member in manifest.parent.glob(f"{pattern}/Cargo.toml"):
-            if not member.resolve().is_relative_to(repo):
-                continue
-            relative = member.parent.relative_to(manifest.parent).as_posix()
-            if any(fnmatch.fnmatchcase(relative, g) for g in workspace.get("exclude", [])):
-                continue
-            try:
-                name = tomllib.loads(member.read_text()).get("package", {}).get("name")
-            except (OSError, UnicodeError, tomllib.TOMLDecodeError):
-                continue
-            if not name or any(fnmatch.fnmatchcase(name, g) for g in excluded):
-                continue
-            if not packages or any(fnmatch.fnmatchcase(name, g) for g in packages):
-                names.add(name)
-                if len(names) > 1:
-                    return True
-    return False
+        seen.add(member)
+        relative = member.parent.relative_to(root).as_posix()
+        if any(fnmatch.fnmatchcase(relative, pat) for pat in workspace.get("exclude", [])):
+            continue
+        info = _manifest_data(member)
+        if not info:
+            return frozenset()
+        if defaults is None:
+            pending.extend(_path_dependencies(info, workspace, root, member.parent))
+        name = info.get("package", {}).get("name")
+        if not name or any(fnmatch.fnmatchcase(name, pat) for pat in excluded):
+            continue
+        matches = {pat for pat in packages if fnmatch.fnmatchcase(name, pat)}
+        if not packages or matches:
+            selected.add(member)
+            matched.update(matches)
+    return frozenset(selected) if matched == packages else frozenset()
 
 
 @dataclass(frozen=True)
@@ -100,6 +165,16 @@ class StagingRisk:
     source: str
     line: int
     workflow_step: str
+
+
+@dataclass(frozen=True)
+class PublishStep:
+    workflow: str
+    location: str
+    oidc: bool
+    dry_run: bool
+    packages: frozenset[Path]
+    staging_risk: StagingRisk | None
 
 
 def _commands(body: str, allocations: Iterator[int]) -> Iterator[tuple[int, list[str]]]:
@@ -142,7 +217,7 @@ def _scan(
     used: set[str],
     seen: set[Path],
     allocations: Iterator[int],
-) -> Iterator[StagingRisk]:
+) -> Iterator[tuple[bool, frozenset[Path], StagingRisk | None]]:
     exported = set(env)
     for line, tokens in _commands(body, allocations):
         tokens = list(tokens)
@@ -205,9 +280,17 @@ def _scan(
             continue
         if args and args[0].startswith("+"):
             args = args[1:]
-        if args[:1] != ["publish"] or "--dry-run" not in args or "--no-verify" in args:
+        if args[:1] != ["publish"]:
             continue
-        if not _multi_package(repo, cwd, args):
+        dry_run = "--dry-run" in args
+        packages = _selected_packages(repo, cwd, args)
+        if "--no-verify" in args and dry_run:
+            # Cargo prepares the package without verifying the unpacked crate.
+            yield True, frozenset(), None
+            continue
+        multi = len(packages) > 1 or len(set(_options(args, "-p", "--package"))) > 1
+        if not dry_run or not multi:
+            yield dry_run, packages, None
             continue
         inherited = (
             values.get("CARGO_TARGET_DIR", "") if "CARGO_TARGET_DIR" in exported | assigned else ""
@@ -215,15 +298,17 @@ def _scan(
         target = (_options(args, "--target-dir") or [inherited])[-1]
         target = _VAR.sub(lambda m: values.get(m[1] or m[2], m[0]), target)
         # A repeated check with the same allocated directory can also be stale.
+        risk = None
         if not target.startswith("\0mktemp:") or ".." in target.split("/") or target in used:
-            yield StagingRisk(source, line, step)
+            risk = StagingRisk(source, line, step)
         used.add(target)
+        yield dry_run, packages, risk
 
 
-def staging_risks(repo: Path, workflows: list[tuple[str, str]]) -> Iterator[StagingRisk]:
+def publish_steps(repo: Path, workflows: list[tuple[str, str]]) -> Iterator[PublishStep]:
     repo = repo.resolve()
     for name, text in workflows:
-        if "run:" not in text:
+        if "run:" not in text and "uses:" not in text:
             continue
         try:
             doc = yaml.safe_load(text)
@@ -234,8 +319,21 @@ def staging_risks(repo: Path, workflows: list[tuple[str, str]]) -> Iterator[Stag
         for job_name, job in doc["jobs"].items():
             if not isinstance(job, dict) or not isinstance(job.get("steps"), list):
                 continue
+            # A job permissions map replaces the workflow permissions in full.
+            perms = job.get("permissions", doc.get("permissions"))
+            oidc = perms == "write-all" or (
+                isinstance(perms, dict) and perms.get("id-token") == "write"
+            )
             for idx, step in enumerate(job.get("steps") or [], 1):
-                if not isinstance(step, dict) or not isinstance(step.get("run"), str):
+                location = f".github/workflows/{name} (job {job_name}, step {idx})"
+                if not isinstance(step, dict):
+                    continue
+                # External publisher internals are opaque, but the caller's
+                # job permissions still govern its access to an OIDC token.
+                action = str(step.get("uses", "")).partition("@")[0].lower()
+                if "cargo-publish" in action:
+                    yield PublishStep(name, location, oidc, False, frozenset(), None)
+                if not isinstance(step.get("run"), str):
                     continue
                 directory = "."
                 env: dict[str, str] = {}
@@ -248,7 +346,7 @@ def staging_risks(repo: Path, workflows: list[tuple[str, str]]) -> Iterator[Stag
                 cwd = _inside(repo, repo, str(step.get("working-directory", directory)))
                 if cwd is None:
                     continue
-                location = f".github/workflows/{name} (job {job_name}, step {idx})"
-                yield from _scan(
+                for dry_run, packages, risk in _scan(
                     repo, cwd, step["run"], location, location, env, set(), set(), count()
-                )
+                ):
+                    yield PublishStep(name, location, oidc, dry_run, packages, risk)
