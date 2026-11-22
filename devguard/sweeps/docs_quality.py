@@ -69,6 +69,25 @@ def _vale_has_styles(repo: Path, timeout_s: int) -> bool:
     return bool(cfg.get("GBaseStyles") or cfg.get("SBaseStyles") or cfg.get("Checks"))
 
 
+def _selected_path(path: str, repo: Path, files: list[str]) -> str | None:
+    candidate = Path(path)
+    if ".." in candidate.parts:
+        return None
+    if candidate.is_absolute():
+        try:
+            candidate = candidate.relative_to(repo.resolve())
+        except ValueError:
+            return None
+    rel = candidate.as_posix()
+    return rel if rel in files else None
+
+
+def _unexpected(engine: str, incomplete: list[str]) -> None:
+    message = f"{engine}: output included an unselected file"
+    if message not in incomplete:
+        incomplete.append(message)
+
+
 def _direct(
     repo: Path, files: list[str], timeout_s: int, tools: tuple[str, ...]
 ) -> tuple[list[dict], list[str], set[str]]:
@@ -104,38 +123,39 @@ def _direct(
         try:
             data = json.loads(proc.stdout)
             if tool == "vale":
+                unexpected = False
                 for path, alerts in data.items():
+                    rel = _selected_path(path, repo, files)
+                    if rel is None:
+                        _unexpected(tool, incomplete)
+                        unexpected = True
+                        continue
                     for a in alerts:
                         findings.append(
                             {
                                 "tool": "vale",
-                                "file": os.path.relpath(path, repo.resolve())
-                                if os.path.isabs(path)
-                                else path,
+                                "file": rel,
                                 "line": a["Line"],
                                 "rule": a["Check"],
                                 "message": a["Message"],
                             }
                         )
-                covered[tool].update(files)
+                if not unexpected:
+                    covered[tool].update(files)
             else:
                 if not isinstance(data, list):
                     raise ValueError("expected per-file results")
                 for entry in data:
-                    rel = (
-                        os.path.relpath(entry["path"], repo.resolve())
-                        if os.path.isabs(entry["path"])
-                        else entry["path"]
-                    )
-                    if rel in files:
-                        covered[tool].add(rel)
+                    rel = _selected_path(entry["path"], repo, files)
+                    if rel is None:
+                        _unexpected(tool, incomplete)
+                        continue
+                    covered[tool].add(rel)
                     for item in entry["findings"]:
                         findings.append(
                             {
                                 "tool": "readcost",
-                                "file": os.path.relpath(entry["path"], repo)
-                                if os.path.isabs(entry["path"])
-                                else entry["path"],
+                                "file": rel,
                                 "line": item["line"],
                                 "rule": item["feature"],
                                 "message": item["message"],
@@ -169,8 +189,10 @@ def _wrapper(
         if not isinstance(data, list):
             raise ValueError("expected per-file results")
         for result in data:
-            path = result["path"]
-            rel = os.path.relpath(path, repo.resolve()) if os.path.isabs(path) else path
+            rel = _selected_path(result["path"], repo, files)
+            if rel is None:
+                _unexpected(wrapper, incomplete)
+                continue
             seen.add(rel)
             if result["unavailable"]:
                 failed.add(rel)

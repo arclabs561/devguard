@@ -211,3 +211,38 @@ def test_missing_per_file_output_is_partial(
     assert report["summary"]["files_checked"] == 0
     assert report["summary"]["files_selected"] == 2
     assert not report["summary"]["coverage_complete"]
+
+
+@pytest.mark.parametrize("engine", ["vale", "readcost", "wrapper"])
+def test_stale_producer_rows_cannot_create_findings(repo: Path, bin_dir: Path, engine: str):
+    names = ["./README.md", str(repo / "docs/guide.md"), "../other/stale.md"]
+    if engine == "vale":
+        record = {"Line": 4, "Check": "test", "Message": "stale"}
+        outputs = {path: [record] if i == 2 else [] for i, path in enumerate(names)}
+        _tool(
+            bin_dir,
+            engine,
+            f"print(json.dumps({{'GBaseStyles': ['Style']}} if sys.argv[1]=='ls-config' else {outputs!r}))",
+        )
+    else:
+        record = {
+            "line": 4,
+            "feature": "test",
+            "tool": "readcost",
+            "rule": "test",
+            "message": "stale",
+        }
+        outputs = [
+            {"path": p, "findings": [record] if i == 2 else [], "unavailable": []}
+            for i, p in enumerate(names)
+        ]
+        _tool(
+            bin_dir,
+            "docs-check" if engine == "wrapper" else engine,
+            f"print(json.dumps({outputs!r}))",
+        )
+    data, errors = audit_docs_quality(dev_root=repo, max_depth=0, engine=engine)
+    assert len(errors) == 1 and "unselected file" in errors[0]
+    assert not data["summary"]["coverage_complete"]
+    assert data["summary"]["total_findings"] == 0
+    assert data["summary"]["files_checked"] == (0 if engine == "vale" else 2)
