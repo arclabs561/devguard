@@ -65,10 +65,12 @@ def _vale_has_styles(repo: Path, timeout_s: int) -> bool:
     return bool(cfg.get("GBaseStyles") or cfg.get("SBaseStyles") or cfg.get("Checks"))
 
 
-def _direct(repo: Path, files: list[str], timeout_s: int) -> tuple[list[dict], list[str]]:
+def _direct(
+    repo: Path, files: list[str], timeout_s: int, tools: tuple[str, ...]
+) -> tuple[list[dict], list[str]]:
     findings: list[dict] = []
     incomplete: list[str] = []
-    for tool in TOOLS:
+    for tool in tools:
         if not shutil.which(tool):
             incomplete.append(f"{tool}: not installed")
             continue
@@ -116,7 +118,9 @@ def _direct(repo: Path, files: list[str], timeout_s: int) -> tuple[list[dict], l
                         findings.append(
                             {
                                 "tool": "readcost",
-                                "file": entry["path"],
+                                "file": os.path.relpath(entry["path"], repo)
+                                if os.path.isabs(entry["path"])
+                                else entry["path"],
                                 "line": item["line"],
                                 "rule": item["feature"],
                                 "message": item["message"],
@@ -155,7 +159,7 @@ def _wrapper(
 def _resolve_engine(engine: str, wrapper: str) -> str:
     if engine == "auto":
         return "wrapper" if shutil.which(wrapper) else "direct"
-    if engine not in ("wrapper", "direct"):
+    if engine not in ("wrapper", "direct", *TOOLS):
         raise ValueError(f"unknown docs_quality engine: {engine}")
     return engine
 
@@ -197,13 +201,17 @@ def audit_docs_quality(
         if resolved == "wrapper":
             raw, incomplete = _wrapper(repo, files, wrapper, timeout_s)
         else:
-            raw, incomplete = _direct(repo, files, timeout_s)
+            raw, incomplete = _direct(
+                repo, files, timeout_s, (resolved,) if resolved in TOOLS else TOOLS
+            )
         entry["incomplete"] = incomplete
         entry["findings_total"] = len(raw)
         entry["findings"] = [
             {
                 "check": f"docs_quality:{f['tool']}/{f['rule']}",
                 "severity": "low",
+                "file": f["file"],
+                "line": f["line"],
                 "message": f"{f['file']}:{f['line']}: {' '.join(str(f['message']).split())[:240]}",
             }
             for f in raw[:_MAX_FINDINGS_PER_REPO]

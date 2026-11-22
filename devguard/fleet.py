@@ -411,6 +411,8 @@ def result_key(
         "full_history": full_history,
         "tools": [t for t in _RESULT_AFFECTING_TOOLS if shutil.which(t)],
     }
+    if "docs_quality" in sweeps:
+        material["docs_quality_locations"] = 1
     return hashlib.sha256(json.dumps(material, sort_keys=True).encode()).hexdigest()
 
 

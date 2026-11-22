@@ -158,3 +158,20 @@ def test_tool_failure_is_incomplete_with_detail(repo: Path, bin_dir: Path) -> No
 
     assert errors == ["repo: readcost: exit 2: model missing"]
     assert report["summary"]["coverage_complete"] is False
+
+
+@pytest.mark.parametrize("engine", ["readcost", "vale"])
+def test_selected_tool_checks_markdown_alone(repo: Path, bin_dir: Path, engine: str) -> None:
+    from devguard.fleet import extract_findings
+
+    _fake_direct_tools(bin_dir)
+    (bin_dir / ("vale" if engine == "readcost" else "readcost")).unlink()
+    report, errors = audit_docs_quality(dev_root=repo, max_depth=0, engine=engine)
+    assert not errors and report["summary"]["coverage_complete"]
+    assert report["scope"]["engine"] == engine
+    (finding,) = extract_findings({"docs_quality": report})
+    assert finding["file"] == ("docs/guide.md:2" if engine == "readcost" else "README.md:3")
+    (bin_dir / engine).unlink()
+    report, errors = audit_docs_quality(dev_root=repo, max_depth=0, engine=engine)
+    assert not report["summary"]["coverage_complete"]
+    assert errors == [f"repo: {engine}: not installed"]
