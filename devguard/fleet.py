@@ -422,7 +422,7 @@ def result_key(
         "tools": [t for t in _RESULT_AFFECTING_TOOLS if shutil.which(t)],
     }
     if "cargo_publish_audit" in sweeps:
-        material["cargo_feature_test_reporting"] = 2  # Located, advisory findings.
+        material["cargo_feature_test_reporting"] = 3  # Include known crate feature conjunctions.
     return hashlib.sha256(json.dumps(material, sort_keys=True).encode()).hexdigest()
 
 

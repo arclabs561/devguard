@@ -179,6 +179,50 @@ class RepoAuditResult:
     findings: list[Finding] = field(default_factory=list)
 
 
+_INNER_ATTR = re.compile(r'#!\s*\[([^\[\]"]*(?:"(?:[^"\\]|\\.)*"[^\[\]"]*)*)\]', re.S)
+_FEATURE = r'feature\s*=\s*"([A-Za-z0-9_+.-]+)"'
+
+
+def _crate_features(content: str) -> list[str] | None:
+    """Read leading inner attributes only. None means the required configuration is unknown."""
+    rest = content.removeprefix("\ufeff").lstrip()
+    if rest.startswith("#!") and not re.match(r"#!\s*\[", rest):
+        rest = rest.partition("\n")[2].lstrip()
+    gates: list[str] = []
+    while rest:
+        if rest.startswith("//"):
+            rest = rest.partition("\n")[2].lstrip()
+            continue
+        if rest.startswith("/*"):
+            end = rest.find("*/", 2)
+            if end < 0 or "/*" in rest[2:end]:
+                return None
+            rest = rest[end + 2 :].lstrip()
+            continue
+        if not re.match(r"#!\s*\[", rest):
+            break
+        attr = _INNER_ATTR.match(rest)
+        if attr is None:
+            return None
+        body = attr[1].strip()
+        rest = rest[attr.end() :].lstrip()
+        if re.match(r"cfg_attr\b", body):
+            return None
+        if not re.match(r"cfg\b", body):
+            continue
+        predicate = re.fullmatch(r"cfg\s*\((.*)\)", body, re.S)
+        if predicate is None:
+            return None
+        expr = predicate[1].strip()
+        if match := re.fullmatch(_FEATURE, expr):
+            gates.append(match[1])
+        elif re.fullmatch(rf"all\s*\(\s*{_FEATURE}(?:\s*,\s*{_FEATURE})*\s*,?\s*\)", expr):
+            gates.extend(re.findall(_FEATURE, expr))
+        else:
+            return None
+    return list(dict.fromkeys(gates))
+
+
 def _check_feature_gated_tests(repo: Path, result: RepoAuditResult) -> None:
     """Report feature references for verification against the package's test configurations."""
     root = _read_manifest(repo) or {}
@@ -228,25 +272,42 @@ def _check_feature_gated_tests(repo: Path, result: RepoAuditResult) -> None:
             except OSError:
                 continue
             required = target.get("required-features", [])
+            gates = _crate_features(content)
             for feat in sorted(features):
                 if feat in required:
                     continue
                 module = feat.replace("-", "_")
                 if not re.search(rf"\b{re.escape(crate)}::{re.escape(module)}\b", content):
                     continue
-                if re.search(rf'#!\[cfg\(feature\s*=\s*"{re.escape(feat)}"\)\]', content):
+                if gates == [feat]:
                     continue
                 test = target["name"]
                 base = f"cargo test -p {name} --test {test}"
-                baseline = base + (" --features " + ",".join(required) if required else "")
-                enabled = base + " --features " + ",".join([*required, feat])
+                if gates is None:
+                    message = (
+                        f"Test references `{crate}::{module}`. Resolve the crate-level configuration "
+                        f"for Cargo test target `{test}` before choosing features."
+                    )
+                else:
+                    active = list(dict.fromkeys([*required, *gates, feat]))
+                    enabled = base + " --features " + ",".join(active)
+                    if gates:
+                        message = (
+                            f"Test references `{crate}::{module}`. Exercise the crate-level "
+                            f"feature gate with `{enabled}`."
+                        )
+                    else:
+                        baseline = base + (" --features " + ",".join(required) if required else "")
+                        message = (
+                            f"Test references `{crate}::{module}`. Compare which tests run with "
+                            f"`{baseline}` and `{enabled}`."
+                        )
                 result.findings.append(
                     Finding(
                         check="ungated_feature_test",
                         severity="warning",
                         file=path.relative_to(repo).as_posix(),
-                        message=f"Test references `{crate}::{module}`. Compare which tests run with "
-                        f"`{baseline}` and `{enabled}`.",
+                        message=message,
                         detail="Static feature reference. An item-level gate may already protect "
                         "the import. Check both compilation and the number of tests executed.",
                     )
