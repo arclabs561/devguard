@@ -345,6 +345,15 @@ If no flaws found, return {{"findings": []}}.
 Return at most 12 findings, prioritized by severity (critical > high > medium > low). Keep each description to one sentence.
 Be concrete: cite specific file paths and line references when possible."""
 
+        system_prompt += (
+            "\nFor evidence claims, trace one negative control through the supplied code. "
+            "Would changing the image change the verdict? Are interval coverage and printed bounds "
+            "computed on the same held-out rows? Do alternative prices use the same workload and "
+            "each selected model? Can a refinement improve an already exhaustive minimum? "
+            "Report only demonstrated mismatches, with the input and the predicted wrong output. "
+            "Distinguish a source trace from a test that actually ran."
+        )
+
         # Prefer OpenRouter for Google models when key is available
         use_openrouter = (
             model_id.startswith("google/") and self.settings.openrouter_api_key is not None

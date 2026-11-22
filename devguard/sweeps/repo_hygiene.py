@@ -28,6 +28,7 @@ from dotenv import dotenv_values
 from devguard.sweeps._common import contained_file, iter_git_repos
 from devguard.sweeps._common import default_dev_root as _default_dev_root
 from devguard.sweeps._common import utc_now as _utc_now
+from devguard.sweeps.false_passes import DESCRIPTIONS, find_false_passes
 
 # ---------------------------------------------------------------------------
 # Dataclasses
@@ -1954,6 +1955,13 @@ def sweep_repo_hygiene(
             if finding is not None:
                 result.findings.append(finding)
                 total_findings += 1
+
+        try:
+            for check, files in find_false_passes(repo, tracked).items():
+                result.findings.append(HygieneFinding(str(repo), check, "medium", DESCRIPTIONS[check], files))
+                total_findings += 1
+        except OSError as exc:
+            errors.append(f"{repo}: false-pass scan failed: {exc}")
 
         results.append(result)
 
