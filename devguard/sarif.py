@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
+from collections.abc import Iterator
 from typing import Any
+from urllib.parse import quote
+
+from devguard import __version__
+from devguard.finding_evidence import finding_id, locations, references
 
 SARIF_SCHEMA = (
     "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/"
@@ -54,29 +58,6 @@ _Finding = tuple[str, str, str, str | None, str]
 # Per-sweep extractors
 # ---------------------------------------------------------------------------
 # Each returns a list of (rule_id, level, message, uri | None, severity).
-
-
-def _extract_ai_editor_config(report: dict) -> list[_Finding]:
-    results: list[_Finding] = []
-    for repo in report.get("repos", []):
-        repo_path = repo.get("repo_path") or repo.get("repo_name")
-        for f in repo.get("findings", []):
-            sev = f.get("severity", "warning")
-            results.append(
-                (
-                    f.get("check", "unknown"),
-                    _sarif_level(sev),
-                    f.get("message", ""),
-                    f.get("file") or repo_path,
-                    sev,
-                )
-            )
-    return results
-
-
-def _extract_cargo_publish(report: dict) -> list[_Finding]:
-    # Same shape as ai_editor_config: repos[].findings[].{check, severity, message}
-    return _extract_ai_editor_config(report)
 
 
 def _extract_gitignore_audit(report: dict) -> list[_Finding]:
@@ -315,9 +296,6 @@ def _extract_mcp_security_audit(report: dict) -> list[_Finding]:
 
 
 _EXTRACTORS: dict[str, Any] = {
-    "ai_editor_config_audit": _extract_ai_editor_config,
-    "cargo_publish_audit": _extract_cargo_publish,
-    "publish_workflow_audit": _extract_ai_editor_config,
     "gitignore_audit": _extract_gitignore_audit,
     "git_identity_audit": _extract_git_identity_audit,
     "dependency_audit": _extract_dependency_audit,
@@ -334,10 +312,34 @@ _EXTRACTORS: dict[str, Any] = {
 }
 
 
-def _partial_fingerprint(rule_id: str, uri: str, message: str) -> str:
-    """Stable fingerprint for deduplication across SARIF runs."""
-    data = f"{rule_id}:{uri}:{message}".encode()
-    return hashlib.sha256(data).hexdigest()[:16]
+def _records(sweep: str, report: dict) -> Iterator[tuple[_Finding, dict]]:
+    extractor = _EXTRACTORS.get(sweep)
+    if extractor is not None:
+        rows = extractor(report)
+        # These extractors return one row per raw finding, in the original order.
+        direct = sweep in {
+            "public_github_secrets",
+            "local_dirty_worktree_secrets",
+            "local_history_secrets",
+            "exec_config_audit",
+            "repo_lint",
+            "git_identity_audit",
+            "mcp_security_audit",
+        }
+        items = report.get("findings", []) if direct else ()
+        for index, row in enumerate(rows):
+            _, _, message, uri, _ = row
+            evidence = dict(items[index]) if direct else {}
+            evidence.update(message=message, file=uri)
+            yield row, evidence
+        return
+    for repo in report.get("repos", []):
+        for raw in repo.get("findings", []):
+            sev = raw.get("severity", "warning")
+            yield (
+                (raw.get("check", "unknown"), _sarif_level(sev), raw.get("message", ""), None, sev),
+                raw | {"repo_path": repo.get("repo_path") or ""},
+            )
 
 
 def _build_rule(rule_id: str, severity: str, sweep_name: str) -> dict:
@@ -371,130 +373,48 @@ def _build_rule(rule_id: str, severity: str, sweep_name: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def report_to_sarif(
-    report: dict,
-    sweep_name: str,
-    tool_version: str = "0.1.0",
-) -> dict:
-    """Convert a devguard sweep report to SARIF 2.1.0 format."""
-    extractor = _EXTRACTORS.get(sweep_name)
-    if extractor is None:
-        # Fallback: try the ai_editor_config shape (repos[].findings[])
-        extractor = _extract_ai_editor_config
-
-    raw_results = extractor(report)
-
-    # Collect unique rule IDs
-    rule_ids: dict[str, int] = {}
-    rules: list[dict] = []
-    for rule_id, _level, _msg, _uri, severity in raw_results:
-        if rule_id not in rule_ids:
-            rule_ids[rule_id] = len(rules)
-            rules.append(_build_rule(rule_id, severity, sweep_name))
-
-    sarif_results: list[dict] = []
-    for rule_id, level, message, uri, _severity in raw_results:
-        uri_str = uri or ""
-        result: dict[str, Any] = {
-            "ruleId": rule_id,
-            "ruleIndex": rule_ids[rule_id],
-            "level": level,
-            "message": {"text": message},
-            "partialFingerprints": {
-                "primaryLocationLineHash": _partial_fingerprint(rule_id, uri_str, message),
-            },
-        }
-        loc: dict[str, Any] = {
-            "physicalLocation": {
-                "artifactLocation": {"uri": uri_str} if uri_str else {},
-                "region": {"startLine": 1},
-            },
-        }
-        if uri:
-            result["locations"] = [loc]
-        else:
-            # No URI, but still provide region for annotation rendering
-            result["locations"] = [
-                {
-                    "physicalLocation": {
-                        "region": {"startLine": 1},
-                    },
-                }
-            ]
-        sarif_results.append(result)
-
-    return {
-        "$schema": SARIF_SCHEMA,
-        "version": "2.1.0",
-        "runs": [
-            {
-                "tool": {
-                    "driver": {
-                        "name": "devguard",
-                        "version": tool_version,
-                        "informationUri": _HELP_URI,
-                        "rules": rules,
-                    },
-                },
-                "results": sarif_results,
-            }
-        ],
-    }
+def report_to_sarif(report: dict, sweep_name: str, tool_version: str = __version__) -> dict:
+    """Convert one report using the same location and identity rules as a fleet."""
+    return reports_to_sarif([(sweep_name, report)], tool_version)
 
 
 def reports_to_sarif(
     sweep_reports: list[tuple[str, dict]],
-    tool_version: str = "0.1.0",
+    tool_version: str = __version__,
 ) -> dict:
-    """Convert multiple sweep reports into a single SARIF document.
-
-    All sweeps are consolidated into a single run so GitHub Code Scanning
-    treats them as one tool with unified rules and deduplication.
-    """
-    all_findings: list[tuple[str, _Finding]] = []  # (sweep_name, finding)
-    for sweep_name, report in sweep_reports:
-        extractor = _EXTRACTORS.get(sweep_name, _extract_ai_editor_config)
-        for finding in extractor(report):
-            all_findings.append((sweep_name, finding))
-
-    # Collect unique rule IDs across all sweeps
+    """Convert one or more sweep reports into a single SARIF run."""
     rule_ids: dict[str, int] = {}
     rules: list[dict] = []
-    for sweep_name, (rule_id, _level, _msg, _uri, severity) in all_findings:
-        if rule_id not in rule_ids:
-            rule_ids[rule_id] = len(rules)
-            rules.append(_build_rule(rule_id, severity, sweep_name))
-
     sarif_results: list[dict] = []
-    for _sweep_name, (rule_id, level, message, uri, _severity) in all_findings:
-        uri_str = uri or ""
-        result: dict[str, Any] = {
-            "ruleId": rule_id,
-            "ruleIndex": rule_ids[rule_id],
-            "level": level,
-            "message": {"text": message},
-            "partialFingerprints": {
-                "primaryLocationLineHash": _partial_fingerprint(rule_id, uri_str, message),
-            },
-        }
-        if uri:
-            result["locations"] = [
-                {
-                    "physicalLocation": {
-                        "artifactLocation": {"uri": uri},
-                        "region": {"startLine": 1},
-                    },
-                }
-            ]
-        else:
-            result["locations"] = [
-                {
-                    "physicalLocation": {
-                        "region": {"startLine": 1},
-                    },
-                }
-            ]
-        sarif_results.append(result)
+    for sweep, report in sweep_reports:
+        for (rule, level, message, _, severity), raw in _records(sweep, report):
+            if rule not in rule_ids:
+                rule_ids[rule] = len(rules)
+                rules.append(_build_rule(rule, severity, sweep))
+            points = locations(raw, raw.get("repo_path", ""))
+            primary = points[0][0] if points else ""
+            identity = finding_id(sweep, rule, primary, raw)
+            result: dict[str, Any] = {
+                "ruleId": rule,
+                "ruleIndex": rule_ids[rule],
+                "level": level,
+                "message": {"text": message},
+                "partialFingerprints": {"devguard/v1": identity},
+            }
+            if refs := references(raw):
+                result["properties"] = refs
+                result["message"]["text"] += "\n" + "\n".join(refs.values())
+            for index, (path, line) in enumerate(points):
+                physical: dict[str, Any] = {"artifactLocation": {"uri": quote(path, safe="/:")}}
+                if line is not None:
+                    physical["region"] = {"startLine": line}
+                if index == 0:
+                    result["locations"] = [{"physicalLocation": physical}]
+                else:
+                    result.setdefault("relatedLocations", []).append(
+                        {"id": index, "physicalLocation": physical}
+                    )
+            sarif_results.append(result)
 
     return {
         "$schema": SARIF_SCHEMA,

@@ -15,18 +15,22 @@ from rich.prompt import Prompt
 from rich.table import Table
 
 from devguard.config import get_settings
+from devguard.consumer_results import consumer_results
 from devguard.doc_commands_cli import doc_commands
 from devguard.fleet_cli import cache as cache_command
 from devguard.fleet_cli import fleet
 from devguard.github_ci import github_ci
 from devguard.merge_effects import merge_effects
+from devguard.opengrep_report import opengrep_report
 
 app = typer.Typer(help="devguard - Security and hygiene scanning for developer workstations")
+app.command("consumer-results")(consumer_results)
 app.command("doc-commands")(doc_commands)
 app.command("github-ci")(github_ci)
 app.command("merge-effects")(merge_effects)
 app.command("fleet")(fleet)
 app.command("cache")(cache_command)
+app.command("opengrep-report")(opengrep_report)
 console = Console()
 
 _MAX_TABLE_ROWS = 15
@@ -263,6 +267,10 @@ def _print_cargo_publish_audit_table(report: dict) -> None:
 
 
 def _print_repo_hygiene_table(report: dict, title: str = "repo_hygiene findings") -> None:
+    from rich.text import Text
+
+    from devguard.finding_evidence import locations, references
+
     repos = [r for r in report.get("repos", []) if r.get("findings")]
     if not repos:
         return
@@ -271,17 +279,30 @@ def _print_repo_hygiene_table(report: dict, title: str = "repo_hygiene findings"
     table.add_column("check")
     table.add_column("severity")
     table.add_column("message", max_width=55)
+    evidence_rows: list[tuple[str, list[str]]] = []
     row_count = 0
     for r in repos:
         for f in r.get("findings", []):
             if row_count >= _MAX_TABLE_ROWS:
                 break
             sev = f.get("severity", "low")
+            source = [
+                f"{p}:{line}" if line else p for p, line in locations(f, r.get("repo_path", ""))
+            ]
+            shown = source[:3]
+            if len(source) > len(shown):
+                shown.append(f"+{len(source) - len(shown)} locations in report")
+            evidence = [*shown, *references(f).values()]
+            message = Text(f.get("message", ""))
+            if evidence:
+                label = f"[{len(evidence_rows) + 1}]"
+                message.append(f" {label}")
+                evidence_rows.append((label, evidence))
             table.add_row(
                 Path(r["repo_path"]).name,
                 f.get("check", ""),
                 f"[{_sev_style(sev)}]{sev}[/]",
-                f.get("message", ""),
+                message,
             )
             row_count += 1
         if row_count >= _MAX_TABLE_ROWS:
@@ -290,6 +311,8 @@ def _print_repo_hygiene_table(report: dict, title: str = "repo_hygiene findings"
     if total > _MAX_TABLE_ROWS:
         table.add_row("...", "", "", f"+{total - _MAX_TABLE_ROWS} more", style="dim")
     console.print(table)
+    for label, evidence in evidence_rows:
+        console.print(label + " " + "\n    ".join(evidence), markup=False, soft_wrap=True)
 
 
 def _print_git_identity_audit_table(report: dict) -> None:
@@ -2140,6 +2163,10 @@ def _sweep_body(
             sarif_doc = reports_to_sarif(sweep_reports)
             sys.stdout.write(json.dumps(sarif_doc, indent=2) + "\n")
         elif format == "json":
+            from devguard.finding_evidence import add_repo_finding_ids
+
+            for name, report in sweep_reports:
+                add_repo_finding_ids(name, report)
             combined = {name: report for name, report in sweep_reports}
             sys.stdout.write(json.dumps(combined, indent=2) + "\n")
 
