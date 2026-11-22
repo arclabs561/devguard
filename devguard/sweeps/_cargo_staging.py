@@ -47,56 +47,116 @@ def _options(args: list[str], *names: str) -> list[str]:
     return values
 
 
-def _selected_packages(repo: Path, cwd: Path, args: list[str]) -> frozenset[Path]:
-    packages = set(_options(args, "-p", "--package"))
-    manifest = _inside(repo, cwd, (_options(args, "--manifest-path") or ["Cargo.toml"])[-1])
-    if not manifest or not manifest.is_file():
-        return frozenset()
+def _manifest_data(path: Path) -> dict:
     try:
-        config = tomllib.loads(manifest.read_text())
+        return tomllib.loads(path.read_text())
     except (OSError, UnicodeError, tomllib.TOMLDecodeError):
-        return frozenset()
-    workspace = config.get("workspace")
-    root = config.get("package", {}).get("name")
-    if not isinstance(workspace, dict):
-        if (
-            not root
-            or (packages and packages != {root})
-            or "--workspace" in args
-            or "--all" in args
+        return {}
+
+
+def _path_dependencies(config: dict, workspace: dict, root: Path, member: Path) -> Iterator[Path]:
+    # Cargo implicitly adds in-tree path dependencies to the workspace,
+    # including platform-specific, development, and build dependencies.
+    targets = config.get("target", {})
+    tables = [config, *(targets.values() if isinstance(targets, dict) else [])]
+    for table in tables:
+        if not isinstance(table, dict):
+            continue
+        for kind in (
+            "dependencies",
+            "dev-dependencies",
+            "build-dependencies",
+            "dev_dependencies",
+            "build_dependencies",
         ):
+            dependencies = table.get(kind, {})
+            if not isinstance(dependencies, dict):
+                continue
+            for alias, spec in dependencies.items():
+                if not isinstance(spec, dict):
+                    continue
+                base = member
+                if spec.get("workspace") is True:
+                    inherited = workspace.get("dependencies", {})
+                    spec = inherited.get(alias) if isinstance(inherited, dict) else None
+                    base = root
+                if isinstance(spec, dict) and isinstance(spec.get("path"), str):
+                    yield base / spec["path"] / "Cargo.toml"
+
+
+def _selected_packages(repo: Path, cwd: Path, args: list[str]) -> frozenset[Path]:
+    if not cwd.is_dir():
+        return frozenset()
+    packages = set(_options(args, "-p", "--package"))
+    explicit = _options(args, "--manifest-path")
+    if explicit:
+        manifest = _inside(repo, cwd, explicit[-1])
+    else:
+        manifest = next(
+            (
+                d / "Cargo.toml"
+                for d in (cwd, *cwd.parents)
+                if d.is_relative_to(repo) and (d / "Cargo.toml").is_file()
+            ),
+            None,
+        )
+        if manifest:
+            manifest = _inside(repo, cwd, str(manifest))
+    if not manifest:
+        return frozenset()
+    config = _manifest_data(manifest)
+    workspace = config.get("workspace")
+    root_name = config.get("package", {}).get("name")
+    whole = "--workspace" in args or "--all" in args
+    if not isinstance(workspace, dict):
+        if not root_name or (packages and packages != {root_name}) or whole:
             return frozenset()
         return frozenset([manifest])
-    members = workspace.get("members", [])
-    if not packages and "--workspace" not in args and "--all" not in args:
-        members = workspace.get("default-members", ["."] if root else members)
-    elif root:
-        members = [".", *members]
-    selected = set()
-    matched: set[str] = set()
-    excluded = _options(args, "--exclude")
-    for pattern in members:
+
+    root = manifest.parent
+    defaults = (
+        None
+        if whole or packages
+        else workspace.get("default-members", ["."] if root_name else None)
+    )
+    if defaults is None:
+        patterns = workspace.get("members", [])
+        pending = [manifest] if root_name else []
+    else:
+        patterns = defaults
+        pending = []
+    for pattern in patterns:
         if (
             not isinstance(pattern, str)
             or Path(pattern).is_absolute()
             or ".." in Path(pattern).parts
         ):
+            return frozenset()
+        pending.extend(root.glob(f"{pattern}/Cargo.toml"))
+    selected: set[Path] = set()
+    matched: set[str] = set()
+    seen: set[Path] = set()
+    excluded = _options(args, "--exclude")
+    while pending:
+        member = pending.pop().resolve()
+        if member in seen or not member.is_relative_to(root):
             continue
-        for member in manifest.parent.glob(f"{pattern}/Cargo.toml"):
-            if not member.resolve().is_relative_to(repo):
-                continue
-            relative = member.parent.relative_to(manifest.parent).as_posix()
-            if any(fnmatch.fnmatchcase(relative, g) for g in workspace.get("exclude", [])):
-                continue
-            try:
-                name = tomllib.loads(member.read_text()).get("package", {}).get("name")
-            except (OSError, UnicodeError, tomllib.TOMLDecodeError):
-                continue
-            if not name or any(fnmatch.fnmatchcase(name, g) for g in excluded):
-                continue
-            if not packages or any(fnmatch.fnmatchcase(name, g) for g in packages):
-                selected.add(member.resolve())
-                matched.update(p for p in packages if fnmatch.fnmatchcase(name, p))
+        seen.add(member)
+        relative = member.parent.relative_to(root).as_posix()
+        if any(fnmatch.fnmatchcase(relative, pat) for pat in workspace.get("exclude", [])):
+            continue
+        info = _manifest_data(member)
+        if not info:
+            return frozenset()
+        if defaults is None:
+            pending.extend(_path_dependencies(info, workspace, root, member.parent))
+        name = info.get("package", {}).get("name")
+        if not name or any(fnmatch.fnmatchcase(name, pat) for pat in excluded):
+            continue
+        matches = {pat for pat in packages if fnmatch.fnmatchcase(name, pat)}
+        if not packages or matches:
+            selected.add(member)
+            matched.update(matches)
     return frozenset(selected) if matched == packages else frozenset()
 
 
