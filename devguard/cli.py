@@ -19,12 +19,14 @@ from devguard.doc_commands_cli import doc_commands
 from devguard.fleet_cli import cache as cache_command
 from devguard.fleet_cli import fleet
 from devguard.github_ci import github_ci
+from devguard.opengrep_report import opengrep_report
 
 app = typer.Typer(help="devguard - Security and hygiene scanning for developer workstations")
 app.command("doc-commands")(doc_commands)
 app.command("github-ci")(github_ci)
 app.command("fleet")(fleet)
 app.command("cache")(cache_command)
+app.command("opengrep-report")(opengrep_report)
 console = Console()
 
 _MAX_TABLE_ROWS = 15
