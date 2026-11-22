@@ -47,7 +47,7 @@ class SecretChecker(BaseChecker):
         (r"\bEAAA[A-Za-z0-9_-]{60}\b", "Square Access Token"),
         (
             r"""(?i:\b(?:vercel_token|kv_rest_api_token|kv_rest_api_read_only_token))['"]?"""
-            r"""\s*[:=]\s*['"]?(?!your[_-]|example|placeholder|redacted)[a-zA-Z0-9_-]{20,}\b""",
+            r"""(?:[ \t]*=[ \t]*|\s*:\s*)['"]?(?!your[_-]|example|placeholder|redacted)[a-zA-Z0-9_-]{20,}\b""",
             "Deployment or KV Token",
         ),
         (

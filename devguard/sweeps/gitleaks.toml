@@ -10,7 +10,7 @@ secretGroup = 1
 [[rules]]
 id = "deployment-or-kv-token"
 description = "Literal deployment or storage token"
-regex = '''(?i)\b(?:vercel_token|kv_rest_api_token|kv_rest_api_read_only_token)['"]?\s*[:=]\s*['"]?([a-z0-9_-]{20,})\b'''
+regex = '''(?i)\b(?:vercel_token|kv_rest_api_token|kv_rest_api_read_only_token)['"]?(?:[ \t]*=[ \t]*|\s*:\s*)['"]?([a-z0-9_-]{20,})\b'''
 secretGroup = 1
 [[rules.allowlists]]
 regexTarget = "secret"

@@ -280,6 +280,7 @@ async def test_service_secrets_in_archived_docs_are_redacted(tmp_path: Path) -> 
     )
     (tmp_path / "example.md").write_text(
         f"client_id: {hex_value}\nsecret: ${{CLIENT_SECRET}}\n"
+        'VERCEL_TOKEN=\nVERCEL_PROJECTS_TO_MONITOR=\n'
         'VERCEL_TOKEN="${VERCEL_TOKEN}"\nrediss://default:${REDIS_PASSWORD}@cache.example.test'
     )
     findings = await SecretChecker(Settings())._scan_with_regex(tmp_path)
