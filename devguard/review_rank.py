@@ -97,7 +97,19 @@ def rank_findings(root: Path, findings: list[dict[str, Any]], timeout: int) -> d
                     raise ValueError("invalid pkgrank dependent count or duplicate file")
                 index[row["file"]] = row
 
+            nested = graph.get("unscanned_projects", [])
+            if not isinstance(nested, list) or any(
+                not isinstance(project, dict)
+                or not isinstance(project.get("ecosystem"), str)
+                or not isinstance(project.get("manifest"), str)
+                or not project["manifest"]
+                or Path(project["manifest"]).is_absolute()
+                or ".." in Path(project["manifest"]).parts
+                for project in nested
+            ):
+                raise ValueError("invalid unscanned project list")
             seeds: set[str] = set()
+            unmatched: set[str] = set()
             matched = 0
             for finding, paths in zip(findings, locations, strict=True):
                 files = set()
@@ -106,6 +118,8 @@ def rank_findings(root: Path, findings: list[dict[str, Any]], timeout: int) -> d
                     file = path if path in index else re.sub(r":\d+(?::\d+)?$", "", path)
                     if file in index:
                         files.add(file)
+                    else:
+                        unmatched.add(file)
                 if files:
                     matched += 1
                     seeds.update(files)
@@ -121,6 +135,16 @@ def rank_findings(root: Path, findings: list[dict[str, Any]], timeout: int) -> d
                 "files_in_graph": len(rows),
                 "ecosystem": graph.get("ecosystem"),
             }
+            if nested:
+                context["status"] = "partial"
+                context["unscanned_projects"] = nested
+            if not rows:
+                context["status"] = "empty"
+            if unmatched:
+                context["unmatched_files"] = sorted(unmatched)
+            if not seeds:
+                context["tests_unavailable"] = "no finding paths matched the file graph"
+                return context
             if not any(index[f]["dependents"] for f in seeds):
                 # No imports lead back to these files. A flagged test itself still
                 # needs to run, even on pkgrank releases that omit an empty traversal.

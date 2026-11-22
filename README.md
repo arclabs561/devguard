@@ -160,7 +160,11 @@ and runtime coverage can be missing from the graph.
 The JSON `review_order` keeps unmatched findings, including workflow and
 manifest findings. Their dependent count is `null`. A grouped finding uses the
 largest individual file count. Per-repository `pkgrank` results distinguish
-an empty test selection from an unavailable graph. Ranking is optional and
+a graph with zero file rows (`empty`) from a root graph with omitted nested
+projects (`partial`). The report lists omitted manifests and unmatched paths.
+Test suggestions cover matched paths only. When no finding path matched,
+`tests_unavailable` gives the reason. Use the usual project checks for omitted
+paths. Ranking is optional and
 has no effect on the scan's severity threshold or exit code.
 
 `docs_quality` is not in that default set, because it reports a repository as

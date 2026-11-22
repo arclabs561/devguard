@@ -58,6 +58,7 @@ def test_exact_matches_and_affected_tests(monkeypatch, tmp_path, legacy):
     report = review_rank.rank_findings(tmp_path, findings, 60)
     assert len(calls) == 2
     assert report["matched_findings"] == 2
+    assert report["unmatched_files"] == ["other/shared.py"]
     assert report["candidate_tests"] == ["tests/test_api.py"]
     assert findings[0]["pkgrank"] == {
         "file": "pkg/shared.py",
@@ -119,3 +120,30 @@ def test_review_order_keeps_severity_and_unknowns():
         finding("workflow", "high"),
     ]
     assert [r["file"] for r in fleet.review_order([repo])] == ["workflow", "hot", "leaf", "unknown"]
+
+
+@pytest.mark.parametrize("rows,status", [([], "empty"), ([row("main.py", 0)], "partial")])
+def test_uncovered_nested_finding_has_no_test_selection(monkeypatch, tmp_path, rows, status):
+    nested = [{"ecosystem": "js", "manifest": "ui/package.json"}]
+    graph = files(rows) | {"unscanned_projects": nested}
+    monkeypatch.setattr(review_rank.shutil, "which", lambda _: "/bin/pkgrank")
+    monkeypatch.setattr(review_rank, "_reports", lambda *args: [graph])
+    findings = [{"file": "ui/app.ts", "severity": "high"}]
+    result = review_rank.rank_findings(tmp_path, findings, 10)
+    assert result["status"] == status
+    assert result["unscanned_projects"] == nested
+    assert result["unmatched_files"] == ["ui/app.ts"]
+    assert result["matched_findings"] == 0
+    assert "tests_unavailable" in result and "candidate_tests" not in result
+    assert findings == [{"file": "ui/app.ts", "severity": "high"}]
+
+
+def test_partial_graph_preserves_verified_test_candidates(monkeypatch, tmp_path):
+    nested = [{"ecosystem": "js", "manifest": "web/package.json"}]
+    graph = files([row("tests/test_api.py", 0, "test")]) | {"unscanned_projects": nested}
+    monkeypatch.setattr(review_rank.shutil, "which", lambda _: "/bin/pkgrank")
+    monkeypatch.setattr(review_rank, "_reports", lambda *args: [graph])
+    result = review_rank.rank_findings(tmp_path, [{"files": ["tests/test_api.py", "web/ui.js"]}], 5)
+    assert result["candidate_tests"] == ["tests/test_api.py"]
+    assert result["unmatched_files"] == ["web/ui.js"]
+    assert result["status"] == "partial"

@@ -216,6 +216,12 @@ def _print_text(
             info = res.pkgrank or {}
             if info.get("status") == "unavailable":
                 console.print(f"{res.name}: {info['reason']}", markup=False)
+            if info.get("unscanned_projects"):
+                manifests = ", ".join(p["manifest"] for p in info["unscanned_projects"])
+                console.print(f"{res.name}: omitted nested projects: {manifests}", markup=False)
+            if info.get("unmatched_files") and info.get("matched_findings"):
+                count = len(info["unmatched_files"])
+                console.print(f"{res.name}: {count} finding paths outside the graph", markup=False)
             if info.get("tests_unavailable"):
                 console.print(f"{res.name}: {info['tests_unavailable']}", markup=False)
             tests = info.get("candidate_tests", [])
