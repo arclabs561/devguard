@@ -620,7 +620,7 @@ def test_published_crate_uses_index_checksum_and_exact_lock(tmp_path, monkeypatc
 def test_rust_workspace_lock_covers_declared_members_only(tmp_path):
     (tmp_path / ".git").mkdir()
     (tmp_path / "Cargo.toml").write_text(
-        '[workspace]\nmembers=["crates/*"]\nexclude=["crates/other"]'
+        '[workspace]\nmembers=[".", "crates/*"]\nexclude=["crates/other"]'
     )
     (tmp_path / "Cargo.lock").write_text('[[package]]\nname="one"\nversion="1.0.0"')
     for name in ["one", "other"]:

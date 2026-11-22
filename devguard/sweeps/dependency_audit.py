@@ -120,11 +120,12 @@ def _locked_workspace_members(root: Path) -> set[Path]:
         members: set[Path] = set()
         for field in ("members", "exclude"):
             for pattern in workspace.get(field, []):
-                if (
-                    not isinstance(pattern, str)
-                    or Path(pattern).is_absolute()
-                    or ".." in Path(pattern).parts
-                ):
+                if not isinstance(pattern, str):
+                    continue
+                relative = Path(pattern)
+                # The root is audited separately. A "." entry has no path
+                # components and cannot be expanded by pathlib on Python 3.12.
+                if not relative.parts or relative.is_absolute() or ".." in relative.parts:
                     continue
                 for member in root.glob(pattern):
                     manifest = member / "Cargo.toml"
