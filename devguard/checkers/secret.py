@@ -59,6 +59,11 @@ class SecretChecker(BaseChecker):
         (r"\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9_-]{50,}", "PyPI Token"),
         (r"\bAIza[0-9A-Za-z_-]{35}\b", "Google API Key"),
         (r"\bsk-[A-Za-z0-9]{48}\b", "OpenAI API Key"),
+        (
+            r"""(?im)^\s*['"]?(?:client[_-]secret|secret)['"]?\s*[:=]\s*['"]?"""
+            r"""[a-f0-9]{32,64}(?=['"\s,#}]|$)""",
+            "Hex-encoded client secret",
+        ),
         (r"(?i:api_key)['\"]?\s*[:=]\s*['\"]?([a-zA-Z0-9]{32,})['\"]?", "Generic API Key"),
     ]
     _SKIP_DIR_NAMES = frozenset({".git", "node_modules", "venv", ".venv", "__pycache__"})
