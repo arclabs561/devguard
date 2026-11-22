@@ -58,14 +58,21 @@ def _fake_direct_tools(bin_dir: Path, styles: bool = True) -> None:
         f"if sys.argv[1] == 'ls-config':\n    print(json.dumps({ls_config!r}))\n"
         f"else:\n    print(json.dumps({VALE_ALERTS!r}))",
     )
-    _tool(bin_dir, "readcost", f"print(json.dumps({READCOST_OUT!r}))")
+    _tool(
+        bin_dir,
+        "readcost",
+        f"out = {READCOST_OUT!r}\n"
+        "out.extend({'path': p, 'findings': []} for p in sys.argv[6:] if p != 'docs/guide.md')\n"
+        "print(json.dumps(out))",
+    )
 
 
 def test_missing_tools_are_incomplete_not_clean(repo: Path, bin_dir: Path) -> None:
     report, errors = audit_docs_quality(dev_root=repo, max_depth=0, engine="auto")
 
     assert report["scope"]["engine"] == "direct"
-    assert report["summary"]["files_checked"] == 2
+    assert report["summary"]["files_checked"] == 0
+    assert report["summary"]["files_selected"] == 2
     assert report["summary"]["total_findings"] == 0
     assert report["summary"]["coverage_complete"] is False
     assert {e.split(": ", 1)[1] for e in errors} == {
@@ -175,3 +182,32 @@ def test_selected_tool_checks_markdown_alone(repo: Path, bin_dir: Path, engine: 
     report, errors = audit_docs_quality(dev_root=repo, max_depth=0, engine=engine)
     assert not report["summary"]["coverage_complete"]
     assert errors == [f"repo: {engine}: not installed"]
+
+
+def test_cap_oversize_and_actual_tool_coverage(repo: Path, bin_dir: Path) -> None:
+    _fake_direct_tools(bin_dir)
+    (repo / "docs" / "big.md").write_bytes(b"a" * (256 * 1024 + 1))
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    report, errors = audit_docs_quality(
+        dev_root=repo, max_depth=0, engine="vale", max_files_per_repo=1
+    )
+    assert not errors
+    summary = report["summary"]
+    assert summary["files_eligible"] == 2
+    assert summary["files_selected"] == summary["files_checked"] == 1
+    assert summary["files_oversized"] == summary["files_omitted_by_limit"] == 1
+    assert not summary["coverage_complete"]
+    assert report["repos"][0]["omitted_by_limit"] == ["docs/guide.md"]
+    assert report["repos"][0]["oversized"] == ["docs/big.md"]
+
+
+@pytest.mark.parametrize(("engine", "name"), [("readcost", "readcost"), ("wrapper", "docs-check")])
+def test_missing_per_file_output_is_partial(
+    repo: Path, bin_dir: Path, engine: str, name: str
+) -> None:
+    _tool(bin_dir, name, 'print("[]")')
+    report, errors = audit_docs_quality(dev_root=repo, max_depth=0, engine=engine)
+    assert len(errors) == 2
+    assert report["summary"]["files_checked"] == 0
+    assert report["summary"]["files_selected"] == 2
+    assert not report["summary"]["coverage_complete"]

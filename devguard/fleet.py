@@ -412,7 +412,7 @@ def result_key(
         "tools": [t for t in _RESULT_AFFECTING_TOOLS if shutil.which(t)],
     }
     if "docs_quality" in sweeps:
-        material["docs_quality_locations"] = 1
+        material["docs_quality_locations"] = 2
     return hashlib.sha256(json.dumps(material, sort_keys=True).encode()).hexdigest()
 
 
