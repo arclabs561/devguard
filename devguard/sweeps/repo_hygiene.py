@@ -1150,6 +1150,21 @@ class _CargoPackage:
     default_features: frozenset[str]
 
 
+def _local_feature_closure(declared: dict[str, Any], seeds: object) -> frozenset[str]:
+    """Package features enabled together, excluding dependency feature selectors."""
+    pending = [v for v in seeds if isinstance(v, str)] if isinstance(seeds, list) else []
+    enabled: set[str] = set()
+    while pending:
+        item = pending.pop()
+        if "/" in item or item.startswith("dep:") or item in enabled:
+            continue
+        enabled.add(item)
+        nested = declared.get(item)
+        if isinstance(nested, list):
+            pending.extend(v for v in nested if isinstance(v, str))
+    return frozenset(enabled)
+
+
 def _cargo_packages(repo: Path) -> list[_CargoPackage]:
     """Every package manifest under *repo* with its declared feature names."""
     out: list[_CargoPackage] = []
@@ -1179,19 +1194,7 @@ def _cargo_packages(repo: Path) -> list[_CargoPackage]:
                     continue
                 if isinstance(spec, dict) and spec.get("optional") is True:
                     features.add(dep)
-        defaults = declared.get("default")
-        enabled: set[str] = set()
-        pending = [
-            v for v in (defaults if isinstance(defaults, list) else []) if isinstance(v, str)
-        ]
-        while pending:
-            item = pending.pop()
-            if "/" in item or item.startswith("dep:") or item in enabled:
-                continue
-            enabled.add(item)
-            nested = declared.get(item)
-            if isinstance(nested, list):
-                pending.extend(v for v in nested if isinstance(v, str))
+        enabled = _local_feature_closure(declared, declared.get("default"))
         parent = str(Path(rel).parent)
         out.append(
             _CargoPackage(
@@ -1199,7 +1202,7 @@ def _cargo_packages(repo: Path) -> list[_CargoPackage]:
                 dir_rel="." if parent in ("", ".") else parent,
                 name=name,
                 features=frozenset(features),
-                default_features=frozenset(enabled),
+                default_features=enabled,
             )
         )
     return out
@@ -1364,12 +1367,52 @@ def _check_unknown_features(repo: Path, tracked: list[str]) -> HygieneFinding | 
     )
 
 
+# Only delimiters in code determine an item's extent. Match a literal or a
+# comment before inspecting its contents for braces, parentheses or cfg text.
+_RUST_NONCODE = re.compile(
+    r'//[^\n]*|/\*|\b(?:br|cr|r)(?P<hash>#{0,255})"'
+    r'|"(?:\\[\s\S]|[^"\\])*"'
+    r"|'(?:\\(?:u\{[0-9a-fA-F_]+\}|x[0-9a-fA-F]{2}|[^\n])|[^'\\\n])'"
+)
+_RUST_BLOCK_COMMENT_DELIM = re.compile(r"/\*|\*/")
+
+
+def _rust_structure_lines(lines: list[str]) -> list[str]:
+    """Keep code and line numbers while hiding delimiters inside Rust tokens."""
+    source = "\n".join(lines)
+    chunks: list[str] = []
+    pos = 0
+    while match := _RUST_NONCODE.search(source, pos):
+        chunks.append(source[pos : match.start()])
+        end = match.end()
+        if (hashes := match.group("hash")) is not None:
+            terminator = '"' + hashes
+            close = source.find(terminator, end)
+            end = len(source) if close < 0 else close + len(terminator)
+        elif match.group() == "/*":
+            depth = 1
+            for delim in _RUST_BLOCK_COMMENT_DELIM.finditer(source, end):
+                depth += 1 if delim.group() == "/*" else -1
+                if depth == 0:
+                    end = delim.end()
+                    break
+            else:
+                end = len(source)
+        chunks.append(" " + "\n" * source.count("\n", match.start(), end))
+        pos = end
+    chunks.append(source[pos:])
+    return "".join(chunks).split("\n")
+
+
 def _cfg_gated_ranges(lines: list[str]) -> list[tuple[int, int]]:
     """Line ranges covered by a `#[cfg(...)]` attribute on the following item.
 
     Attributes may span lines (`#[cfg(any(\n feature = "a",\n))]`), so the
     parenthesis depth decides where the attribute ends and the item begins.
     """
+    if not any(_CFG_ATTR_RE.match(line) for line in lines):
+        return []
+    lines = _rust_structure_lines(lines)
     ranges: list[tuple[int, int]] = []
     total = len(lines)
     for idx, line in enumerate(lines):
@@ -1417,7 +1460,7 @@ def _cfg_gated_ranges(lines: list[str]) -> list[tuple[int, int]]:
 def _target_required_features(
     manifest: dict[str, Any], kind: str, name: str, rel: str
 ) -> frozenset[str]:
-    """`required-features` declared for one [[test]]/[[example]] target."""
+    """Local features guaranteed when Cargo builds this test or example."""
     for entry in manifest.get(kind, []) if isinstance(manifest.get(kind), list) else []:
         if not isinstance(entry, dict):
             continue
@@ -1425,7 +1468,8 @@ def _target_required_features(
             continue
         raw = entry.get("required-features")
         if isinstance(raw, list):
-            return frozenset(v for v in raw if isinstance(v, str))
+            declared = manifest.get("features")
+            return _local_feature_closure(declared if isinstance(declared, dict) else {}, raw)
     return frozenset()
 
 

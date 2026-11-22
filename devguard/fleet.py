@@ -434,6 +434,8 @@ def result_key(
     }
     if "cargo_publish_audit" in sweeps:
         material["cargo_feature_test_reporting"] = 3  # Include known crate feature conjunctions.
+    if "repo_hygiene" in sweeps:
+        material["cargo_target_feature_gates"] = 1
     if "docs_quality" in sweeps:
         material["docs_quality_locations"] = 3
     return hashlib.sha256(json.dumps(material, sort_keys=True).encode()).hexdigest()
