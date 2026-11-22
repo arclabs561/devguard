@@ -121,3 +121,34 @@ def test_partial_flattening_must_be_a_comment_token(tmp_path: Path) -> None:
     for name, source in cases.items():
         (tmp_path / name).write_text(source)
     assert find_false_passes(tmp_path, list(cases)) == {"flattened_python": ["partial.py"]}
+
+
+def test_always_true_or_and_broad_skip(tmp_path: Path) -> None:
+    cases = {
+        "test_yes.py": "def test_it():\n    assert result() or True",
+        "test_conditional.py": "def test_it():\n    assert result() or optional()",
+        "test_skip.py": "def test_it():\n    try:\n        assert ready()\n    except Exception:\n        pytest.skip('service')",
+        "test_setup.py": "def test_it():\n    try:\n        fixture = get_fixture()\n    except Exception:\n        pytest.skip('service')\n    assert fixture.ready",
+    }
+    for path, source in cases.items():
+        (tmp_path / path).write_text(source)
+    assert find_false_passes(tmp_path, list(cases)) == {
+        "tautological_test_assertion": ["test_yes.py"],
+        "swallowed_test_assertion": ["test_skip.py"],
+    }
+
+
+def test_subprocess_capture_conflicts_with_explicit_streams(tmp_path: Path) -> None:
+    cases = {
+        "bad.py": "import subprocess as sp\nsp.run(cmd, capture_output=True, stderr=sp.DEVNULL)",
+        "stdout.py": "import subprocess\nsubprocess.run(cmd, stdout=subprocess.PIPE, capture_output=True)",
+        "valid.py": "import subprocess\nsubprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)",
+        "disabled.py": "import subprocess\nsubprocess.run(cmd, capture_output=False, stderr=subprocess.PIPE)",
+        "none.py": "import subprocess\nsubprocess.run(cmd, capture_output=True, stderr=None)",
+        "other.py": "from custom import subprocess\nsubprocess.run(cmd, capture_output=True, stderr=subprocess.PIPE)",
+    }
+    for path, source in cases.items():
+        (tmp_path / path).write_text(source)
+    assert find_false_passes(tmp_path, list(cases)) == {
+        "conflicting_subprocess_output": ["bad.py", "stdout.py"]
+    }

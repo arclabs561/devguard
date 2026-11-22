@@ -14,7 +14,9 @@ import yaml  # type: ignore[import-untyped]
 from devguard.sweeps._common import contained_file
 
 DESCRIPTIONS = {
-    "swallowed_test_assertion": "A test catches an assertion failure and silently continues",
+    "tautological_test_assertion": "An unconditional True operand makes a test assertion pass",
+    "conflicting_subprocess_output": "A subprocess.run call combines capture_output=True with an explicit output stream",
+    "swallowed_test_assertion": "A test discards an assertion failure or converts it to a skip in a broad exception handler",
     "copied_test_subject": "A test calls a local copy of a named production function without exercising the original",
     "flattened_python": "A shebang or a long comment contains a flattened Python implementation",
     "masked_test_command": "A test command discards its failure status",
@@ -225,13 +227,14 @@ def _catches_assertion(kind: ast.expr | None) -> bool:
     }
 
 
-def _swallowed_assertion(source: str) -> bool:
-    if "assert" not in source or "except" not in source:
-        return False
+def _assertion_checks(source: str) -> set[str]:
+    findings: set[str] = set()
+    if "assert" not in source or ("except" not in source and "True" not in source):
+        return findings
     try:
         root = ast.parse(source)
     except (SyntaxError, ValueError, RecursionError):
-        return False
+        return findings
     candidates = list(root.body)
     for cls in root.body:
         if isinstance(cls, ast.ClassDef) and cls.name.startswith("Test"):
@@ -242,16 +245,34 @@ def _swallowed_assertion(source: str) -> bool:
         ) or not func.name.startswith("test_"):
             continue
         for node in _scope_nodes(func.body):
+            if (
+                isinstance(node, ast.Assert)
+                and isinstance(node.test, ast.BoolOp)
+                and isinstance(node.test.op, ast.Or)
+            ):
+                if any(isinstance(v, ast.Constant) and v.value is True for v in node.test.values):
+                    findings.add("tautological_test_assertion")
             if not isinstance(node, ast.Try):
                 continue
             handler = next((h for h in node.handlers if _catches_assertion(h.type)), None)
-            if not handler or not all(isinstance(stmt, ast.Pass) for stmt in handler.body):
+            if not handler:
+                continue
+            # Keep a deliberate, narrowly caught prerequisite skip distinct from
+            # a handler that turns every error, including test failures, into a skip.
+            skip = len(handler.body) == 1 and ast.unparse(handler.body[0]).startswith(
+                "pytest.skip("
+            )
+            broad = handler.type is None or any(
+                isinstance(t, ast.Name) and t.id in {"Exception", "BaseException"}
+                for t in ast.walk(handler.type)
+            )
+            if not (all(isinstance(stmt, ast.Pass) for stmt in handler.body) or (skip and broad)):
                 continue
             # A nested try or context manager can consume its own exceptions.
             direct = _scope_nodes(node.body, (ast.Try, ast.TryStar, ast.With, ast.AsyncWith))
             if any(isinstance(stmt, ast.Assert) for stmt in direct):
-                return True
-    return False
+                findings.add("swallowed_test_assertion")
+    return findings
 
 
 _BURIED_DEF = re.compile(r"\bdef [A-Za-z_]\w*\([^()]*\)(?:\s*->[^:]+)?:")
@@ -273,6 +294,43 @@ def _buried_implementation(source: str) -> bool:
                 return True
     except (tokenize.TokenError, IndentationError):
         pass
+    return False
+
+
+def _conflicting_subprocess_output(source: str) -> bool:
+    if "capture_output" not in source or "subprocess" not in source:
+        return False
+    try:
+        root = ast.parse(source)
+    except (SyntaxError, ValueError, RecursionError):
+        return False
+    # Limit the rule to an explicitly imported stdlib module and known streams.
+    modules = {
+        alias.asname or "subprocess"
+        for stmt in root.body
+        if isinstance(stmt, ast.Import)
+        for alias in stmt.names
+        if alias.name == "subprocess"
+    }
+    for call in ast.walk(root):
+        if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Attribute):
+            continue
+        module = call.func.value
+        if not isinstance(module, ast.Name) or module.id not in modules or call.func.attr != "run":
+            continue
+        args = {kw.arg: kw.value for kw in call.keywords}
+        capture = args.get("capture_output")
+        if not (isinstance(capture, ast.Constant) and capture.value is True):
+            continue
+        for field in ("stdout", "stderr"):
+            stream = args.get(field)
+            if (
+                isinstance(stream, ast.Attribute)
+                and isinstance(stream.value, ast.Name)
+                and stream.value.id in modules
+                and stream.attr in {"PIPE", "STDOUT", "DEVNULL"}
+            ):
+                return True
     return False
 
 
@@ -322,11 +380,12 @@ def find_false_passes(repo: Path, tracked: list[str]) -> dict[str, list[str]]:
         source = path.read_text(encoding="utf-8", errors="replace")
         if path.suffix == ".py":
             checks = _python_checks(source)
+            if _conflicting_subprocess_output(source):
+                checks.add("conflicting_subprocess_output")
             if path.name.startswith("test_") or path.stem.endswith("_test"):
                 if _copied_subject(source):
                     checks.add("copied_test_subject")
-                if _swallowed_assertion(source):
-                    checks.add("swallowed_test_assertion")
+                checks.update(_assertion_checks(source))
         elif path.name == ".pre-commit-config.yaml":
             checks = _pre_commit_checks(source)
         elif path.suffix == ".rs":
