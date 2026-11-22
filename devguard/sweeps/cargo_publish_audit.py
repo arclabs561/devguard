@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from devguard.sweeps._cargo_staging import staging_risks
 from devguard.sweeps._common import default_dev_root as _default_dev_root
 from devguard.sweeps._common import utc_now as _utc_now
 
@@ -508,6 +509,20 @@ def _audit_repo(
         publish_enabled=publish_enabled,
         has_workflows=has_workflows,
     )
+
+    # Even an unpublished workspace root can validate its published members.
+    for risk in staging_risks(repo, workflows):
+        result.findings.append(
+            Finding(
+                check="reused_publish_staging",
+                severity="warning",
+                message=f"{risk.source}, line {risk.line}: workspace publish check may reuse "
+                "Cargo's staging registry",
+                detail=f"Called from {risk.workflow_step}. Give each dry run a fresh target "
+                'directory, e.g. --target-dir "$(mktemp -d)". A reused target can verify '
+                "an older dependency at the same version and accept a broken candidate.",
+            )
+        )
 
     # Skip unpublishable crates
     if not publish_enabled:
