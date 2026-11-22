@@ -679,3 +679,16 @@ def test_grouped_findings_preserve_all_source_locations():
     (finding,) = fl.extract_findings({"repo_hygiene": report})
     assert finding["file"] == locations[0]
     assert finding["files"] == locations
+
+
+def test_scoped_cargo_release_evidence_invalidates_cached_results(monkeypatch) -> None:
+    monkeypatch.setattr(fl, "__version__", "0.3.0")
+    monkeypatch.setattr(fl.shutil, "which", lambda _: None)
+    inputs = dict(head="a" * 40, spec_path=None, full_history=False, name="owner/repo")
+    cargo = fl.result_key(sweeps=["cargo_publish_audit"], **inputs)
+    unrelated = fl.result_key(sweeps=["repo_lint"], **inputs)
+    # Actual main-branch key for these inputs before release evidence was scoped.
+    assert cargo != "5586b772eb49d287b77c53f950b1aec15b4189fd0c14f1d0ac128be3f4480a0a"
+    monkeypatch.setattr(fl, "_CARGO_RELEASE_EVIDENCE_VERSION", 2)
+    assert cargo != fl.result_key(sweeps=["cargo_publish_audit"], **inputs)
+    assert unrelated == fl.result_key(sweeps=["repo_lint"], **inputs)

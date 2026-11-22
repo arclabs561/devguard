@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any
 
 from devguard import __version__
+from devguard.finding_evidence import finding_id, locations, references
 
 # Sweeps whose subject is one repository. Workstation-wide sweeps (ssh_key_audit,
 # credential_file_audit, git_identity_audit) would repeat the same work for every
@@ -405,6 +406,9 @@ def _worktree_dirty(path: Path) -> bool:
 # ---------------------------------------------------------------------------
 
 
+_CARGO_RELEASE_EVIDENCE_VERSION = 1
+
+
 def result_key(
     *, head: str, sweeps: list[str], spec_path: Path | None, full_history: bool, name: str
 ) -> str:
@@ -413,16 +417,25 @@ def result_key(
         spec_digest = hashlib.sha256(spec_path.read_bytes()).hexdigest()
     material = {
         "cache_format": 6,  # Recheck license and publishing findings.
+        "finding_evidence_format": 1,
         "devguard": __version__,
         "repo": name,
+        **(
+            {"cargo_release_evidence": _CARGO_RELEASE_EVIDENCE_VERSION}
+            if "cargo_publish_audit" in sweeps
+            else {}
+        ),
         "head": head,
         "sweeps": sorted(sweeps),
+        **({"pr_token_permissions": 1} if "publish_workflow_audit" in sweeps else {}),
         "spec": spec_digest,
         "full_history": full_history,
         "tools": [t for t in _RESULT_AFFECTING_TOOLS if shutil.which(t)],
     }
     if "cargo_publish_audit" in sweeps:
         material["cargo_feature_test_reporting"] = 3  # Include known crate feature conjunctions.
+    if "docs_quality" in sweeps:
+        material["docs_quality_locations"] = 3
     return hashlib.sha256(json.dumps(material, sort_keys=True).encode()).hexdigest()
 
 
@@ -451,7 +464,7 @@ def _write_cached_result(root: Path, key: str, payload: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _one_finding(sweep: str, raw: Any) -> dict[str, Any]:
+def _one_finding(sweep: str, raw: Any, repo_path: str = "") -> dict[str, Any]:
     if not isinstance(raw, dict):
         return {"sweep": sweep, "check": sweep, "severity": "info", "file": "", "message": str(raw)}
     check = (
@@ -462,12 +475,9 @@ def _one_finding(sweep: str, raw: Any) -> dict[str, Any]:
         or raw.get("kind")
         or sweep
     )
-    file = raw.get("file") or raw.get("file_path") or raw.get("path") or ""
-    locations = raw.get("files")
-    files = (
-        [p for p in locations if isinstance(p, str) and p] if isinstance(locations, list) else []
-    )
-    line = raw.get("line")
+    points = locations(raw, repo_path)
+    file, line = points[0] if points else ("", None)
+    files = [f"{path}:{n}" if n else path for path, n in points]
     message = raw.get("message") or raw.get("detail") or raw.get("reason") or str(check)
     # A deny-glob or oversized-blob hit carries no severity; treat it as medium.
     default = "medium" if sweep == "local_dev" else "info"
@@ -478,7 +488,10 @@ def _one_finding(sweep: str, raw: Any) -> dict[str, Any]:
         "file": (f"{file}:{line}" if isinstance(line, int) else str(file))
         if file
         else next(iter(files), ""),
-        **({"files": files} if files else {}),
+        **({"files": files} if raw.get("files") and files else {}),
+        "finding_id": finding_id(sweep, str(check), file, raw),
+        **({"line": line} if line else {}),
+        **references(raw),
         "message": str(message),
     }
 
@@ -503,7 +516,9 @@ def extract_findings(reports: dict[str, Any]) -> list[dict[str, Any]]:
                 continue
             items = repo.get("findings")
             if isinstance(items, list):
-                found.extend(_one_finding(sweep, item) for item in items)
+                found.extend(
+                    _one_finding(sweep, item, repo.get("repo_path") or "") for item in items
+                )
             if sweep == "dependency_audit":
                 for vuln in repo.get("vulns", []):
                     found.append(

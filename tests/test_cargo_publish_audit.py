@@ -349,3 +349,121 @@ def test_compound_configuration_is_uncertain_without_guessing_features(tmp_path:
     assert len(hits) == 4
     assert all("Resolve the crate-level configuration" in hit.message for hit in hits)
     assert all("--features" not in hit.message for hit in hits)
+
+
+def test_release_evidence_is_scoped_to_executable_steps_and_permissions(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path,
+        PKG,
+        CI
+        + """
+      - run: echo 'Document cargo publish --dry-run'
+      - run: |
+          # cargo publish --dry-run
+  docs:
+    runs-on: ubuntu-latest
+    permissions: {id-token: write}
+    steps:
+      - run: echo 'trusted-publishing'
+""",
+    )
+    release = repo / ".github/workflows/release.yml"
+    workflow = """
+on: workflow_dispatch
+permissions: {id-token: write}
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions: {contents: read}
+    steps:
+      - run: cargo publish --locked
+"""
+    release.write_text(workflow)
+    flags = {"no_oidc", "no_dry_run"}
+    assert flags <= set(_checks(repo))
+
+    release.write_text(workflow.replace("    permissions: {contents: read}\n", ""))
+    assert flags.intersection(_checks(repo)) == {"no_dry_run"}
+    (repo / ".github/workflows/ci.yml").write_text(CI + "      - run: bash scripts/package.sh\n")
+    (repo / "scripts").mkdir()
+    (repo / "scripts/package.sh").write_text("cargo +stable publish --locked --dry-run\n")
+    assert not flags.intersection(_checks(repo))
+
+    release.write_text(
+        workflow
+        + """
+  second_registry:
+    runs-on: ubuntu-latest
+    steps:
+      - run: cargo publish --registry secondary
+"""
+    )
+    assert flags.intersection(_checks(repo)) == {"no_oidc"}
+
+    release.unlink()
+    checks = set(_checks(repo))
+    assert "no_publish_workflow" in checks
+    assert "no_oidc" not in checks
+
+    release.write_text(
+        workflow.replace("    permissions: {contents: read}\n", "")
+        + """
+  action_publisher:
+    runs-on: ubuntu-latest
+    permissions: {contents: read}
+    steps:
+      - uses: example/cargo-publish-action@v1
+"""
+    )
+    assert flags.intersection(_checks(repo)) == flags
+
+
+def test_dry_run_covers_each_published_package(tmp_path: Path) -> None:
+    repo = _workspace(tmp_path, "cargo publish -p lib")
+    ci = repo / ".github/workflows/ci.yml"
+    live = ci.read_text()
+    for limited in (
+        "cargo publish --package=bin --dry-run",
+        "cargo publish --manifest-path bin/Cargo.toml --dry-run",
+        "cargo publish --manifest-path lib/Cargo.toml --dry-run --no-verify",
+    ):
+        ci.write_text(live + "      - run: " + limited + "\n")
+        assert "no_dry_run" in _checks(repo)
+    for matching in (
+        "cargo publish --package lib --dry-run",
+        "cargo publish --manifest-path lib/Cargo.toml --dry-run",
+        "cargo publish --workspace --dry-run",
+    ):
+        ci.write_text(live + "      - run: " + matching + "\n")
+        assert "no_dry_run" not in _checks(repo)
+    ci.write_text(
+        live + "      - run: cargo publish -p bin\n      - run: cargo publish -p lib --dry-run\n"
+    )
+    assert "no_dry_run" in _checks(repo)
+
+
+def test_implicit_workspace_members_and_default_selection(tmp_path: Path) -> None:
+    repo = _workspace(tmp_path, "cargo publish --workspace")
+    (repo / "Cargo.toml").write_text(
+        '[workspace]\nmembers=["lib"]\ndefault-members=["lib"]\n'
+        '[workspace.dependencies]\nbin={path="bin", version="0.1.0"}\n'
+    )
+    (repo / "lib/Cargo.toml").write_text(
+        '[package]\nname="lib"\nversion="0.1.0"\n'
+        "[target.'cfg(unix)'.dependencies]\nbin.workspace=true\n"
+    )
+    ci = repo / ".github/workflows/ci.yml"
+    live = ci.read_text()
+    ci.write_text(live + "      - run: cargo publish --dry-run -p lib\n")
+    assert "no_dry_run" in _checks(repo)
+    ci.write_text(ci.read_text() + "      - run: cargo publish --dry-run -p bin\n")
+    assert "no_dry_run" not in _checks(repo)
+    # The same lib-only dry run covers a default-member release from the root.
+    ci.write_text(
+        live.replace("cargo publish --workspace", "cargo publish")
+        + "      - run: cargo publish --dry-run\n        working-directory: lib/src\n"
+    )
+    (repo / "lib/src").mkdir()
+    assert "no_dry_run" not in _checks(repo)
+    ci.write_text(ci.read_text().replace("lib/src", "lib/absent"))
+    assert "no_dry_run" in _checks(repo)

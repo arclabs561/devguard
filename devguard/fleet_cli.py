@@ -188,6 +188,11 @@ def _print_text(
                     f"           {escape(f['message'])}",
                     highlight=False,
                 )
+                for key in ("source_url", "evidence_url"):
+                    if f.get(key):
+                        console.print(
+                            "           " + f[key], markup=False, highlight=False, soft_wrap=True
+                        )
                 for location in f.get("files", []):
                     if location != f["file"]:
                         console.print(f"           [dim]{escape(location)}[/dim]", highlight=False)

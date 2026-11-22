@@ -5,6 +5,7 @@ Developer workspace security scanner.
 `devguard` runs local sweeps across repos, dependency manifests, SSH keys,
 credential files, and AI editor configs. It reports findings as text, JSON, or
 SARIF.
+[Import downstream consumer evidence](docs/consumer-results.md).
 
 ```text
 $ devguard sweep --repo . --only local_dev --only gitignore_audit
@@ -171,7 +172,10 @@ has no effect on the scan's severity threshold or exit code.
 `docs_quality` is not in that default set, because it reports a repository as
 not fully scanned unless both Vale and readcost are installed and Vale has
 styles configured for it. To check READMEs across repositories, ask for it by
-name: `devguard fleet --mine --only docs_quality`.
+name: `devguard fleet --mine --only docs_quality`. To run only the installed
+checker, set `sweeps.docs_quality.engine` to `vale` or `readcost` in the spec.
+Vale uses the repository’s styles. A missing selected tool or an unconfigured
+Vale reports incomplete coverage.
 
 Two caches live under `$DEVGUARD_CACHE_DIR`, else `$XDG_CACHE_HOME/devguard`,
 else `~/.cache/devguard`:
@@ -223,6 +227,23 @@ queries for those packages. `fleet --offline` keeps Git and dependency checks
 offline. A missing database makes coverage incomplete.
 Explicit package roots record SHA-256 input hashes before and after the audit.
 Fleet reruns dependency audits when the advisory database may have changed. An incomplete or truncated report exits 3. An unrated finding also exits 3 when its severity could change the verdict.
+
+### Read OpenGrep scan artifacts
+
+Pass each expected JSON output explicitly so a missing report appears in the result.
+Use reports from the rule packs and scanner version pinned by the project.
+
+```sh
+devguard opengrep-report --expect-version 1.30.2 artifacts/validated.json artifacts/general.json
+```
+
+The command reads artifacts locally and runs no scanner or repository scripts.
+The JSON contains a status per report and counts for well-formed scan output.
+Exit 0 means every supplied report lists scanned files and zero findings.
+Exit 2 means complete reports include findings. Exit 3 takes precedence when
+any report is missing, unreadable, malformed, reports scanner errors or
+skipped rules, lists zero scanned files, or disagrees with an optional version pin. Coverage refers to the reported
+targets. The files alone cannot establish which policy or revision produced them.
 
 ## Configuration
 
@@ -277,7 +298,7 @@ Sweeps that need external access:
 | `project_flaudit` | LLM-assisted repo audit |
 | `docs_quality` | Vale and readcost findings in README and `docs/` Markdown (advisory; missing tools or timeouts exit 3) |
 | `public_text_leak` | Coordination vocabulary and configured private names in recent public commit messages, PR bodies, and comments |
-| `publish_workflow_audit` | Publish/release workflows: tag push without credentials, MSRV pins missing from publish, semver checks over platform-only features, unpinned action refs. Across all workflows: event-selected checkouts in trusted contexts, contributor text in scripts, dispatch URLs used by credentialed commands, PR jobs that may request OIDC tokens, PR-target metadata writers, and security commands whose failure is suppressed. Unreadable or malformed workflow files produce exit 3 in sweep and fleet. The JSON scope counts workflows discovered and scanned. |
+| `publish_workflow_audit` | Publish/release workflows: tag push without credentials, MSRV pins missing from publish, semver checks over platform-only features, unpinned action refs. Across all workflows: event-selected checkouts in trusted contexts, contributor text in scripts, dispatch URLs used by credentialed commands, PR jobs that inherit repository-default token permissions or may request OIDC tokens, PR-target metadata writers, and security commands whose failure is suppressed. Unreadable or malformed workflow files produce exit 3 in sweep and fleet. The JSON scope counts workflows discovered and scanned. |
 | `repo_lint` | Rust workspace hygiene: own-crate pin drift, README version lines, Cargo metadata, CI gaps (off by default, never changes the exit code) |
 
 The missing-pattern check in `gitignore_audit` is a pattern-presence heuristic.
@@ -308,6 +329,16 @@ excuses that command and not the rest of the file; `allow-file` covers the whole
 file, for a document that is historical end to end. Both require `reason:` — an
 annotation without one is ignored, so removing the reason re-exposes the finding
 instead of hiding it behind a bare pragma.
+
+For repository findings, JSON includes a `finding_id` for comparing observations
+within the same repository. The matching SARIF fingerprint is `devguard/v1`.
+GitHub's upload action can add its own source-line hash. Workflow findings point
+to the job or step where the check observed the condition. Additional affected
+files appear as related locations. Reports can carry an explicit HTTP(S)
+`source_url` for the originating issue and `evidence_url` for a caller fixture.
+Legacy diagnostics without a structured subject may use the diagnostic text to
+distinguish multiple findings at the same path.
+
 
 ## Pre-commit Hooks
 

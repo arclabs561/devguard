@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from devguard.sweeps._cargo_staging import staging_risks
+from devguard.sweeps._cargo_staging import publish_steps
 from devguard.sweeps._common import LICENSE_FILES
 from devguard.sweeps._common import default_dev_root as _default_dev_root
 from devguard.sweeps._common import utc_now as _utc_now
@@ -532,7 +532,11 @@ def _audit_repo(
     )
 
     # Even an unpublished workspace root can validate its published members.
-    for risk in staging_risks(repo, workflows):
+    steps = list(publish_steps(repo, workflows))
+    for step in steps:
+        risk = step.staging_risk
+        if risk is None:
+            continue
         result.findings.append(
             Finding(
                 check="reused_publish_staging",
@@ -578,10 +582,11 @@ def _audit_repo(
 
     all_text = "\n".join(text for _, text in workflows)
 
-    # Check: has a publish workflow (any file with cargo publish)
-    publish_files = [
-        (f, t) for f, t in workflows if "cargo publish" in t.lower() or "cargo-publish" in t.lower()
-    ]
+    # Keep action-based publishers discoverable even when their implementation
+    # is outside this checkout. A dry run or an echoed instruction cannot publish.
+    live_steps = [step for step in steps if not step.dry_run]
+    live_files = {step.workflow for step in live_steps}
+    publish_files = [(filename, text) for filename, text in workflows if filename in live_files]
     has_publish_wf = len(publish_files) > 0
 
     if not has_publish_wf:
@@ -590,7 +595,7 @@ def _audit_repo(
             Finding(
                 check="no_publish_workflow",
                 severity=sev,
-                message="No workflow contains `cargo publish`",
+                message="No workflow with an identifiable live Cargo publish step",
                 detail="Expected at least one workflow with a publish step",
             )
         )
@@ -612,24 +617,27 @@ def _audit_repo(
         )
 
     # Check: OIDC trusted publishing (id-token: write)
-    has_oidc = bool(re.search(r"id-token\s*:\s*write", all_text))
-    # Also check for crates.io trusted publishing action patterns
-    has_trusted_publish_action = "trusted-publishing" in all_text.lower()
+    oidc_files = {step.workflow for step in live_steps if step.oidc}
+    missing_oidc = {step.workflow for step in live_steps if not step.oidc}
 
-    if has_publish_wf and not has_oidc and not has_trusted_publish_action:
+    if missing_oidc:
         sev = "error" if is_public else "warning"
         result.findings.append(
             Finding(
                 check="no_oidc",
                 severity=sev,
-                message="No OIDC trusted publishing setup (missing `id-token: write`)",
-                detail="Trusted publishing avoids long-lived API tokens. "
-                "Set `permissions: id-token: write` and configure crates.io trusted publishers.",
+                message="Missing evidence of `id-token: write` on a Cargo publishing job",
+                detail="Review the effective permissions and crates.io trusted publisher for "
+                + ", ".join(sorted({step.location for step in live_steps if not step.oidc})),
             )
         )
 
-    # Check: dry-run on PRs
-    has_dry_run = bool(re.search(r"cargo\s+publish\s+.*--dry-run", all_text))
+    # Check configured dry-run commands. Event reachability is a separate signal.
+    verified = {package for step in steps if step.dry_run for package in step.packages}
+    uncovered = {
+        step.location for step in live_steps if not step.packages or not step.packages <= verified
+    }
+    has_dry_run = bool(verified) and not uncovered
     # Also check for separate CI workflow with cargo check/test
     has_ci_workflow = any(
         ("pull_request" in t or "push:" in t)
@@ -642,9 +650,10 @@ def _audit_repo(
             Finding(
                 check="no_dry_run",
                 severity="warning",
-                message="No `cargo publish --dry-run` found in CI",
-                detail="Dry-run catches packaging errors (missing files, bad metadata) before tagging. "
-                "Consider adding it to PR checks.",
+                message="Missing a configured `cargo publish --dry-run` that verifies each published package",
+                detail="Configure a dry run for each published package without --no-verify. "
+                "Check unresolved selectors or external actions manually: "
+                + ", ".join(sorted(uncovered)),
             )
         )
 
@@ -674,7 +683,7 @@ def _audit_repo(
     # Check: secret-based auth when OIDC is available (migration target)
     for fname, text in publish_files:
         uses_secret = bool(re.search(r"secrets\.CARGO_REGISTRY_TOKEN", text))
-        if uses_secret and not has_oidc:
+        if uses_secret and (fname in missing_oidc or fname not in oidc_files):
             result.findings.append(
                 Finding(
                     check="secret_based_auth",
@@ -785,7 +794,7 @@ def _audit_repo(
     # Check: environment protection (for publish jobs)
     for fname, text in publish_files:
         has_environment = bool(re.search(r"environment\s*:", text))
-        if not has_environment and has_oidc:
+        if not has_environment and fname in oidc_files:
             result.findings.append(
                 Finding(
                     check="no_environment_protection",

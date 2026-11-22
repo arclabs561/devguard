@@ -326,6 +326,7 @@ def test_nonblocking_security_command_is_reported_per_step(tmp_path):
     directory.mkdir(parents=True)
     (directory / "checks.yml").write_text("""
 on: pull_request
+permissions: {contents: read}
 jobs:
   checks:
     steps:
@@ -438,3 +439,39 @@ def test_partial_workflows_preserve_findings_and_fail_both_commands(tmp_path, mo
     result = runner.invoke(app, ["fleet", str(repo), "--no-cache", "--fail-on", "never", *only])
     assert result.exit_code == 3, result.output
     assert json.loads(result.stdout)["summary"]["incomplete"] == 1
+
+
+def test_pull_request_jobs_report_implicit_token_scope(tmp_path):
+    import yaml
+
+    workflows = tmp_path / ".github/workflows"
+    workflows.mkdir(parents=True)
+    workflow = {
+        "on": ["push", "pull_request"],
+        "jobs": {
+            "test": {"steps": [{"run": "echo test"}]},
+            "empty": {"permissions": {}, "steps": [{"run": "echo test"}]},
+            "read": {"permissions": {"contents": "read"}, "steps": [{"run": "echo test"}]},
+            "push": {"if": "github.event_name == 'push'", "steps": [{"run": "echo test"}]},
+        },
+    }
+    path = workflows / "ci.yml"
+    path.write_text(yaml.safe_dump(workflow))
+
+    def implicit_jobs():
+        return [
+            f
+            for f in audit_workflows(tmp_path)
+            if f["check"] == "implicit_pr_token_permissions"
+        ]
+
+    [finding] = implicit_jobs()
+    assert finding["job"] == "test"
+    assert "'test'" in finding["message"]
+    workflow["permissions"] = {"contents": "read"}
+    path.write_text(yaml.safe_dump(workflow))
+    assert implicit_jobs() == []
+    del workflow["permissions"]
+    workflow["on"] = "push"
+    path.write_text(yaml.safe_dump(workflow))
+    assert implicit_jobs() == []
