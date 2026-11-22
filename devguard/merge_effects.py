@@ -172,7 +172,41 @@ def _segments(line: str) -> list[str]:
     return [chunk.strip() for chunk in chunks if chunk.strip()]
 
 
-def _classify(line: str) -> tuple[str, str] | None:
+def _npm_publish_mode(args: list[str], scopes: tuple[dict, ...]) -> str:
+    # npm CLI flags take precedence over environment configuration. GitHub
+    # overlays step environment variables on the job and workflow scopes.
+    env: dict[str, str] = {}
+    for scope in scopes:
+        values = scope.get("env")
+        if values is None:
+            continue
+        if not isinstance(values, dict):
+            return "unresolved-publish-mode"
+        env.update(
+            {
+                k: str(v).lower()
+                for k, v in values.items()
+                if isinstance(k, str) and k.lower() == "npm_config_dry_run"
+            }
+        )
+    settings = set(env.values()) or {"false"}
+    for i, arg in enumerate(args):
+        if arg == "--":
+            break
+        if arg == "--dry-run" and args[i + 1 : i + 2] in (["true"], ["false"]):
+            settings = {args[i + 1]}
+        elif arg in {"--dry-run", "--no-dry-run"}:
+            settings = {"true" if arg == "--dry-run" else "false"}
+        elif arg.startswith("--dry-run="):
+            settings = {arg.partition("=")[2].lower()}
+    if settings == {"true"}:
+        return "dry-run"
+    if settings == {"false"}:
+        return "publish"
+    return "unresolved-publish-mode"
+
+
+def _classify(line: str, scopes: tuple[dict, ...]) -> tuple[str, str] | None:
     try:
         args = shlex.split(line, comments=True)
     except ValueError:
@@ -184,7 +218,9 @@ def _classify(line: str) -> tuple[str, str] | None:
     if len(args) < 2:
         return None
     tool, command = args[0].rsplit("/", 1)[-1], args[1]
-    if (tool, command) in {("cargo", "publish"), ("npm", "publish"), ("twine", "upload")}:
+    if (tool, command) == ("npm", "publish"):
+        return _npm_publish_mode(args[2:], scopes), tool
+    if (tool, command) in {("cargo", "publish"), ("twine", "upload")}:
         return ("dry-run", tool) if "--dry-run" in args else ("publish", tool)
     if tool == "vercel" and command == "deploy":
         if "--prod" in args or "--target=production" in args:
@@ -263,6 +299,7 @@ def _workflow(text: str, path: str, branch: str, changes: list[str] | None) -> l
                 trigger,
             )
             uncertainty = {
+                "unresolved-publish-mode": "npm dry-run configuration requires runtime values",
                 "unresolved-deploy-target": "Deployment target needs runtime values",
                 "unresolved-command": "Command behavior is outside the recognized direct operations",
                 "unresolved-action": "Action implementation has not been analyzed",
@@ -309,7 +346,7 @@ def _workflow(text: str, path: str, branch: str, changes: list[str] | None) -> l
                 )
                 for offset, line in enumerate(run.splitlines()):
                     for command in _segments(line):
-                        found = _classify(command)
+                        found = _classify(command, (doc, job, step))
                         if found:
                             add(
                                 *found,

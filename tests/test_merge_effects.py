@@ -153,3 +153,51 @@ def test_skipped_dependency(extra, status):
     )
     (e,) = _workflow(wf, "wf", "trunk", ["src/x"])
     assert e["status"] == status
+
+
+@pytest.mark.parametrize(
+    ("step_env", "command", "kind"),
+    [
+        ("", "npm publish", "dry-run"),
+        ("", "npm publish --dry-run=false", "publish"),
+        ("", "npm publish --no-dry-run", "publish"),
+        ("", "npm publish --dry-run false", "publish"),
+        ("", "npm publish --dry-run=true", "dry-run"),
+        ("        env: {NPM_CONFIG_DRY_RUN: 'false'}\n", "npm publish", "publish"),
+        (
+            "        env: {NPM_CONFIG_DRY_RUN: '${{ vars.DRY_RUN }}'}\n",
+            "npm publish",
+            "unresolved-publish-mode",
+        ),
+    ],
+)
+def test_npm_publish_job_dry_run_with_step_overrides(step_env, command, kind):
+    wf = (
+        "on: {push: {branches: [trunk], paths: ['library/**']}}\n"
+        "jobs:\n  pkg:\n    env: {NPM_CONFIG_DRY_RUN: 'true'}\n    runs-on: ubuntu-latest\n"
+        f"    steps:\n      - run: {command}\n" + step_env
+    )
+    cases = [
+        (wf, "trunk", ["library/index.js"], "eligible"),
+        (wf, "release", ["library/index.js"], "excluded"),
+        (wf, "trunk", ["docs/readme.md"], "excluded"),
+        (
+            wf.replace(
+                "on: {push: {branches: [trunk], paths: ['library/**']}}", "on: pull_request"
+            ),
+            "trunk",
+            ["library/index.js"],
+            "excluded",
+        ),
+        (
+            wf.replace(
+                "      - run:", "      - if: github.event_name == 'pull_request'\n        run:"
+            ),
+            "trunk",
+            ["library/index.js"],
+            "excluded",
+        ),
+    ]
+    for source, branch, changes, expected in cases:
+        (effect,) = _workflow(source, "workflow.yml", branch, changes)
+        assert (effect["effect"], effect["status"]) == (kind, expected)
