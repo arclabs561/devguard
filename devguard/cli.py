@@ -30,6 +30,22 @@ console = Console()
 _MAX_TABLE_ROWS = 15
 
 
+@app.command("audit-crate")
+def audit_crate(name: str, version: str) -> None:
+    """Audit a published crates.io lockfile by exact name and version (JSON)."""
+    from devguard.crate_release import audit_crate_release
+
+    try:
+        report = audit_crate_release(name, version)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from None
+    typer.echo(json.dumps(report, indent=2))
+    if report["status"] != "complete":
+        raise typer.Exit(3)
+    if report["audit"]["vulns"]:
+        raise typer.Exit(2)
+
+
 def _sev_style(severity: str) -> str:
     """Return a Rich style string for the given severity level."""
     s = severity.lower()
@@ -1686,7 +1702,9 @@ def _sweep_body(
             if errors:
                 console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
             _print_dependency_audit_table(report)
-        if errors or report["summary"]["total_vulns"] > 0:
+        if errors:
+            exit_code = max(exit_code, 3)
+        elif report["summary"]["total_vulns"] > 0:
             exit_code = max(exit_code, 2)
 
     # ssh key audit sweep (machine-scoped, skip in single-repo mode)

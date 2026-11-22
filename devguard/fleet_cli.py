@@ -16,7 +16,14 @@ from rich.table import Table
 
 from devguard import fleet as fl
 
-_STYLE = {"critical": "bold red", "high": "red", "medium": "yellow", "low": "cyan", "info": "dim"}
+_STYLE = {
+    "critical": "bold red",
+    "high": "red",
+    "medium": "yellow",
+    "low": "cyan",
+    "info": "dim",
+    "unknown": "yellow",
+}
 
 
 def _human_bytes(count: int) -> str:

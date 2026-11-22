@@ -10,6 +10,7 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 from collections import Counter
@@ -17,6 +18,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from cvss import CVSS3, CVSS4
+from cvss.exceptions import CVSSError
 
 from devguard.sweeps._common import default_dev_root as _default_dev_root
 from devguard.sweeps._common import iter_git_repos
@@ -28,13 +32,14 @@ from devguard.sweeps._common import utc_now as _utc_now
 
 # Maps lock/manifest files to (language, engine_name).
 _MANIFEST_MAP: list[tuple[str, str, str]] = [
+    ("go.mod", "go", "osv-scanner"),
     ("Cargo.lock", "rust", "cargo-audit"),
     ("package-lock.json", "js", "npm-audit"),
-    ("yarn.lock", "js", "npm-audit"),
-    ("pnpm-lock.yaml", "js", "npm-audit"),
-    ("uv.lock", "python", "pip-audit"),
+    ("yarn.lock", "js", "osv-scanner"),
+    ("pnpm-lock.yaml", "js", "osv-scanner"),
+    ("uv.lock", "python", "osv-scanner"),
     ("requirements.txt", "python", "pip-audit"),
-    ("poetry.lock", "python", "pip-audit"),
+    ("poetry.lock", "python", "osv-scanner"),
 ]
 
 
@@ -59,7 +64,8 @@ def detect_engines(repo: Path) -> list[DetectedEngine]:
 
 _INPUT_FILES = tuple(
     dict.fromkeys(
-        [name for name, _, _ in _MANIFEST_MAP] + ["Cargo.toml", "package.json", "pyproject.toml"]
+        [name for name, _, _ in _MANIFEST_MAP]
+        + ["Cargo.toml", "package.json", "pyproject.toml", "go.sum"]
     )
 )
 
@@ -167,6 +173,35 @@ def _payload(raw: str) -> Any:
     return data
 
 
+def _cvss_severity(vector: str) -> str:
+    try:
+        model = CVSS4 if vector.startswith("CVSS:4.") else CVSS3
+        return _normalize_severity(model(vector).severities()[0])
+    except CVSSError:
+        return "unknown"
+
+
+def parse_osv_json(raw: str) -> list[VulnSummary]:
+    entries = _array(_object(_payload(raw)).get("results"))
+    findings = []
+    for source in entries:
+        for item in _array(_object(source).get("packages")):
+            pkg = _string(_object(_object(item).get("package")).get("name"))
+            for vuln in _array(item.get("vulnerabilities", [])):
+                vid = _string(_object(vuln).get("id"))
+                levels = [
+                    _cvss_severity(_string(_object(score).get("score")))
+                    for score in _array(vuln.get("severity", []))
+                ]
+                severity = next((s for s in SEVERITY_BUCKETS if s in levels), "unknown")
+                if severity == "unknown":
+                    severity = _normalize_severity(
+                        _object(vuln.get("database_specific", {})).get("severity")
+                    )
+                findings.append(VulnSummary(vid, severity, pkg, _string(vuln.get("summary", vid))))
+    return findings
+
+
 def parse_cargo_audit_json(raw: str) -> list[VulnSummary]:
     """Parse `cargo audit --json` output."""
     data = _payload(raw)
@@ -183,7 +218,7 @@ def parse_cargo_audit_json(raw: str) -> list[VulnSummary]:
         # Try explicit severity, then CVSS, then infer from categories
         sev_str = _normalize_severity(advisory.get("severity"))
         if sev_str == "unknown" and advisory.get("cvss"):
-            sev_str = _normalize_severity(str(advisory["cvss"]).split("/")[0])
+            sev_str = _cvss_severity(_string(advisory["cvss"]))
         if sev_str == "unknown":
             sev_str = _cargo_severity_from_categories(categories)
         # Informational advisories (unmaintained, etc.) are low severity
@@ -286,6 +321,7 @@ def _normalize_severity(raw: str | None) -> str:
 
 _ENGINE_COMMANDS: dict[str, tuple[list[str], str | None]] = {
     # (argv, which_binary_to_check)
+    "osv-scanner": (["osv-scanner", "scan", "source", "--format", "json"], "osv-scanner"),
     "cargo-audit": (["cargo", "audit", "--json"], "cargo-audit"),
     "npm-audit": (["npm", "audit", "--json"], "npm"),
     "pip-audit": (
@@ -304,6 +340,7 @@ _ENGINE_COMMANDS: dict[str, tuple[list[str], str | None]] = {
 }
 
 _ENGINE_PARSERS: dict[str, Any] = {
+    "osv-scanner": parse_osv_json,
     "cargo-audit": parse_cargo_audit_json,
     "npm-audit": parse_npm_audit_json,
     "pip-audit": parse_pip_audit_json,
@@ -330,15 +367,30 @@ def _audit_repo(
     engines: list[str],
     timeout_s: int,
     explicit: bool = False,
+    release_lock: bool = False,
 ) -> RepoAuditResult:
     """Run applicable audit tools on a single repo."""
-    detected = detect_engines(repo)
+    detected = [DetectedEngine("rust", "osv-scanner")] if release_lock else detect_engines(repo)
     result = RepoAuditResult(repo_path=str(repo))
     result.started_at = _utc_now()
     if explicit:
         result.inputs_before = _input_hashes(repo)
     counts: Counter[str] = Counter()
     engine_errors: list[str] = []
+
+    present = {name for name in _INPUT_FILES if (repo / name).is_file()}
+    for name, language in [
+        ("Cargo.toml", "rust"),
+        ("go.sum", "go"),
+        ("package.json", "js"),
+        ("pyproject.toml", "python"),
+    ]:
+        if name in present and not any(
+            filename in present and lang == language for filename, lang, _ in _MANIFEST_MAP
+        ):
+            engine_errors.append(
+                f"{name}: no auditable lockfile or pinned requirements in this directory"
+            )
 
     for det in detected:
         if det.engine not in engines:
@@ -349,7 +401,12 @@ def _audit_repo(
         if cmd_spec is None:
             continue
         argv, which_bin = cmd_spec
-        if explicit and det.engine == "npm-audit":
+        if det.engine == "osv-scanner":
+            argv = [*argv, "--lockfile", "Cargo.lock"] if release_lock else list(argv)
+            for filename, _, engine in _MANIFEST_MAP:
+                if engine == det.engine and (repo / filename).is_file():
+                    argv.extend(["--lockfile", filename])
+        if det.engine == "npm-audit":
             argv = ["npm", "--prefix", str(repo), "audit", "--json", "--ignore-scripts"]
 
         # Check tool availability
@@ -425,7 +482,7 @@ def _audit_repo(
                 "error": error,
             }
         )
-    if explicit and result.skipped_engines:
+    if result.skipped_engines:
         engine_errors.append("audit coverage incomplete; one or more engines skipped")
     result.finished_at = _utc_now()
     result.error = "; ".join(engine_errors) or None
@@ -455,7 +512,7 @@ def audit_dependencies(
     started_at = _utc_now()
     errors: list[str] = []
     root = dev_root if dev_root is not None else _default_dev_root()
-    all_engines = engines or ["cargo-audit", "npm-audit", "pip-audit"]
+    all_engines = engines or ["cargo-audit", "npm-audit", "pip-audit", "osv-scanner"]
 
     if package_roots is not None:
         if dev_root is None or not package_roots:
@@ -468,6 +525,41 @@ def audit_dependencies(
     globs = [g for g in (exclude_repo_globs or []) if isinstance(g, str) and g.strip()]
     if globs and package_roots is None:
         repos = [r for r in repos if not any(fnmatch.fnmatch(str(r), g) for g in globs)]
+
+    repo_count = len(repos)
+    without_inputs: list[str] = []
+    if package_roots is None:
+        packages = []
+        ignored = {
+            ".git",
+            ".venv",
+            "venv",
+            "node_modules",
+            "target",
+            "vendor",
+            "dist",
+            "build",
+            "__pycache__",
+        }
+        for repo in repos:
+            initial_count = len(packages)
+
+            def walk_error(exc: OSError) -> None:
+                errors.append(f"{repo}: directory discovery failed ({type(exc).__name__})")
+
+            for directory, dirs, files in os.walk(repo, onerror=walk_error):
+                path = Path(directory)
+                dirs[:] = sorted(
+                    d for d in dirs if d not in ignored and not (path / d / ".git").exists()
+                )
+                if set(files).intersection(_INPUT_FILES):
+                    if any((path / name).is_symlink() for name in _INPUT_FILES):
+                        errors.append(f"{path}: symlinked package input requires explicit review")
+                        continue
+                    packages.append(path)
+            if len(packages) == initial_count:
+                without_inputs.append(str(repo))
+        repos = packages
 
     results: list[RepoAuditResult] = []
 
@@ -509,7 +601,9 @@ def audit_dependencies(
         "generated_at": _utc_now(),
         "scope": {
             "dev_root": str(root),
-            "repos_scanned": len(repos),
+            "repos_scanned": repo_count,
+            "package_roots_discovered": len(repos),
+            "repositories_without_auditable_inputs": without_inputs,
             "max_depth": max_depth,
             "exclude_repo_globs": globs,
             "engines_requested": all_engines,
@@ -520,6 +614,7 @@ def audit_dependencies(
         },
         "summary": {
             "repos_with_vulns": len(repos_with_vulns),
+            "package_roots_complete": sum(bool(r.engines_run) and not r.error for r in results),
             "total_vulns": sum(len(r.vulns) for r in results),
             "severity_counts": {s: total_counts.get(s, 0) for s in SEVERITY_BUCKETS},
             "unknown_severity": total_counts.get("unknown", 0),
@@ -539,20 +634,18 @@ def audit_dependencies(
                 "inputs_before": r.inputs_before,
                 "inputs_after": r.inputs_after,
                 "input_changed": r.inputs_before != r.inputs_after,
-                "vulns_omitted": max(0, len(r.vulns) - 100),
+                "vulns_omitted": 0,
                 "vuln_count": len(r.vulns),
                 "severity_counts": r.severity_counts,
-                "vulns": r.vulns[:100],  # cap per repo
+                "vulns": r.vulns,
             }
             for r in results
             if r.engines_run or r.skipped_engines or r.error
-        ][:200],
+        ],
         "truncation": {
-            "repos_limit": 200,
-            "vulns_per_repo_limit": 100,
-            "repos_omitted": max(
-                0, sum(bool(r.engines_run or r.skipped_engines or r.error) for r in results) - 200
-            ),
+            "repos_limit": None,
+            "vulns_per_repo_limit": None,
+            "repos_omitted": 0,
         },
         "errors": errors,
     }

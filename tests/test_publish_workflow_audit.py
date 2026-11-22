@@ -225,3 +225,26 @@ def test_sweep_report_counts_errors(tmp_path: Path) -> None:
     assert errors == []
     assert report["summary"]["total_errors"] == 1
     assert report["repos"][0]["repo_path"] == str(repo.resolve())
+
+
+def test_privilege_follows_job_overrides_and_reusable_workflows(tmp_path):
+    workflows = tmp_path / ".github/workflows"
+    workflows.mkdir(parents=True)
+    (workflows / "nightly.yml").write_text("""
+permissions: write-all
+jobs:
+  publish:
+    steps:
+      - uses: actions/checkout@v4
+  verify:
+    permissions: {contents: read}
+    steps:
+      - uses: actions/checkout@v4
+  upload:
+    permissions: {}
+    uses: org/repo/.github/workflows/jobs.yml@main
+    secrets: inherit
+""")
+    found = audit_workflows(tmp_path)
+    assert [f["check"] for f in found] == ["privileged_unpinned_action"] * 2
+    assert "publish" in found[0]["message"] and "upload" in found[1]["message"]

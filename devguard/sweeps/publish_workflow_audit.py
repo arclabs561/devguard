@@ -199,6 +199,40 @@ def _check_unpinned(name: str, text: str, repo_pins_shas: bool) -> list[dict[str
     ]
 
 
+def _privileged_refs(name: str, doc: Any) -> list[dict[str, Any]]:
+    findings = []
+    for job_id, job in _jobs(doc).items():
+        if not isinstance(job, dict):
+            continue
+        permissions = job.get("permissions", doc.get("permissions"))
+        writable = permissions == "write-all" or (
+            isinstance(permissions, dict) and "write" in permissions.values()
+        )
+        context = json.dumps([doc.get("env", {}), job])
+        secrets = job.get("secrets") == "inherit" or bool(
+            re.search(r"\bsecrets\s*(?:\.|\[)", context, re.I)
+        )
+        if not writable and not secrets:
+            continue
+        steps = [job, *(job.get("steps") or [])]
+        refs = set()
+        for step in steps:
+            ref = step.get("uses") if isinstance(step, dict) else None
+            if isinstance(ref, str) and "@" in ref and not ref.startswith(("./", "docker://")):
+                if not _SHA_RE.fullmatch(ref.rsplit("@", 1)[1]):
+                    refs.add(ref)
+        if refs:
+            findings.append(
+                _finding(
+                    "privileged_unpinned_action",
+                    "error",
+                    name,
+                    f"job '{job_id}' uses mutable refs with write permissions or secrets: {', '.join(sorted(refs))}",
+                )
+            )
+    return findings
+
+
 def audit_workflows(repo: Path, workflow_globs: list[str] | None = None) -> list[dict[str, Any]]:
     """Audit one repo's publish/release workflows. Raises nothing for unreadable YAML."""
     wf_dir = repo / ".github" / "workflows"
@@ -208,8 +242,6 @@ def audit_workflows(repo: Path, workflow_globs: list[str] | None = None) -> list
     all_files = sorted(p for p in wf_dir.iterdir() if p.suffix in (".yml", ".yaml") and p.is_file())
     texts = {p.name: p.read_text(errors="replace") for p in all_files}
     targets = [n for n in texts if any(fnmatch.fnmatch(n, g) for g in globs)]
-    if not targets:
-        return []
 
     ci_text = texts.get("ci.yml") or texts.get("ci.yaml") or ""
     ci_pins = {_normalize_precise(m) for m in _PRECISE_RE.findall(ci_text)}
@@ -219,12 +251,14 @@ def audit_workflows(repo: Path, workflow_globs: list[str] | None = None) -> list
     )
 
     findings: list[dict[str, Any]] = []
-    for name in targets:
-        text = texts[name]
+    for name, text in texts.items():
         try:
             doc = yaml.safe_load(text)
         except yaml.YAMLError:
             findings.append(_finding("workflow_parse_error", "warning", name, "YAML parse error"))
+            continue
+        findings += _privileged_refs(name, doc)
+        if name not in targets:
             continue
         findings += _check_tag_push(name, doc)
         findings += _check_msrv_pins(name, text, ci_pins)

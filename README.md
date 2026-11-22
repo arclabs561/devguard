@@ -155,7 +155,8 @@ else `~/.cache/devguard`:
   sweep selection, the spec file and the set of installed scanners are all
   unchanged. Local checkouts with staged changes, modified tracked files, or
   any untracked paths (including ignored files and empty directories) are
-  rescanned because sweeps can inspect them.
+  rescanned because sweeps can inspect them. Selections that include the dependency
+  audit always rescan because advisory data changes independently of the repository.
   `--no-cache` ignores and does not write results.
 
 `devguard cache info` shows the size of both; `devguard cache clear` removes
@@ -168,7 +169,7 @@ per-repository findings, counts and errors; `--full-reports` adds each sweep's
 raw report. Exit codes: 0, 2 when a finding is at `--fail-on` (default `high`)
 or worse, 3 when some repository was not fully scanned.
 
-On one cold run over 96 repositories (2 cores, `--jobs 6`) the sweep took 134
+Before dependency checks were included by default, on one cold run over 96 repositories (2 cores, `--jobs 6`) the sweep took 134
 seconds; the next run, with every clone fetched and no changes, took 17
 seconds, and 1 second with `--offline`.
 
@@ -177,13 +178,17 @@ seconds, and 1 second with `--offline`.
 requires `package-lock.json`, Cargo requires `Cargo.lock`, and Python requires
 a fully pinned `requirements.txt` (audited with
 `pip-audit --no-deps --disable-pip --strict`, so include transitive
-dependencies in the export if you need them covered). Repositories with only
-`uv.lock` or `poetry.lock` report an unsupported-input error. Audit tools may
-contact their advisory services; this mode never installs or fixes packages.
-The JSON report records the resolved scope, engine coverage, and SHA-256 input
-hashes before and after the audit; changed inputs or incomplete engine coverage
-produce an unknown result. Tool failures and invalid output exit 2; missing
-tools are reported as skipped.
+dependencies in the export if you need them covered). OSV-Scanner v2 handles uv, Poetry, Yarn, pnpm and Go files.
+The default fleet selection includes dependency audits. Discovery checks nested
+package directories, excluding build, vendor and virtual environment directories.
+An unresolved manifest or unavailable tool is reported as incomplete (exit 3).
+A checkout scan covers the lockfiles present on disk. A published library or
+its consumer can have a different lockfile. For a public crate, run
+`devguard audit-crate NAME VERSION` to audit the lockfile in that exact release.
+The command verifies the archive against the crates.io index, reports the archive
+and lockfile hashes, and runs OSV-Scanner on the packaged lockfile. Audit tools may contact their
+advisory services. Fleet's `--offline` option controls Git fetching only.
+Explicit package roots record SHA-256 input hashes before and after the audit.
 
 ## Configuration
 
@@ -210,7 +215,7 @@ Sweeps that need external access:
 | --- | --- |
 | `public_github_secrets` | `GITHUB_TOKEN` and TruffleHog |
 | `ssh_key_audit` with `check_github: true` | `GITHUB_TOKEN` |
-| `dependency_audit` | `npm`, `pip-audit`, or `cargo-audit`, depending on repo type |
+| `dependency_audit` | `npm`, `pip-audit`, `cargo-audit`, or `osv-scanner` v2, depending on the lockfile |
 | `project_flaudit` | `OPENROUTER_API_KEY` |
 | `docs_quality` | Vale and readcost, or a wrapper with the same `--json` output |
 | `public_text_leak` | `gh` (repo visibility; PR and issue text when enabled) |
