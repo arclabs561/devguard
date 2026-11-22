@@ -305,6 +305,8 @@ Sweeps that need external access:
 | `publish_workflow_audit` | Publish/release workflows: tag push without credentials, MSRV pins missing from publish, semver checks over platform-only features, unpinned action refs. Across all workflows: event-selected checkouts in trusted contexts, contributor text in scripts, dispatch URLs used by credentialed commands, PR jobs that inherit repository-default token permissions or may request OIDC tokens, PR-target metadata writers, and security commands whose failure is suppressed. Unreadable or malformed workflow files produce exit 3 in sweep and fleet. The JSON scope counts workflows discovered and scanned. |
 | `repo_lint` | Rust workspace hygiene: own-crate pin drift, README version lines, Cargo metadata, CI gaps (off by default, never changes the exit code) |
 
+For Rust feature gates, `test_target_macro_feature` marks path arguments in simple parenthesized calls to macros declared in the same file. Review the expansion to see whether it emits an unguarded reference. Complex token trees and external macros fall back to the general source check. DevGuard does not compile Rust targets.
+
 The missing-pattern check in `gitignore_audit` is a pattern-presence heuristic.
 It combines global and repository ignore patterns without evaluating Git’s rule
 ordering or negation semantics. Zero gaps does not establish that files are

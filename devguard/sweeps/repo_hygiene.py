@@ -1442,18 +1442,35 @@ def _test_target_name(rel: str) -> str | None:
     return None
 
 
-def _check_test_target_missing_gate(repo: Path, tracked: list[str]) -> HygieneFinding | None:
-    """A test/example that uses a feature-gated module without gating itself.
+# A local macro may discard path tokens or place them under a generated cfg.
+# Recognize only complete, simple argument lists. Arbitrary Rust token trees
+# would need a parser; partial matches must not hide neighboring direct uses.
+_RUST_PATH_ARG = r"[A-Za-z_]\w*(?:::[A-Za-z_]\w*)*(?:\(\))?"
+_SIMPLE_MACRO_ARG = rf'(?:"[A-Za-z_][\w-]*"|{_RUST_PATH_ARG})'
+_SIMPLE_MACRO_CALL = re.compile(
+    rf"\b(?P<name>[A-Za-z_]\w*)!\s*\(\s*{_SIMPLE_MACRO_ARG}"
+    rf"(?:\s*,\s*{_SIMPLE_MACRO_ARG})*\s*,?\s*\)"
+)
 
-    `#[cfg(feature = "x")] pub mod y;` in the crate root means the module only
-    exists with that feature. A target that names it and carries no `cfg` gate
-    fails to compile in every feature lane that omits it.
-    """
+
+def _without_local_macro_arguments(text: str) -> str:
+    names = set(re.findall(r"^\s*macro_rules!\s*(\w+)", text, re.MULTILINE))
+    if not names:
+        return text
+
+    def replace(call: re.Match[str]) -> str:
+        if call["name"] in names:
+            return re.sub(r"[^\r\n]", " ", call[0])
+        return call[0]
+
+    return _SIMPLE_MACRO_CALL.sub(replace, text)
+
+
+def _check_test_target_feature_gates(repo: Path, tracked: list[str]) -> list[HygieneFinding]:
+    """Keep direct module references distinct from unexpanded local macro arguments."""
     packages = _cargo_packages(repo)
-    if not packages:
-        return None
-
-    graders: list[str] = []
+    direct: dict[str, str] = {}
+    macro_arguments: dict[str, str] = {}
     for pkg in packages:
         lib = (
             repo / pkg.dir_rel / "src" / "lib.rs" if pkg.dir_rel != "." else repo / "src" / "lib.rs"
@@ -1492,43 +1509,60 @@ def _check_test_target_missing_gate(repo: Path, tracked: list[str]) -> HygieneFi
                 continue
             if _FILE_CFG_RE.search(text):
                 continue
-            lines = text.splitlines()
+            lines = text.split("\n")
             allow = _allow_ranges(text)
             gated_ranges = _cfg_gated_ranges(lines)
             kind = "test" if target_path.startswith("tests/") else "example"
             required = _target_required_features(manifest, kind, name, target_path)
+            direct_lines = _without_local_macro_arguments(text).split("\n")
             for lineno, line in enumerate(lines):
-                if _allowed(allow, "test_target_missing_gate", lineno):
+                if line.lstrip().startswith("//") or _allowed(
+                    allow, "test_target_missing_gate", lineno
+                ):
                     continue
-                stripped = line.lstrip()
-                if not stripped or stripped.startswith("//"):
-                    continue
-                match = crate_re.search(line)
-                if not match:
-                    continue
-                module = match.group(1)
-                feature = gated.get(module)
-                if feature is None:
-                    continue
-                if feature in required:
-                    continue
-                if any(start <= lineno <= end for start, end in gated_ranges):
-                    continue
-                graders.append(f"{rel}: {crate_name}::{module} needs feature {feature!r}")
-                break
+                for match in crate_re.finditer(line):
+                    module = match[1]
+                    feature = gated.get(module)
+                    if feature is None or feature in required:
+                        continue
+                    if any(start <= lineno <= end for start, end in gated_ranges):
+                        continue
+                    in_macro = direct_lines[lineno][match.start()] == " "
+                    if in_macro and _allowed(allow, "test_target_macro_feature", lineno):
+                        continue
+                    evidence = macro_arguments if in_macro else direct
+                    evidence.setdefault(
+                        rel, f"{rel}: {crate_name}::{module} needs feature {feature!r}"
+                    )
 
-    if not graders:
-        return None
-    return HygieneFinding(
-        repo_path=str(repo),
-        check="test_target_missing_gate",
-        severity="medium",
-        message=(
-            f"{len(graders)} test/example target(s) use a feature-gated module without a "
-            "cfg gate or required-features -- they break every lane that omits it."
-        ),
-        files=graders[:_FEATURE_FINDING_CAP],
-    )
+    findings = []
+    if direct:
+        findings.append(
+            HygieneFinding(
+                repo_path=str(repo),
+                check="test_target_missing_gate",
+                severity="medium",
+                message=(
+                    f"{len(direct)} test/example target(s) reference a feature-gated module without a "
+                    "detected cfg gate or required-features. Check builds that omit the feature."
+                ),
+                files=list(direct.values())[:_FEATURE_FINDING_CAP],
+            )
+        )
+    if macro_arguments:
+        findings.append(
+            HygieneFinding(
+                repo_path=str(repo),
+                check="test_target_macro_feature",
+                severity="low",
+                message=(
+                    f"{len(macro_arguments)} target(s) pass a feature-gated path to a local macro. "
+                    "Check whether the expansion emits an unguarded reference."
+                ),
+                files=list(macro_arguments.values())[:_FEATURE_FINDING_CAP],
+            )
+        )
+    return findings
 
 
 def _check_readme_install_version(repo: Path, tracked: list[str]) -> HygieneFinding | None:
@@ -1945,7 +1979,6 @@ def sweep_repo_hygiene(
             lambda r: _check_crate_level_test_gates(r),
             lambda r: _check_ignored_tests_without_reason(r, tracked),
             lambda r: _check_unknown_features(r, tracked),
-            lambda r: _check_test_target_missing_gate(r, tracked),
             lambda r: _check_readme_install_version(r, tracked),
             lambda r: _check_unused_workspace_deps(r),
             lambda r: _check_tracked_ignored(r),
@@ -1965,6 +1998,13 @@ def sweep_repo_hygiene(
             if finding is not None:
                 result.findings.append(finding)
                 total_findings += 1
+
+        try:
+            feature_findings = _check_test_target_feature_gates(repo, tracked)
+            result.findings.extend(feature_findings)
+            total_findings += len(feature_findings)
+        except Exception as exc:
+            errors.append(f"{repo}: target feature scan failed: {exc}")
 
         try:
             for check, files in find_false_passes(repo, tracked).items():
