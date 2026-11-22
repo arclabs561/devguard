@@ -251,6 +251,13 @@ _TRUSTED_CONTEXT_EVENTS = {
 }
 
 
+_SECURITY_COMMAND = re.compile(
+    r"^\s*(?:cargo\s+audit|gitleaks\s+(?:git|dir|detect)|trufflehog\s+(?:git|filesystem)"
+    r"|npm\s+run\s+(?:test:security|check:secrets:ci))(?:\s|$)"
+)
+_IGNORE_EXIT = re.compile(r"\|\|\s*(?:true|:)\s*(?:#.*)?$")
+
+
 def _owner_event_only(condition: Any) -> bool:
     # Recognize the simple owner-only job guard. Compound conditions need review.
     value = str(condition).strip().removeprefix("${{").removesuffix("}}").strip()
@@ -316,6 +323,21 @@ def _workflow_trust(name: str, doc: Any) -> list[dict[str, Any]]:
             script = str(step.get("run") or "")
             if action == "actions/github-script":
                 script = str(inputs.get("script") or "")
+            commands = [line for line in script.splitlines() if _SECURITY_COMMAND.match(line)]
+            if commands and (
+                step.get("continue-on-error") is True
+                or job.get("continue-on-error") is True
+                or any(_IGNORE_EXIT.search(line) for line in commands)
+            ):
+                findings.append(
+                    _finding(
+                        "nonblocking_security_check",
+                        "warning",
+                        name,
+                        f"{label} can report success after its security check fails. "
+                        "Propagate the scanner's exit status or document the advisory-only policy.",
+                    )
+                )
             if _EVENT_TEXT.search(script):
                 findings.append(
                     _finding(

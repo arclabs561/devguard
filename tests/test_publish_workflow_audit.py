@@ -319,3 +319,22 @@ def test_target_pr_metadata_write_is_a_review_prompt(tmp_path):
     job["permissions"] = {"pull-requests": "read"}
     path.write_text(yaml.safe_dump(workflow))
     assert not audit_workflows(tmp_path)
+
+
+def test_nonblocking_security_command_is_reported_per_step(tmp_path):
+    directory = tmp_path / ".github/workflows"
+    directory.mkdir(parents=True)
+    (directory / "checks.yml").write_text("""
+on: pull_request
+jobs:
+  checks:
+    steps:
+      - run: cargo audit
+        continue-on-error: true
+      - run: npm run test:security || true
+      - run: |
+          cargo audit
+          echo diagnostic || true
+      - run: cargo test || true
+""")
+    assert [f["check"] for f in audit_workflows(tmp_path)] == ["nonblocking_security_check"] * 2

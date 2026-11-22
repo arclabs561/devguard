@@ -222,3 +222,22 @@ def test_colocated_test_files_and_heuristic_rules_are_low() -> None:
     assert sev("generic-api-key", "docs/setup.md") == "low"
     assert sev("aws-access-token", "src/deploy.sh") == "high"
     assert sev("gcp-api-key", "CURSOR_MCP_SETUP.md") == "high"
+
+
+@pytest.mark.skipif(shutil.which("gitleaks") is None, reason="gitleaks binary required")
+def test_packaged_gitleaks_rules_scan_the_committed_history(tmp_path: Path, monkeypatch) -> None:
+    from devguard.sweeps.local_history_secrets import _scan_gitleaks
+
+    monkeypatch.delenv("GITLEAKS_CONFIG", raising=False)
+    monkeypatch.delenv("GITLEAKS_CONFIG_TOML", raising=False)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "--quiet")
+    secret = "bK7xz" * 6
+    (repo / "notes.md").write_text("redis://default:" + secret + "@cache.example.test")
+    _commit_all(repo, "fixture")
+    hits = _scan_gitleaks(repo, 30)
+    assert any(
+        rule == "redis-connection-password" and path == "notes.md" for rule, path, _, _ in hits
+    )
+    assert secret not in repr(hits)

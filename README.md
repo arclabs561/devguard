@@ -34,6 +34,10 @@ For local development:
 pip install -e ".[dev]"
 ```
 
+The history sweep runs locally. With Gitleaks, the bundled default rules also
+detect literal deployment tokens and passwords in Redis connection strings.
+An explicit Gitleaks configuration takes precedence.
+
 ## Usage
 
 Check external tools:
@@ -253,7 +257,7 @@ Sweeps that need external access:
 | `project_flaudit` | LLM-assisted repo audit |
 | `docs_quality` | Vale and readcost findings in README and `docs/` Markdown (advisory; missing tools or timeouts exit 3) |
 | `public_text_leak` | Coordination vocabulary and configured private names in recent public commit messages, PR bodies, and comments |
-| `publish_workflow_audit` | Publish/release workflows: tag push without credentials, MSRV pins missing from publish, semver checks over platform-only features, unpinned action refs. Across all workflows: event-selected checkouts in trusted contexts, contributor text in scripts, dispatch URLs used by credentialed commands, and PR-target jobs with permission to edit PRs that need an authorization review |
+| `publish_workflow_audit` | Publish/release workflows: tag push without credentials, MSRV pins missing from publish, semver checks over platform-only features, unpinned action refs. Across all workflows: event-selected checkouts in trusted contexts, contributor text in scripts, dispatch URLs used by credentialed commands, PR-target jobs with permission to edit PRs that need an authorization review, and security commands whose failure is suppressed |
 | `repo_lint` | Rust workspace hygiene: own-crate pin drift, README version lines, Cargo metadata, CI gaps (off by default, never changes the exit code) |
 
 The missing-pattern check in `gitignore_audit` is a pattern-presence heuristic.

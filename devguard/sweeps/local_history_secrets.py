@@ -138,11 +138,22 @@ def _head_paths(repo: Path, timeout_s: int) -> set[str]:
 def _scan_gitleaks(repo: Path, timeout_s: int) -> list[tuple[str, str, str | None, int | None]]:
     with tempfile.TemporaryDirectory() as tmp:
         report = Path(tmp) / "gitleaks.json"
+        # Honor an explicit policy before applying the packaged defaults.
+        config_args: list[str] = []
+        if not os.environ.get("GITLEAKS_CONFIG") and not os.environ.get("GITLEAKS_CONFIG_TOML"):
+            local_config = repo / ".gitleaks.toml"
+            config = (
+                local_config
+                if local_config.is_file()
+                else Path(__file__).with_name("gitleaks.toml")
+            )
+            config_args = ["--config", str(config.resolve())]
         res = subprocess.run(
             [
                 "gitleaks",
                 "git",
                 str(repo),
+                *config_args,
                 "--no-banner",
                 "--redact",
                 "--log-level",
