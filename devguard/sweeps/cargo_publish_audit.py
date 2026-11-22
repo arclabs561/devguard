@@ -189,8 +189,10 @@ def _check_feature_gated_tests(repo: Path, result: RepoAuditResult) -> None:
             continue
         for candidate in repo.glob(f"{member}/Cargo.toml"):
             if candidate.resolve().is_relative_to(repo.resolve()):
-                rel = candidate.parent.relative_to(repo).as_posix()
-                if not any(fnmatch.fnmatchcase(rel, g) for g in workspace.get("exclude", [])):
+                member_path = candidate.parent.relative_to(repo).as_posix()
+                if not any(
+                    fnmatch.fnmatchcase(member_path, g) for g in workspace.get("exclude", [])
+                ):
                     packages.add(candidate.parent)
 
     for package in sorted(packages):
