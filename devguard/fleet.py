@@ -449,6 +449,10 @@ def _one_finding(sweep: str, raw: Any) -> dict[str, Any]:
         or sweep
     )
     file = raw.get("file") or raw.get("file_path") or raw.get("path") or ""
+    locations = raw.get("files")
+    files = (
+        [p for p in locations if isinstance(p, str) and p] if isinstance(locations, list) else []
+    )
     line = raw.get("line")
     message = raw.get("message") or raw.get("detail") or raw.get("reason") or str(check)
     # A deny-glob or oversized-blob hit carries no severity; treat it as medium.
@@ -457,7 +461,10 @@ def _one_finding(sweep: str, raw: Any) -> dict[str, Any]:
         "sweep": sweep,
         "check": str(check),
         "severity": normalize_severity(raw.get("severity") or raw.get("level") or default),
-        "file": f"{file}:{line}" if file and isinstance(line, int) else str(file),
+        "file": (f"{file}:{line}" if isinstance(line, int) else str(file))
+        if file
+        else next(iter(files), ""),
+        **({"files": files} if files else {}),
         "message": str(message),
     }
 

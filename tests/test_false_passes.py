@@ -13,17 +13,19 @@ def test_known_false_passes_and_controls(tmp_path: Path) -> None:
         "test.sh": "#!/bin/sh\npython3 -m pytest -q || true\n",
         "check.sh": 'n=$(rg -c "sample" missing.rs 2>/dev/null || echo "0")\n',
         "example.sh": "cat <<'EOF'\npython3 -m pytest || true\nEOF\n",
+        "select_backend.py": "if backend == 'disk':\n    return_value = memory()\nelse:\n    return_value = memory()\n",
+        "side_effect.py": "if probe() == 'disk':\n    f()\nelse:\n    f()\n",
+        "stubs.py": "if backend == 'disk':\n    pass\nelse:\n    pass\n",
         "same.py": "if method == 'bca':\n    q = percentile(x)\nelse:\n    q = percentile(x)\n",
         "different.py": "if method == 'bca':\n    q = bca(x)\nelse:\n    q = percentile(x)\n",
     }
     for name, content in samples.items():
         (tmp_path / name).write_text(content)
     assert find_false_passes(tmp_path, list(samples)) == {
-        "aliased_tier_costs": ["cost.ts"],
         "flattened_python": ["broken.py"],
         "masked_test_command": ["test.sh"],
         "masked_search_error": ["check.sh"],
-        "identical_method_branches": ["same.py"],
+        "identical_method_branches": ["select_backend.py", "same.py"],
     }
 
 

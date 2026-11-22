@@ -586,3 +586,11 @@ def test_missing_sweep_or_embedded_error_retries_after_cache_and_live_scan(
     assert partial[0].errors
     assert fl.scan_fleet([ref], sweeps=sweeps)[0].status == "scanned"
     assert fl.scan_fleet([ref], sweeps=sweeps)[0].status == "cached"
+
+
+def test_grouped_findings_preserve_all_source_locations():
+    locations = ["scripts/build.sh:17", "docs/install.md:8"]
+    report = {"repos": [{"findings": [{"check": "hardcoded_absolute_paths", "files": locations}]}]}
+    (finding,) = fl.extract_findings({"repo_hygiene": report})
+    assert finding["file"] == locations[0]
+    assert finding["files"] == locations

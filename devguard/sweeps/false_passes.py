@@ -25,22 +25,13 @@ DESCRIPTIONS = {
     "placeholder_rust_trait": "A public trait describes future behavior and contains only an implementation TODO",
     "fabricated_scan_report": "A failed scanner is replaced with an empty JSON report",
     "masked_search_error": "A count treats search errors (including missing inputs) as zero",
-    "aliased_tier_costs": "Every comparison tier is populated from the same cost variable",
-    "identical_method_branches": "Both paths through an algorithm selector perform the same work",
+    "identical_method_branches": "Both paths through a selector perform the same work",
 }
 
 _PYTHON = re.compile(r"^#![^\n]*?\bpython(?:[23](?:\.\d+)?)?\b")
 _PY_CODE = re.compile(r"\bdef [A-Za-z_]\w*\(|\bif __name__\s*==|\bfrom [\w.]+ import ")
 _COUNT = re.compile(r"""\brg\s+(?:-c|--count)\s+.*?\|\|\s*echo\s+["']?0["']?\s*\)""")
 _HEREDOC = re.compile(r"""<<(-?)[ \t]*(['"]?)([\w.-]+)\2""")
-
-
-# Only flag an explicitly constructed tier comparison. Shared model IDs and
-# equal observed prices are legitimate.
-_ALIASED_COST = re.compile(
-    r"(?m)^\s*(?:const|let)\s+\w+(?:\s*:\s*[\w<>]+)?\s*=\s*"
-    r"\{\s*fast:\s*(\w*[Cc]ost\w*)\s*,\s*balanced:\s*\1\s*,\s*best:\s*\1\s*,?\s*\}"
-)
 
 
 # Require both explicit placeholder docs and an unimplemented body. An empty
@@ -372,7 +363,7 @@ def _python_checks(source: str) -> set[str]:
         return {"flattened_python"}
     if _buried_implementation(source):
         return {"flattened_python"}
-    if "else:" not in source or not any(word in source for word in ("method", "algorithm", "mode")):
+    if "else:" not in source:
         return set()
     try:
         root = ast.parse(source)
@@ -381,8 +372,21 @@ def _python_checks(source: str) -> set[str]:
     for node in ast.walk(root):
         if not isinstance(node, ast.If) or not isinstance(node.test, ast.Compare):
             continue
-        selector = node.test.left
-        if not isinstance(selector, ast.Name) or selector.id not in {"method", "algorithm", "mode"}:
+        # A literal selector has no call in its condition. Its name carries no
+        # information about whether the two arms actually do different work.
+        test = node.test
+        if not (
+            isinstance(test.left, ast.Name)
+            and len(test.ops) == 1
+            and isinstance(test.ops[0], (ast.Eq, ast.NotEq, ast.Is, ast.IsNot))
+            and isinstance(test.comparators[0], ast.Constant)
+        ):
+            continue
+        if all(
+            isinstance(stmt, ast.Pass)
+            or (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant))
+            for stmt in node.body
+        ):
             continue
         if node.orelse and [ast.dump(x) for x in node.body] == [ast.dump(x) for x in node.orelse]:
             return {"identical_method_branches"}
@@ -439,9 +443,6 @@ def find_false_passes(repo: Path, tracked: list[str]) -> dict[str, list[str]]:
                 ".py",
                 ".sh",
                 ".bash",
-                ".ts",
-                ".mjs",
-                ".js",
                 ".rs",
             }
         ) or not contained_file(path, repo):
@@ -463,10 +464,8 @@ def find_false_passes(repo: Path, tracked: list[str]) -> dict[str, list[str]]:
             checks = _pre_commit_checks(source)
         elif path.suffix == ".rs":
             checks = {"placeholder_rust_trait"} if _placeholder_trait(source) else set()
-        elif path.suffix in {".sh", ".bash"}:
+        else:  # shell sources
             checks = _shell_checks(source)
-        else:
-            checks = {"aliased_tier_costs"} if _ALIASED_COST.search(source) else set()
         for check in sorted(checks):
             findings.setdefault(check, []).append(rel)
     return findings

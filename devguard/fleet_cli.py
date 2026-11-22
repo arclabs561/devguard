@@ -188,6 +188,9 @@ def _print_text(
                     f"           {escape(f['message'])}",
                     highlight=False,
                 )
+                for location in f.get("files", []):
+                    if location != f["file"]:
+                        console.print(f"           [dim]{escape(location)}[/dim]", highlight=False)
 
     partial = [r for r in results if r.status == "error" or r.exit_code == 3]
     if partial:
