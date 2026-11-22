@@ -262,3 +262,22 @@ def test_only_runs_disabled_sweep_like_the_precommit_hook(
     payload = json.loads(result.stdout[result.stdout.index("{") :])
     report = payload["local_dirty_worktree_secrets"]
     assert report["summary"]["findings_total"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_service_secrets_in_archived_docs_are_redacted(tmp_path: Path) -> None:
+    docs = tmp_path / "docs/archive"
+    docs.mkdir(parents=True)
+    sample = "MiXeD" + "statement" * 3
+    square = "EAA" + "A" + "aB19" * 15
+    (docs / "setup.md").write_text(
+        f'VERCEL_TOKEN="{sample}"\nKV_REST_API_TOKEN="{sample}"\n'
+        f"redis://default:{sample}@cache.example.test:6379\n{square}\n"
+    )
+    (tmp_path / "example.md").write_text(
+        'VERCEL_TOKEN="${VERCEL_TOKEN}"\nrediss://default:${REDIS_PASSWORD}@cache.example.test'
+    )
+    findings = await SecretChecker(Settings())._scan_with_regex(tmp_path)
+    assert len(findings) == 3
+    assert {v.package_name for v in findings} == {f"{tmp_path.name}/docs/archive/setup.md"}
+    assert all(sample not in v.description and square not in v.description for v in findings)

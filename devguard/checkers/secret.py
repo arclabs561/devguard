@@ -44,6 +44,16 @@ class SecretChecker(BaseChecker):
         (r"xox[baprs]-([0-9a-zA-Z]{10,48})", "Slack Token"),
         (r"\b[sr]k_live_[0-9a-zA-Z]{24,}", "Stripe Secret Key"),
         (r"\bglpat-[A-Za-z0-9_-]{20,}", "GitLab Token"),
+        (r"\bEAAA[A-Za-z0-9_-]{60}\b", "Square Access Token"),
+        (
+            r"""(?i:\b(?:vercel_token|kv_rest_api_token|kv_rest_api_read_only_token))['"]?"""
+            r"""\s*[:=]\s*['"]?(?!your[_-]|example|placeholder|redacted)[a-zA-Z0-9_-]{20,}\b""",
+            "Deployment or KV Token",
+        ),
+        (
+            r"""(?i:\brediss?://)[^\s/@:'"`]*:[^\s/@?#'"`<>${}]{16,}@""",
+            "Redis Connection Password",
+        ),
         (r"\bhf_[A-Za-z]{34}\b", "Hugging Face Token"),
         (r"\bnpm_[A-Za-z0-9]{36}\b", "npm Token"),
         (r"\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9_-]{50,}", "PyPI Token"),
