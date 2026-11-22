@@ -5,6 +5,7 @@ Developer workspace security scanner.
 `devguard` runs local sweeps across repos, dependency manifests, SSH keys,
 credential files, and AI editor configs. It reports findings as text, JSON, or
 SARIF.
+[Import downstream consumer evidence](docs/consumer-results.md).
 
 ```text
 $ devguard sweep --repo . --only local_dev --only gitignore_audit
