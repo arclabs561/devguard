@@ -326,7 +326,18 @@ def _workflow_trust(name: str, doc: Any) -> list[dict[str, Any]]:
         oidc_write = permissions == "write-all" or (
             isinstance(permissions, dict) and permissions.get("id-token") == "write"
         )
-        if "pull_request" in events and oidc_write and _can_run_on_pr(job.get("if")):
+        runs_on_pr = "pull_request" in events and _can_run_on_pr(job.get("if"))
+        if runs_on_pr and "permissions" not in job and "permissions" not in doc:
+            findings.append(
+                _finding(
+                    "implicit_pr_token_permissions",
+                    "warning",
+                    name,
+                    f"job '{job_id}' inherits the repository's default GITHUB_TOKEN permissions "
+                    "on pull requests. Declare the permissions required by this job or workflow.",
+                )
+            )
+        if runs_on_pr and oidc_write:
             findings.append(
                 _finding(
                     "review_pr_oidc_permission",
