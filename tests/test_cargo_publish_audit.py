@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from devguard.sweeps.cargo_publish_audit import _audit_repo
+from devguard.sweeps.cargo_publish_audit import _audit_repo, audit_cargo_publish
 
 CI = """name: ci
 on: [push, pull_request]
@@ -162,3 +162,120 @@ def test_release_lag_counts_code_commits_after_publish(tmp_path: Path) -> None:
 def test_dual_license_files_mark_a_repo_public(tmp_path: Path) -> None:
     # The fixture ships only LICENSE-MIT, the usual Rust layout with LICENSE-APACHE.
     assert _audit_repo(_repo(tmp_path, PKG)).is_public
+
+
+def _workspace(tmp_path: Path, command: str, *, defaults: str = "") -> Path:
+    from textwrap import indent
+
+    repo = _repo(
+        tmp_path,
+        '[workspace]\nmembers = ["lib", "bin"]\n' + defaults,
+        ci=CI + "      - run: |\n" + indent(command, "          ") + "\n",
+    )
+    for name in ("lib", "bin"):
+        (repo / name).mkdir()
+        (repo / name / "Cargo.toml").write_text(f'[package]\nname = "{name}"\nversion = "0.1.0"\n')
+    return repo
+
+
+def test_shared_staging_in_workspace_script_with_unpublished_root(tmp_path: Path) -> None:
+    repo = _workspace(tmp_path, "bash scripts/check.sh")
+    manifest = repo / "Cargo.toml"
+    manifest.write_text(manifest.read_text() + PKG + "publish = false\n")
+    (repo / "scripts").mkdir()
+    script = repo / "scripts/check.sh"
+    script.write_text(
+        "#!/bin/bash\n"
+        'work_dir=$(mktemp -d "${TMPDIR:-/tmp}/publish.XXXXXX")\n'
+        "if cargo publish --workspace --dry-run; then\n"
+        "    echo ok\nfi\n"
+    )
+    hits = [f for f in _audit_repo(repo).findings if f.check == "reused_publish_staging"]
+    assert len(hits) == 1
+    assert "scripts/check.sh, line 3" in hits[0].message
+    assert "ci.yml (job test, step 4)" in hits[0].detail
+    script.write_text(
+        script.read_text().replace("--dry-run;", '--dry-run --target-dir "$work_dir/target";')
+    )
+    assert "reused_publish_staging" not in _checks(repo)
+
+
+def test_implicit_selection_and_option_scope(tmp_path: Path) -> None:
+    repo = _workspace(
+        tmp_path,
+        """
+        echo 'cargo publish --workspace --dry-run'
+        # cargo publish --workspace --dry-run
+        cargo publish --workspace --dry-run --exclude bin
+        cargo publish -p lib --dry-run
+        cargo publish --workspace
+        cargo publish --workspace --dry-run --no-verify
+        cargo publish --dry-run
+        cargo +stable publish --dry-run -p lib -p bin --target-dir=target
+    """,
+    )
+    hits = [f for f in _audit_repo(repo).findings if f.check == "reused_publish_staging"]
+    assert len(hits) == 2
+    (repo / "Cargo.toml").write_text(
+        (repo / "Cargo.toml").read_text() + 'default-members = ["lib"]\n'
+    )
+    assert _checks(repo).count("reused_publish_staging") == 1
+
+
+def test_target_must_be_fresh_for_this_command(tmp_path: Path) -> None:
+    repo = _workspace(
+        tmp_path,
+        """
+        staging=$(mktemp -d)
+        CARGO_TARGET_DIR="$staging" cargo publish --workspace --dry-run
+        CARGO_TARGET_DIR="$staging" cargo publish --workspace --dry-run
+        cargo publish --workspace --dry-run --target-dir "$(mktemp -d)"
+        # The fresh inline assignment above does not persist.
+        cargo publish --workspace --dry-run
+        export CARGO_TARGET_DIR="$(mktemp -d)"
+        cargo publish --workspace --dry-run --target-dir target/shared
+    """,
+    )
+    assert _checks(repo).count("reused_publish_staging") == 3
+
+
+def test_workflow_commands_cannot_follow_scripts_outside_checkout(tmp_path: Path) -> None:
+    repo = _workspace(tmp_path, "./outside.sh")
+    path = tmp_path / "private.sh"
+    path.write_text("cargo publish --workspace --dry-run\n")
+    (repo / "outside.sh").symlink_to(path)
+    assert "reused_publish_staging" not in _checks(repo)
+
+
+def test_fresh_shell_variable_requires_export_for_cargo(tmp_path: Path) -> None:
+    repo = _workspace(
+        tmp_path,
+        """
+        CARGO_TARGET_DIR="$(mktemp -d)"
+        cargo publish --workspace --dry-run
+        export CARGO_TARGET_DIR
+        cargo publish --workspace --dry-run
+        unset CARGO_TARGET_DIR
+        cargo publish --workspace --dry-run
+    """,
+    )
+    assert _checks(repo).count("reused_publish_staging") == 2
+
+
+def test_standard_sweep_reaches_nested_workspace(tmp_path: Path) -> None:
+    repo = _workspace(tmp_path, "cargo publish --dry-run")
+    source = repo / "rust"
+    source.mkdir()
+    for entry in ("Cargo.toml", "lib", "bin"):
+        (repo / entry).rename(source / entry)
+    workflow = repo / ".github/workflows/ci.yml"
+    workflow.write_text(
+        workflow.read_text().replace(
+            "      - run: |", "      - working-directory: rust\n        run: |"
+        )
+    )
+    _git(repo, "add", ".")
+    report, errors = audit_cargo_publish(dev_root=tmp_path)
+    assert not errors
+    assert report["scope"]["staging_only_repos"] == ["crate"]
+    assert [f["check"] for f in report["repos"][0]["findings"]] == ["reused_publish_staging"]
