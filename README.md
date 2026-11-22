@@ -203,6 +203,7 @@ OSV-Scanner offline database cache first. Use `--online-dependencies` to allow
 queries for those packages. `fleet --offline` keeps Git and dependency checks
 offline. A missing database makes coverage incomplete.
 Explicit package roots record SHA-256 input hashes before and after the audit.
+Fleet reruns dependency audits when the advisory database may have changed. An incomplete or truncated report exits 3. An unrated finding also exits 3 when its severity could change the verdict.
 
 ## Configuration
 
@@ -248,7 +249,7 @@ Sweeps that need external access:
 | `dependency_audit` | Known vulnerable dependencies |
 | `ssh_key_audit` | Weak, short, or stale SSH keys |
 | `gitignore_audit` | Missing `.gitignore` files and missing language ignore patterns |
-| `repo_hygiene` | Public-text leak patterns plus structural hygiene: scattered doc dirs, committed generated data, hardcoded absolute paths in shell scripts, large blobs and build artifacts in history, declaration-only `[workspace.dependencies]` keys, path deps outside the repo, files referenced by build scripts and manifests that git does not track, crate-level `#![cfg(all(...))]` test gates, bare `#[ignore]` with no reason, a `cargo --features` argument naming a feature no manifest defines, test/example targets that use a feature-gated module without a gate or `required-features`, README install pins that disagree with the manifest version, stale `.gitkeep`, tracked editor/cache dirs, internal docs in public repos, tracked-but-ignored files, stray backups and OS junk. See `devguard/sweeps/repo_hygiene.py` for the full list |
+| `repo_hygiene` | Public-text leak patterns plus structural hygiene: scattered doc dirs, committed generated data, hardcoded absolute paths in shell scripts, large blobs and build artifacts in history, declaration-only `[workspace.dependencies]` keys, path deps outside the repo, files referenced by build scripts and manifests that git does not track, crate-level `#![cfg(all(...))]` test gates, bare `#[ignore]` with no reason, a `cargo --features` argument naming a feature no manifest defines, test/example targets that use a feature-gated module without a gate or `required-features`, README install pins that disagree with the manifest version, stale `.gitkeep`, tracked editor/cache dirs, internal docs in public repos, tracked-but-ignored files, stray backups and OS junk. Flags swallowed Python bodies, test assertions that a broad handler suppresses or skips, always-true disjunctions in tests, conflicting subprocess capture options, missing literal scripts invoked from root justfiles, masked test commands in shell scripts and local pre-commit hooks, masked search errors, fabricated empty scanner reports, identical selector branches, copied cost tiers, explicitly unfinished public Rust traits, and tests which explicitly exercise only a local copy of production logic. See `devguard/sweeps/repo_hygiene.py` for the full list |
 | `git_identity_audit` | Git author emails in config, env, and history: forbidden domains, an `allowed_emails` list, or, with no policy, likely employer addresses under your own name |
 | `ai_editor_config_audit` | Cursor and Claude config consistency |
 | `cargo_publish_audit` | Rust crate publish metadata and CI blockers |

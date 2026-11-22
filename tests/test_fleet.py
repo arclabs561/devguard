@@ -534,6 +534,9 @@ def test_dependency_gate_observes_advisories_and_tool_errors_on_same_commit(tmp_
     import os
 
     origin = _make_origin(tmp_path, "app", {"package-lock.json": "{}"})
+    nested = origin / "worker"
+    nested.mkdir()
+    (nested / "package-lock.json").write_text("{}")
     tools = tmp_path / "bin"
     tools.mkdir()
     npm = tools / "npm"
@@ -551,7 +554,7 @@ def test_dependency_gate_observes_advisories_and_tool_errors_on_same_commit(tmp_
     assert "dependency_audit" in fl.REPO_SCOPED_SWEEPS
     for raw, tool_exit, expected, count in [
         ({"vulnerabilities": {}}, 0, 0, 0),
-        ({"vulnerabilities": {"demo": {"severity": "high", "via": [{"title": "test"}]}}}, 1, 2, 1),
+        ({"vulnerabilities": {"demo": {"severity": "high", "via": [{"title": "test"}]}}}, 1, 2, 2),
         ({"error": "unavailable"}, 1, 3, 0),
     ]:
         npm.write_text(
@@ -560,7 +563,10 @@ def test_dependency_gate_observes_advisories_and_tool_errors_on_same_commit(tmp_
         npm.chmod(0o755)
         result = cli.invoke(app, args)
         assert result.exit_code == expected, result.output
-        assert json.loads(result.stdout)["summary"]["findings"]["high"] == count
+        report = json.loads(result.stdout)
+        assert report["summary"]["findings"]["high"] == count
+        if count:
+            assert [f["file"] for f in report["repos"][0]["findings"]] == [str(origin), str(nested)]
 
     no_inputs = _make_origin(tmp_path, "docs", {"README.md": "docs"})
     result = cli.invoke(
@@ -581,3 +587,69 @@ def test_dependency_gate_observes_advisories_and_tool_errors_on_same_commit(tmp_
         app, ["fleet", str(origin), "--only", "dependency_audit", "--format", "json"]
     )
     assert result.exit_code == 0, result.output
+
+
+def test_dependency_threshold_uses_advisories_and_unknown_coverage(tmp_path, monkeypatch):
+    repo = _make_origin(tmp_path, "example", {"README.md": "fixture\n"})
+    ref = fl.parse_target(str(repo))
+    sweeps = ["dependency_audit"]
+    advisory = {"id": "TEST-1", "severity": "high", "package": "fixture", "title": "upgrade"}
+    row = {"repo_path": ".", "status": "complete", "vulns": [advisory]}
+    report = {"dependency_audit": {"repos": [row], "errors": []}}
+    monkeypatch.setattr(fl, "run_sweeps", lambda *_, **kw: (2, report, ""))
+    result = fl.scan_fleet([ref], sweeps=sweeps)
+    assert result[0].status == "scanned"
+    assert [f["check"] for f in result[0].findings] == ["TEST-1"]
+    assert fl.fleet_exit_code(result, "high") == 2
+    assert fl.fleet_exit_code(result, "critical") == 0
+    # A new advisory rating must take effect at the same repository revision.
+    advisory["severity"] = "unknown"
+    unrated = fl.scan_fleet([ref], sweeps=sweeps)
+    assert unrated[0].counts["unknown"] == 1
+    assert fl.fleet_exit_code(unrated, "high") == 3
+    assert fl.fleet_exit_code(unrated, "info") == 2
+    assert fl.fleet_exit_code(unrated, "never") == 0
+    row["status"] = "unknown"
+    partial = fl.scan_fleet([ref], sweeps=sweeps, use_cache=False)
+    assert partial[0].findings
+    assert fl.fleet_exit_code(partial, "never") == 3
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"repo_hygiene": {"findings": []}},
+        {"repo_hygiene": {"findings": []}, "pre_commit_audit": None},
+        {"repo_hygiene": {"errors": ["interrupted"]}, "pre_commit_audit": {"repos": []}},
+    ],
+)
+def test_missing_sweep_or_embedded_error_retries_after_cache_and_live_scan(
+    tmp_path, monkeypatch, bad
+):
+    repo = _make_origin(tmp_path, "example", {"README.md": "fixture\n"})
+    ref = fl.parse_target(str(repo))
+    sweeps = ["repo_hygiene", "pre_commit_audit"]
+    key = fl.result_key(
+        head=_git(repo, "rev-parse", "HEAD"),
+        sweeps=sweeps,
+        spec_path=None,
+        full_history=False,
+        name=ref.identity,
+    )
+    fl._write_cached_result(fl.cache_root(), key, {"exit_code": 0, "reports": bad})
+    good = {name: {"repos": []} for name in sweeps}
+    runs = iter([(0, bad, ""), (0, good, "")])
+    monkeypatch.setattr(fl, "run_sweeps", lambda *_: next(runs))
+    partial = fl.scan_fleet([ref], sweeps=sweeps)
+    assert fl.fleet_exit_code(partial, "never") == 3
+    assert partial[0].errors
+    assert fl.scan_fleet([ref], sweeps=sweeps)[0].status == "scanned"
+    assert fl.scan_fleet([ref], sweeps=sweeps)[0].status == "cached"
+
+
+def test_grouped_findings_preserve_all_source_locations():
+    locations = ["scripts/build.sh:17", "docs/install.md:8"]
+    report = {"repos": [{"findings": [{"check": "hardcoded_absolute_paths", "files": locations}]}]}
+    (finding,) = fl.extract_findings({"repo_hygiene": report})
+    assert finding["file"] == locations[0]
+    assert finding["files"] == locations

@@ -1327,13 +1327,13 @@ def _sweep_body(
                 "Invalid sweep spec: validation error at " + ", ".join(fields),
                 markup=False,
             )
-            raise typer.Exit(code=2) from None
+            raise typer.Exit(code=3) from None
         except (yaml.YAMLError, UnicodeError, AttributeError, TypeError):
             stderr_console.print("Invalid sweep spec: parse error", markup=False)
-            raise typer.Exit(code=2) from None
+            raise typer.Exit(code=3) from None
         except OSError:
             stderr_console.print("Invalid sweep spec: file read error", markup=False)
-            raise typer.Exit(code=2) from None
+            raise typer.Exit(code=3) from None
 
     exit_code = 0
 
@@ -1677,7 +1677,7 @@ def _sweep_body(
     # dependency audit sweep
     depaudit = spec.sweeps.dependency_audit
     if (depaudit.enabled and not wanted) or "dependency_audit" in wanted:
-        from devguard.sweeps.dependency_audit import audit_dependencies
+        from devguard.sweeps.dependency_audit import audit_dependencies, coverage_gaps
         from devguard.sweeps.dependency_audit import write_report as write_depaudit
 
         root = _resolve_root(depaudit.dev_root)
@@ -1710,7 +1710,7 @@ def _sweep_body(
             if errors:
                 console.print(f"[yellow]Errors:[/yellow] {len(errors)} (see report)")
             _print_dependency_audit_table(report)
-        if errors:
+        if errors or coverage_gaps(report):
             exit_code = max(exit_code, 3)
         elif report["summary"]["total_vulns"] > 0:
             exit_code = max(exit_code, 2)

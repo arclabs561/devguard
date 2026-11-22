@@ -188,6 +188,9 @@ def _print_text(
                     f"           {escape(f['message'])}",
                     highlight=False,
                 )
+                for location in f.get("files", []):
+                    if location != f["file"]:
+                        console.print(f"           [dim]{escape(location)}[/dim]", highlight=False)
 
     partial = [r for r in results if r.status == "error" or r.exit_code == 3]
     if partial:
@@ -299,11 +302,11 @@ def fleet(
     err = Console(stderr=True)
     if format not in ("text", "json"):
         raise typer.BadParameter("expected text or json", param_hint="--format")
-    if details != "none" and details not in fl.SEVERITIES:
+    if details != "none" and details not in fl.THRESHOLDS:
         raise typer.BadParameter("expected a severity or none", param_hint="--details")
-    if min_severity not in fl.SEVERITIES:
+    if min_severity not in fl.THRESHOLDS:
         raise typer.BadParameter("expected a severity", param_hint="--min-severity")
-    if fail_on != "never" and fail_on not in fl.SEVERITIES:
+    if fail_on != "never" and fail_on not in fl.THRESHOLDS:
         raise typer.BadParameter("expected a severity or never", param_hint="--fail-on")
     if visibility and visibility.lower() not in ("public", "private", "internal"):
         raise typer.BadParameter("expected public or private", param_hint="--visibility")
@@ -415,6 +418,8 @@ def fleet(
             err.print(f"JSON report: {output}", highlight=False)
 
     code = fl.fleet_exit_code(results, fail_on)
+    if code == 3 and any(r.counts["unknown"] for r in results) and fail_on != "never":
+        err.print("Unrated findings may meet the selected severity threshold.", markup=False)
     if code:
         raise typer.Exit(code=code)
 

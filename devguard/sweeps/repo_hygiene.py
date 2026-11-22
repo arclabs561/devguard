@@ -28,6 +28,7 @@ from dotenv import dotenv_values
 from devguard.sweeps._common import contained_file, iter_git_repos
 from devguard.sweeps._common import default_dev_root as _default_dev_root
 from devguard.sweeps._common import utc_now as _utc_now
+from devguard.sweeps.false_passes import DESCRIPTIONS, find_false_passes
 
 # ---------------------------------------------------------------------------
 # Dataclasses
@@ -246,8 +247,8 @@ def _check_hardcoded_paths(repo: Path, tracked: list[str]) -> HygieneFinding | N
         check="hardcoded_absolute_paths",
         severity="medium",
         message=(
-            f"Personal home-directory path in {len(hits)} tracked file(s) -- it leaks a "
-            "user name and breaks on other machines."
+            f"Home-directory path in {len(hits)} tracked file(s). Check whether the path is "
+            "specific to a developer machine or intentional in this context."
         ),
         files=hits,
     )
@@ -1112,6 +1113,8 @@ def _allow_ranges(text: str) -> dict[str, list[tuple[int, int]]]:
 
 def _allowed(ranges: dict[str, list[tuple[int, int]]], check: str, lineno: int) -> bool:
     return any(start <= lineno <= end for start, end in ranges.get(check, ()))
+
+
 # A feature value that means "whatever the manifest defaults to", not a name.
 _FEATURE_VALUE_SKIP: frozenset[str] = frozenset({"default"})
 _CARGO_FEATURES_RE = re.compile(
@@ -1178,7 +1181,9 @@ def _cargo_packages(repo: Path) -> list[_CargoPackage]:
                     features.add(dep)
         defaults = declared.get("default")
         enabled: set[str] = set()
-        pending = [v for v in (defaults if isinstance(defaults, list) else []) if isinstance(v, str)]
+        pending = [
+            v for v in (defaults if isinstance(defaults, list) else []) if isinstance(v, str)
+        ]
         while pending:
             item = pending.pop()
             if "/" in item or item.startswith("dep:") or item in enabled:
@@ -1954,6 +1959,15 @@ def sweep_repo_hygiene(
             if finding is not None:
                 result.findings.append(finding)
                 total_findings += 1
+
+        try:
+            for check, files in find_false_passes(repo, tracked).items():
+                result.findings.append(
+                    HygieneFinding(str(repo), check, "medium", DESCRIPTIONS[check], files)
+                )
+                total_findings += 1
+        except OSError as exc:
+            errors.append(f"{repo}: false-pass scan failed: {exc}")
 
         results.append(result)
 

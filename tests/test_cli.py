@@ -394,7 +394,7 @@ def test_invalid_sweep_spec_is_redacted_before_scanning(
         result = runner.invoke(
             app, ["sweep", "--spec", str(spec), "--only", "dependency_audit", "--format", format]
         )
-    assert result.exit_code == 2
+    assert result.exit_code == 3
     assert category in result.stderr
     assert "DUMMY_SECRET_MUST_NOT_LEAK" not in result.output + result.stderr
     assert "Traceback" not in result.output + result.stderr
