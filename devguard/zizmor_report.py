@@ -76,11 +76,15 @@ def summarize_zizmor(
             for invocation in invocations:
                 if invocation.get("executionSuccessful") is not True:
                     issues.append("analyzer invocation incomplete")
-                if any(
-                    note.get("level") in ("warning", "error")
-                    for note in invocation.get("toolExecutionNotifications", [])
+                for field, category in (
+                    ("toolExecutionNotifications", "execution"),
+                    ("toolConfigurationNotifications", "configuration"),
                 ):
-                    issues.append("analyzer reported execution warnings or errors")
+                    if any(
+                        note.get("level", "warning") in ("warning", "error")
+                        for note in invocation.get(field, [])
+                    ):
+                        issues.append(f"analyzer reported {category} warnings or errors")
             results = run["results"]
             if not isinstance(results, list):
                 raise ValueError("invalid SARIF results")

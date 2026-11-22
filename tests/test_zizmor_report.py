@@ -86,3 +86,19 @@ def test_oversized_artifact_is_explicit(tmp_path, monkeypatch):
     path.write_bytes(b"four")
     report = summarize_zizmor(path)
     assert report["status"] == "too_large" and report["max_bytes"] == 3
+
+
+@pytest.mark.parametrize("field", ["toolConfigurationNotifications", "toolExecutionNotifications"])
+def test_clean_run_never_clears_another_runs_notification(tmp_path, run, field):
+    path = tmp_path / "report"
+    run["results"] = []
+    invocation = {"executionSuccessful": True, field: [{"message": {"text": "Check unavailable"}}]}
+    degraded = {**run, "invocations": [invocation]}
+    path.write_text(json.dumps({"version": "2.1.0", "runs": [degraded, run]}))
+    app = Typer()
+    app.command()(zizmor_report)
+    result = CliRunner().invoke(app, [str(path), "--scanned-files", "2", "--exit-code", "0"])
+    assert result.exit_code == 3
+    report = json.loads(result.output)
+    assert report["status"] == "partial" and report["findings_total"] == 0
+    assert any("warnings or errors" in issue for issue in report["issues"])
