@@ -689,6 +689,8 @@ def test_scoped_cargo_release_evidence_invalidates_cached_results(monkeypatch) -
     unrelated = fl.result_key(sweeps=["repo_lint"], **inputs)
     # Actual main-branch key for these inputs before release evidence was scoped.
     assert cargo != "5586b772eb49d287b77c53f950b1aec15b4189fd0c14f1d0ac128be3f4480a0a"
-    monkeypatch.setattr(fl, "_CARGO_RELEASE_EVIDENCE_VERSION", 2)
+    monkeypatch.setattr(
+        fl, "_CARGO_RELEASE_EVIDENCE_VERSION", fl._CARGO_RELEASE_EVIDENCE_VERSION + 1
+    )
     assert cargo != fl.result_key(sweeps=["cargo_publish_audit"], **inputs)
     assert unrelated == fl.result_key(sweeps=["repo_lint"], **inputs)

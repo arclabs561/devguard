@@ -406,7 +406,7 @@ def _worktree_dirty(path: Path) -> bool:
 # ---------------------------------------------------------------------------
 
 
-_CARGO_RELEASE_EVIDENCE_VERSION = 1
+_CARGO_RELEASE_EVIDENCE_VERSION = 2
 
 
 def result_key(

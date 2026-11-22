@@ -190,6 +190,7 @@ def test_shared_staging_in_workspace_script_with_unpublished_root(tmp_path: Path
         "if cargo publish --workspace --dry-run; then\n"
         "    echo ok\nfi\n"
     )
+    _git(repo, "add", "scripts/check.sh")
     hits = [f for f in _audit_repo(repo).findings if f.check == "reused_publish_staging"]
     assert len(hits) == 1
     assert "scripts/check.sh, line 3" in hits[0].message
@@ -387,6 +388,7 @@ jobs:
     (repo / ".github/workflows/ci.yml").write_text(CI + "      - run: bash scripts/package.sh\n")
     (repo / "scripts").mkdir()
     (repo / "scripts/package.sh").write_text("cargo +stable publish --locked --dry-run\n")
+    _git(repo, "add", "scripts/package.sh")
     assert not flags.intersection(_checks(repo))
 
     release.write_text(
@@ -415,7 +417,7 @@ jobs:
       - uses: example/cargo-publish-action@v1
 """
     )
-    assert flags.intersection(_checks(repo)) == flags
+    assert {"no_oidc", "unresolved_dry_run_coverage"} <= set(_checks(repo))
 
 
 def test_dry_run_covers_each_published_package(tmp_path: Path) -> None:
@@ -467,3 +469,55 @@ def test_implicit_workspace_members_and_default_selection(tmp_path: Path) -> Non
     assert "no_dry_run" not in _checks(repo)
     ci.write_text(ci.read_text().replace("lib/src", "lib/absent"))
     assert "no_dry_run" in _checks(repo)
+
+
+def test_tracked_script_verification_is_reported_when_release_selectors_are_unknown(tmp_path):
+    repo = _workspace(tmp_path, "bash scripts/verify.sh 2>&1 | tee verify.log")
+    scripts = repo / "scripts"
+    scripts.mkdir()
+    (scripts / "verify.sh").write_text(
+        "#!/bin/bash\nset -eu\nif cargo publish --workspace --exclude bin --dry-run; then\n"
+        "  echo verified\nelse\n  exit 1\nfi\n"
+    )
+    (scripts / "publish.sh").write_text('cargo publish -p "$1"\n')
+    ci = repo / ".github/workflows/ci.yml"
+    ci.write_text(ci.read_text() + "      - run: bash scripts/publish.sh lib\n")
+    _git(repo, "add", "scripts")
+    findings = _audit_repo(repo).findings
+    (hit,) = [f for f in findings if f.check == "unresolved_dry_run_coverage"]
+    assert hit.severity == "warning"
+    assert "scripts/verify.sh:3" in hit.detail and "lib/Cargo.toml" in hit.detail
+    assert "step 4" in hit.detail and "step 5" in hit.detail and "bin/Cargo.toml" not in hit.detail
+    assert "no_dry_run" not in {f.check for f in findings}
+
+
+def test_local_script_coverage_distinguishes_uncertainty_and_missing_targets(tmp_path):
+    repo = _workspace(tmp_path, "bash verify.sh")
+    ci = repo / ".github/workflows/ci.yml"
+    ci.write_text(ci.read_text() + "      - run: cargo publish -p lib\n")
+    script = repo / "verify.sh"
+    script.write_text("cargo publish -p lib --dry-run\n")
+    assert "no_dry_run" in _checks(repo)  # untracked files are absent in CI
+    _git(repo, "add", "verify.sh")
+    flags = {"no_dry_run", "unresolved_dry_run_coverage"}
+    assert not flags.intersection(_checks(repo))
+    original_ci = ci.read_text()
+    ci.write_text(original_ci.replace("      - run: |", "      - if: false\n        run: |"))
+    assert flags.intersection(_checks(repo)) == {"unresolved_dry_run_coverage"}
+    ci.write_text(original_ci)
+    for body in (
+        "exit 0\ncargo publish -p lib --dry-run\n",
+        'cargo publish -p lib --dry-run "$EXTRA"\n',
+        "cargo publish -p lib --dry-run --config alternate.toml\n",
+    ):
+        script.write_text(body)
+        assert flags.intersection(_checks(repo)) == {"unresolved_dry_run_coverage"}
+    for body in (
+        "cargo publish -p bin --dry-run\n",
+        "cargo publish -p lib --dry-run --no-verify\n",
+        "echo 'cargo publish -p lib --dry-run'\n",
+        "cat <<EOF\ncargo publish -p lib --dry-run\nEOF\n",
+        "cd missing\ncargo publish -p lib --dry-run\n",
+    ):
+        script.write_text(body)
+        assert flags.intersection(_checks(repo)) == {"no_dry_run"}
