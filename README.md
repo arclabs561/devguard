@@ -187,7 +187,11 @@ its consumer can have a different lockfile. For a public crate, run
 `devguard audit-crate NAME VERSION` to audit the lockfile in that exact release.
 The command verifies the archive against the crates.io index, reports the archive
 and lockfile hashes, and runs OSV-Scanner on the packaged lockfile. Audit tools may contact their
-advisory services. Fleet's `--offline` option controls Git fetching only.
+advisory services. Fleet uses local OSV databases for private repositories
+and repositories with unknown visibility, including local paths. Populate the
+OSV-Scanner offline database cache first. Use `--online-dependencies` to allow
+queries for those packages. `fleet --offline` keeps Git and dependency checks
+offline. A missing database makes coverage incomplete.
 Explicit package roots record SHA-256 input hashes before and after the audit.
 
 ## Configuration

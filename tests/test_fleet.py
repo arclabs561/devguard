@@ -539,7 +539,15 @@ def test_dependency_gate_observes_advisories_and_tool_errors_on_same_commit(tmp_
     npm = tools / "npm"
     monkeypatch.setenv("PATH", str(tools) + os.pathsep + os.environ["PATH"])
     cli = CliRunner()
-    args = ["fleet", str(origin), "--only", "dependency_audit", "--format", "json"]
+    args = [
+        "fleet",
+        str(origin),
+        "--only",
+        "dependency_audit",
+        "--online-dependencies",
+        "--format",
+        "json",
+    ]
     assert "dependency_audit" in fl.REPO_SCOPED_SWEEPS
     for raw, tool_exit, expected, count in [
         ({"vulnerabilities": {}}, 0, 0, 0),
@@ -562,3 +570,14 @@ def test_dependency_gate_observes_advisories_and_tool_errors_on_same_commit(tmp_
     assert result.exit_code == 0
     assert summary["not_applicable"] == 1
     assert summary["clean"] == 0
+
+    osv = tools / "osv-scanner"
+    osv.write_text(
+        '#!/bin/sh\ncase " $* " in *" --offline "*) ;; *) exit 8 ;; esac\necho \'{"results":[]}\'\n'
+    )
+    osv.chmod(0o755)
+    npm.write_text("#!/bin/sh\nexit 9\n")
+    result = cli.invoke(
+        app, ["fleet", str(origin), "--only", "dependency_audit", "--format", "json"]
+    )
+    assert result.exit_code == 0, result.output

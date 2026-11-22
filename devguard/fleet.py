@@ -526,10 +526,17 @@ def _report_errors(reports: dict[str, Any]) -> list[str]:
 
 
 def run_sweeps(
-    path: Path, sweeps: list[str], spec_path: Path | None, timeout: int
+    path: Path,
+    sweeps: list[str],
+    spec_path: Path | None,
+    timeout: int,
+    *,
+    offline_dependencies: bool = False,
 ) -> tuple[int, dict[str, Any], str]:
     """Run `devguard sweep --repo path` in a child process. Returns (exit, reports, error)."""
     cmd = [sys.executable, "-m", "devguard", "sweep", "--repo", str(path), "--format", "json"]
+    if offline_dependencies:
+        cmd.append("--offline-dependencies")
     for name in sweeps:
         cmd += ["--only", name]
     if spec_path is not None and spec_path.is_file():
@@ -558,6 +565,7 @@ def scan_one(
     spec_path: Path | None,
     root: Path,
     use_cache: bool = True,
+    online_dependencies: bool = False,
     refresh: bool = True,
     full_history: bool = False,
     timeout: int = 900,
@@ -601,7 +609,16 @@ def scan_one(
             reports=reports,
         )
 
-    code, reports, error = run_sweeps(path, sweeps, spec_path, timeout)
+    offline_dependencies = "dependency_audit" in sweeps and (
+        not refresh or (ref.visibility.upper() != "PUBLIC" and not online_dependencies)
+    )
+    code, reports, error = run_sweeps(
+        path,
+        sweeps,
+        spec_path,
+        timeout,
+        **({"offline_dependencies": True} if offline_dependencies else {}),
+    )
     if error:
         return result("error", 3, head, errors=[error])
     if cacheable and code in (0, 2):
@@ -629,6 +646,7 @@ def scan_fleet(
     root: Path | None = None,
     jobs: int = 4,
     use_cache: bool = True,
+    online_dependencies: bool = False,
     refresh: bool = True,
     full_history: bool = False,
     timeout: int = 900,
@@ -646,6 +664,7 @@ def scan_fleet(
                 spec_path=spec_path,
                 root=root,
                 use_cache=use_cache,
+                online_dependencies=online_dependencies,
                 refresh=refresh,
                 full_history=full_history,
                 timeout=timeout,

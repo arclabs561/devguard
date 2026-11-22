@@ -411,6 +411,7 @@ def _audit_repo(
     timeout_s: int,
     explicit: bool = False,
     release_lock: bool = False,
+    offline: bool = False,
 ) -> RepoAuditResult:
     """Run applicable audit tools on a single repo."""
     detected = [DetectedEngine("rust", "osv-scanner")] if release_lock else detect_engines(repo)
@@ -422,6 +423,14 @@ def _audit_repo(
     engine_errors: list[str] = []
 
     present = {name for name in _INPUT_FILES if (repo / name).is_file()}
+    if offline and detected:
+        detected = [DetectedEngine("lockfile", "osv-scanner")]
+        if "requirements.txt" in present:
+            # A requirements file may contain ranges or references to other files.
+            # Only pip-audit currently validates the complete pinned export.
+            engine_errors.append(
+                "requirements.txt: offline coverage requires a resolved Python lockfile; review the requirements export separately"
+            )
     for name, language in [
         ("Cargo.toml", "rust"),
         ("go.sum", "go"),
@@ -446,9 +455,15 @@ def _audit_repo(
         argv, which_bin = cmd_spec
         if det.engine == "osv-scanner":
             argv = [*argv, "--lockfile", "Cargo.lock"] if release_lock else list(argv)
+            if offline:
+                argv.append("--offline")
             for filename, _, engine in _MANIFEST_MAP:
-                if engine == det.engine and (repo / filename).is_file():
+                supported = engine == det.engine or (offline and filename != "requirements.txt")
+                if supported and (repo / filename).is_file():
                     argv.extend(["--lockfile", filename])
+            if "--lockfile" not in argv:
+                result.skipped_engines.append(det.engine)
+                continue
         if det.engine == "npm-audit":
             argv = ["npm", "--prefix", str(repo), "audit", "--json", "--ignore-scripts"]
 
@@ -547,6 +562,7 @@ def audit_dependencies(
     max_concurrency: int = 4,
     timeout_s: int = 120,
     package_roots: list[str] | None = None,
+    offline: bool = False,
 ) -> tuple[dict[str, Any], list[str]]:
     """Audit dependencies across local repos for known vulnerabilities.
 
@@ -614,6 +630,14 @@ def audit_dependencies(
 
     def _run(repo: Path) -> RepoAuditResult:
         try:
+            if offline:
+                return _audit_repo(
+                    repo,
+                    engines=all_engines,
+                    timeout_s=timeout_s,
+                    explicit=package_roots is not None,
+                    offline=True,
+                )
             if package_roots is not None:
                 return _audit_repo(repo, engines=all_engines, timeout_s=timeout_s, explicit=True)
             return _audit_repo(repo, engines=all_engines, timeout_s=timeout_s)
@@ -652,6 +676,7 @@ def audit_dependencies(
             "dev_root": str(root),
             "repos_scanned": repo_count,
             "package_roots_discovered": len(repos),
+            "offline": offline,
             "repositories_without_auditable_inputs": without_inputs,
             "max_depth": max_depth,
             "exclude_repo_globs": globs,
