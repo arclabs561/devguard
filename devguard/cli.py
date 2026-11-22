@@ -21,6 +21,7 @@ from devguard.fleet_cli import cache as cache_command
 from devguard.fleet_cli import fleet
 from devguard.github_ci import github_ci
 from devguard.opengrep_report import opengrep_report
+from devguard.zizmor_report import zizmor_report
 
 app = typer.Typer(help="devguard - Security and hygiene scanning for developer workstations")
 app.command("consumer-results")(consumer_results)
@@ -29,6 +30,7 @@ app.command("github-ci")(github_ci)
 app.command("fleet")(fleet)
 app.command("cache")(cache_command)
 app.command("opengrep-report")(opengrep_report)
+app.command("zizmor-report")(zizmor_report)
 console = Console()
 
 _MAX_TABLE_ROWS = 15
