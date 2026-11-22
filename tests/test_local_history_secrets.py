@@ -239,10 +239,17 @@ def test_packaged_gitleaks_rules_scan_the_committed_history(tmp_path: Path, monk
     (repo / "config.yaml").write_text(f"client:\n  secret: {hex_value}\n")
     secret = "bK7xz" * 6
     (repo / "notes.md").write_text("redis://default:" + secret + "@cache.example.test")
+    (repo / "empty.env").write_text("VERCEL_TOKEN=\nVERCEL_PROJECTS_TO_MONITOR=\n")
+    (repo / "populated.env").write_text(f"VERCEL_TOKEN= {secret}\n")
+    (repo / "multiline.json").write_text(f'{{"kv_rest_api_token":\n  "{secret}"}}\n')
     _commit_all(repo, "fixture")
     hits = _scan_gitleaks(repo, 30)
     assert any(
         rule == "redis-connection-password" and path == "notes.md" for rule, path, _, _ in hits
     )
     assert any(rule == "hex-client-secret" and path == "config.yaml" for rule, path, _, _ in hits)
+    assert {path for rule, path, _, _ in hits if rule == "deployment-or-kv-token"} == {
+        "populated.env",
+        "multiline.json",
+    }
     assert secret not in repr(hits) and hex_value not in repr(hits)
