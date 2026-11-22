@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from devguard.sweeps._cargo_staging import staging_risks
+from devguard.sweeps._common import LICENSE_FILES
 from devguard.sweeps._common import default_dev_root as _default_dev_root
 from devguard.sweeps._common import utc_now as _utc_now
 
@@ -75,16 +76,6 @@ def _iter_rust_repos(root: Path, max_depth: int, exclude_globs: list[str]) -> li
         except Exception:
             continue
     return sorted(repos)
-
-
-LICENSE_FILES = (
-    "LICENSE",
-    "LICENSE.md",
-    "LICENSE.txt",
-    "LICENSE-MIT",
-    "LICENSE-APACHE",
-    "LICENCE",
-)
 
 
 def _is_likely_public(repo: Path) -> bool:
@@ -173,6 +164,7 @@ class Finding:
     severity: str  # "error", "warning", "info"
     message: str
     detail: str = ""
+    file: str = ""
 
 
 @dataclass
@@ -187,116 +179,77 @@ class RepoAuditResult:
     findings: list[Finding] = field(default_factory=list)
 
 
-def _read_features(repo: Path) -> set[str]:
-    """Extract feature names from Cargo.toml [features] section."""
-    cargo_toml = repo / "Cargo.toml"
-    if not cargo_toml.is_file():
-        return set()
-    try:
-        text = cargo_toml.read_text(encoding="utf-8", errors="replace")
-        feat_section = re.search(r"^\[features\](.*?)(?=^\[|\Z)", text, re.MULTILINE | re.DOTALL)
-        if not feat_section:
-            return set()
-        features = set()
-        for m in re.finditer(r"^(\w[\w-]*)\s*=", feat_section.group(1), re.MULTILINE):
-            features.add(m.group(1))
-        return features
-    except Exception:
-        return set()
-
-
 def _check_feature_gated_tests(repo: Path, result: RepoAuditResult) -> None:
-    """Flag integration tests that import feature-gated modules without a #![cfg] gate.
+    """Report feature references for verification against the package's test configurations."""
+    root = _read_manifest(repo) or {}
+    packages = {repo}
+    workspace = root.get("workspace", {})
+    for member in workspace.get("members", []):
+        if not isinstance(member, str) or Path(member).is_absolute() or ".." in Path(member).parts:
+            continue
+        for candidate in repo.glob(f"{member}/Cargo.toml"):
+            if candidate.resolve().is_relative_to(repo.resolve()):
+                rel = candidate.parent.relative_to(repo).as_posix()
+                if not any(fnmatch.fnmatchcase(rel, g) for g in workspace.get("exclude", [])):
+                    packages.add(candidate.parent)
 
-    Pattern: a test file uses `use crate_name::feature_module::` but doesn't have
-    `#![cfg(feature = "...")]` at the top. This causes compilation failures when
-    running `cargo test` without that feature enabled.
-    """
-    features = _read_features(repo)
-    if not features:
-        return
+    for package in sorted(packages):
+        manifest = root if package == repo else _read_manifest(package) or {}
+        package_info = manifest.get("package", {})
+        name = package_info.get("name")
+        if not name:
+            continue
+        crate = manifest.get("lib", {}).get("name") or name.replace("-", "_")
+        features = manifest.get("features", {}).keys()
+        if not features:
+            continue
 
-    # Find crate name from Cargo.toml
-    cargo_toml = repo / "Cargo.toml"
-    try:
-        text = cargo_toml.read_text(encoding="utf-8", errors="replace")
-        name_match = re.search(
-            r'^\[package\].*?^name\s*=\s*"([^"]+)"', text, re.MULTILINE | re.DOTALL
-        )
-        if not name_match:
-            return
-        crate_name = name_match.group(1).replace("-", "_")
-    except Exception:
-        return
+        targets = {
+            Path(target.get("path", f"tests/{target['name']}.rs")): target
+            for target in manifest.get("test", [])
+            if isinstance(target, dict) and target.get("name")
+        }
+        if package_info.get("autotests", True):
+            for path in (package / "tests").glob("*.rs"):
+                targets.setdefault(path.relative_to(package), {"name": path.stem})
 
-    # Scan tests/ and also workspace member tests/
-    test_dirs = [repo / "tests"]
-    # Check workspace members
-    members_match = re.search(
-        r"^\[workspace\].*?members\s*=\s*\[(.*?)\]", text, re.MULTILINE | re.DOTALL
-    )
-    if members_match:
-        for m in re.finditer(r'"([^"]+)"', members_match.group(1)):
-            member_path = repo / m.group(1)
-            test_dirs.append(member_path / "tests")
-            # Also read that member's features and crate name
-            member_toml = member_path / "Cargo.toml"
-            if member_toml.is_file():
-                try:
-                    mt = member_toml.read_text(encoding="utf-8", errors="replace")
-                    mname = re.search(
-                        r'^\[package\].*?^name\s*=\s*"([^"]+)"', mt, re.MULTILINE | re.DOTALL
+        for rel, target in sorted(targets.items()):
+            path = package / rel
+            if (
+                rel.is_absolute()
+                or not path.resolve().is_relative_to(package.resolve())
+                or not path.is_file()
+            ):
+                continue
+            try:
+                content = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            required = target.get("required-features", [])
+            for feat in sorted(features):
+                if feat in required:
+                    continue
+                module = feat.replace("-", "_")
+                if not re.search(rf"\b{re.escape(crate)}::{re.escape(module)}\b", content):
+                    continue
+                if re.search(rf'#!\[cfg\(feature\s*=\s*"{re.escape(feat)}"\)\]', content):
+                    continue
+                test = target["name"]
+                base = f"cargo test -p {name} --test {test}"
+                baseline = base + (" --features " + ",".join(required) if required else "")
+                enabled = base + " --features " + ",".join([*required, feat])
+                result.findings.append(
+                    Finding(
+                        check="ungated_feature_test",
+                        severity="warning",
+                        file=path.relative_to(repo).as_posix(),
+                        message=f"Test references `{crate}::{module}`. Compare which tests run with "
+                        f"`{baseline}` and `{enabled}`.",
+                        detail="Static feature reference. An item-level gate may already protect "
+                        "the import. Check both compilation and the number of tests executed.",
                     )
-                    if mname:
-                        member_crate = mname.group(1).replace("-", "_")
-                        mfeats = re.search(
-                            r"^\[features\](.*?)(?=^\[|\Z)", mt, re.MULTILINE | re.DOTALL
-                        )
-                        if mfeats:
-                            for feat_m in re.finditer(
-                                r"^(\w[\w-]*)\s*=", mfeats.group(1), re.MULTILINE
-                            ):
-                                features.add(feat_m.group(1))
-                            crate_name = member_crate  # use member name for import matching
-                except Exception:
-                    pass
-
-    for test_dir in test_dirs:
-        if not test_dir.is_dir():
-            continue
-        try:
-            for test_file in test_dir.iterdir():
-                if not test_file.is_file() or test_file.suffix != ".rs":
-                    continue
-                try:
-                    content = test_file.read_text(encoding="utf-8", errors="replace")
-                except Exception:
-                    continue
-
-                # Check if file has a top-level cfg gate
-                has_cfg = bool(re.search(r"#!\[cfg\(feature\s*=", content[:500]))
-                if has_cfg:
-                    continue
-
-                # Check if file imports feature-gated modules
-                for feat in features:
-                    feat_mod = feat.replace("-", "_")
-                    # Look for `use crate_name::feat_mod` or `crate_name::feat_mod::`
-                    pattern = rf"\b{re.escape(crate_name)}::{re.escape(feat_mod)}\b"
-                    if re.search(pattern, content):
-                        result.findings.append(
-                            Finding(
-                                check="ungated_feature_test",
-                                severity="error",
-                                message=f"{test_file.name}: imports `{crate_name}::{feat_mod}` "
-                                f'but lacks `#![cfg(feature = "{feat}")]`',
-                                detail="This test will fail to compile without the feature enabled. "
-                                'Add `#![cfg(feature = "...")]` at the top of the test file.',
-                            )
-                        )
-                        break  # one finding per file is enough
-        except Exception:
-            continue
+                )
+                break
 
 
 def _read_manifest(repo: Path) -> dict[str, Any] | None:
@@ -717,9 +670,6 @@ def _audit_repo(
                 )
             )
 
-    # Check: feature-gated tests without cfg gate.
-    # Tests that import feature-gated modules (e.g., `use crate::qdrant::`) but lack
-    # `#![cfg(feature = "...")]` will fail to compile without that feature enabled.
     _check_feature_gated_tests(repo, result)
 
     # Check: version vs tag consistency
@@ -880,6 +830,7 @@ def audit_cargo_publish(
                         "severity": f.severity,
                         "message": f.message,
                         **({"detail": f.detail} if f.detail else {}),
+                        **({"file": f.file} if f.file else {}),
                     }
                     for f in r.findings
                 ],

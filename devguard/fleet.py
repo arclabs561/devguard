@@ -343,6 +343,12 @@ def cached_clone_path(ref: RepoRef, root: Path | None = None) -> Path:
     return (root or cache_root()) / "repos" / safe[-2] / safe[-1]
 
 
+def _checkout_head(path: Path, *, full_history: bool) -> str:
+    if full_history and _git_ok(["rev-parse", "--is-shallow-repository"], path, 30) == "true":
+        raise RuntimeError("full history requested for a shallow checkout; unshallow it first")
+    return _git_ok(["rev-parse", "HEAD"], path, 30)
+
+
 def sync_repo(
     ref: RepoRef,
     *,
@@ -358,7 +364,7 @@ def sync_repo(
     existing clone is used as it is, with no network access.
     """
     if ref.path is not None:
-        return ref.path, _git_ok(["rev-parse", "HEAD"], ref.path, 30)
+        return ref.path, _checkout_head(ref.path, full_history=full_history)
     if not ref.url:
         raise RuntimeError(f"{ref.name}: no URL or path")
     dest = cached_clone_path(ref, root)
@@ -367,6 +373,8 @@ def sync_repo(
         if usable and _git_ok(["remote", "get-url", "origin"], dest, 30) != ref.url:
             usable = False
         if not usable:
+            if not refresh:
+                raise RuntimeError(f"{ref.name}: no usable cached clone for offline scan")
             shutil.rmtree(dest, ignore_errors=True)
             dest.parent.mkdir(parents=True, exist_ok=True)
             depth = [] if full_history else ["--depth", "1"]
@@ -379,7 +387,7 @@ def sync_repo(
             _git_ok(["fetch", "--quiet", "--no-tags", *depth, "origin", "HEAD"], dest, timeout)
             _git_ok(["reset", "--quiet", "--hard", "FETCH_HEAD"], dest, 120)
             _git_ok(["clean", "-fdxq"], dest, 120)
-        return dest, _git_ok(["rev-parse", "HEAD"], dest, 30)
+        return dest, _checkout_head(dest, full_history=full_history)
 
 
 def _worktree_dirty(path: Path) -> bool:
@@ -404,7 +412,7 @@ def result_key(
     if spec_path is not None and spec_path.is_file():
         spec_digest = hashlib.sha256(spec_path.read_bytes()).hexdigest()
     material = {
-        "cache_format": 5,  # Recheck reports produced before coverage and severity checks.
+        "cache_format": 6,  # Recheck license and publishing findings.
         "devguard": __version__,
         "repo": name,
         "head": head,
@@ -413,6 +421,8 @@ def result_key(
         "full_history": full_history,
         "tools": [t for t in _RESULT_AFFECTING_TOOLS if shutil.which(t)],
     }
+    if "cargo_publish_audit" in sweeps:
+        material["cargo_feature_test_reporting"] = 2  # Located, advisory findings.
     return hashlib.sha256(json.dumps(material, sort_keys=True).encode()).hexdigest()
 
 

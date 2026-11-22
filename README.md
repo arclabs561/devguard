@@ -172,8 +172,9 @@ Two caches live under `$DEVGUARD_CACHE_DIR`, else `$XDG_CACHE_HOME/devguard`,
 else `~/.cache/devguard`:
 
 - Clones. A repository is cloned once (shallow) and updated with one fetch per
-  run. `--offline` skips the fetch. `--full-history` clones every commit, which
-  `local_history_secrets` needs to see anything beyond the head commit.
+  run. `--offline` requires a usable cached clone for a remote target.
+  `--full-history` fetches complete history for managed clones. For a local
+  checkout or an offline scan, it reports a shallow clone as incomplete.
 - Results. A result is reused while the head commit, the devguard version, the
   sweep selection, the spec file and the set of installed scanners are all
   unchanged. Local checkouts with staged changes, modified tracked files, or

@@ -8,6 +8,15 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
+LICENSE_FILES = (
+    "LICENSE",
+    "LICENSE.md",
+    "LICENSE.txt",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+    "LICENCE",
+)
+
 # Comprehensive set of directories to skip during repo discovery.
 _JUNK_DIRS: frozenset[str] = frozenset(
     {
