@@ -25,3 +25,17 @@ def test_known_false_passes_and_controls(tmp_path: Path) -> None:
         "masked_search_error": ["check.sh"],
         "identical_method_branches": ["same.py"],
     }
+
+
+def test_local_copy_must_not_be_the_only_subject(tmp_path: Path) -> None:
+    helper = 'def mirror(x):\n    """Mirrors the logic from pkg.merge."""\n    return x + 1\n'
+    cases = {
+        "test_copy.py": helper + "def test_result():\n    assert mirror(1) == 2\n",
+        "test_oracle.py": helper
+        + "from pkg import merge as real\ndef test_result():\n    assert mirror(1) == real(1)\n",
+        "test_unused.py": helper + "def test_result():\n    assert 1 == 1\n",
+        "helper.py": helper + "def test_result():\n    assert mirror(1) == 2\n",
+    }
+    for name, content in cases.items():
+        (tmp_path / name).write_text(content)
+    assert find_false_passes(tmp_path, list(cases)) == {"copied_test_subject": ["test_copy.py"]}

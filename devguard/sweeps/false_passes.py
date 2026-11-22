@@ -10,6 +10,7 @@ from pathlib import Path
 from devguard.sweeps._common import contained_file
 
 DESCRIPTIONS = {
+    "copied_test_subject": "A test calls a local copy of a named production function without exercising the original",
     "flattened_python": "Python source is swallowed by a single shebang comment",
     "masked_test_command": "A test command discards its failure status",
     "masked_search_error": "A count treats search errors (including missing inputs) as zero",
@@ -75,6 +76,37 @@ def _shell_checks(source: str) -> set[str]:
     return findings
 
 
+_MIRRORED = re.compile(r"\bmirrors the logic (?:from|of)\s+`?((?:\w+\.)+\w+)", re.I)
+
+
+def _copied_subject(source: str) -> bool:
+    if not _MIRRORED.search(source):
+        return False
+    try:
+        root = ast.parse(source)
+    except (SyntaxError, ValueError, RecursionError):
+        return False
+    funcs = [
+        node for node in ast.walk(root) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+    # Any call or import of the named subject could be a legitimate differential test.
+    targets = {node.attr for node in ast.walk(root) if isinstance(node, ast.Attribute)}
+    targets.update(node.id for node in ast.walk(root) if isinstance(node, ast.Name))
+    targets.update(node.name for node in ast.walk(root) if isinstance(node, ast.alias))
+    test_calls = {
+        call.func.id
+        for func in funcs
+        if func.name.startswith("test_")
+        for call in ast.walk(func)
+        if isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+    }
+    for func in funcs:
+        match = _MIRRORED.search(ast.get_docstring(func) or "")
+        if match and func.name in test_calls and match[1].rsplit(".", 1)[-1] not in targets:
+            return True
+    return False
+
+
 def _python_checks(source: str) -> set[str]:
     body = source.rstrip("\r\n")
     if "\n" not in body and _PYTHON.match(body) and _PY_CODE.search(body):
@@ -100,13 +132,19 @@ def find_false_passes(repo: Path, tracked: list[str]) -> dict[str, list[str]]:
     findings: dict[str, list[str]] = {}
     for rel in tracked:
         path = repo / rel
-        if path.suffix not in {".py", ".sh", ".bash", ".ts", ".mjs", ".js"} or not contained_file(path, repo):
+        if path.suffix not in {".py", ".sh", ".bash", ".ts", ".mjs", ".js"} or not contained_file(
+            path, repo
+        ):
             continue
         if path.stat().st_size > 1024 * 1024:
             continue
         source = path.read_text(encoding="utf-8", errors="replace")
         if path.suffix == ".py":
             checks = _python_checks(source)
+            if (path.name.startswith("test_") or path.stem.endswith("_test")) and _copied_subject(
+                source
+            ):
+                checks.add("copied_test_subject")
         elif path.suffix in {".sh", ".bash"}:
             checks = _shell_checks(source)
         else:
