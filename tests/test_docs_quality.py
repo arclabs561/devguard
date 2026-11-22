@@ -58,14 +58,21 @@ def _fake_direct_tools(bin_dir: Path, styles: bool = True) -> None:
         f"if sys.argv[1] == 'ls-config':\n    print(json.dumps({ls_config!r}))\n"
         f"else:\n    print(json.dumps({VALE_ALERTS!r}))",
     )
-    _tool(bin_dir, "readcost", f"print(json.dumps({READCOST_OUT!r}))")
+    _tool(
+        bin_dir,
+        "readcost",
+        f"out = {READCOST_OUT!r}\n"
+        "out.extend({'path': p, 'findings': []} for p in sys.argv[6:] if p != 'docs/guide.md')\n"
+        "print(json.dumps(out))",
+    )
 
 
 def test_missing_tools_are_incomplete_not_clean(repo: Path, bin_dir: Path) -> None:
     report, errors = audit_docs_quality(dev_root=repo, max_depth=0, engine="auto")
 
     assert report["scope"]["engine"] == "direct"
-    assert report["summary"]["files_checked"] == 2
+    assert report["summary"]["files_checked"] == 0
+    assert report["summary"]["files_selected"] == 2
     assert report["summary"]["total_findings"] == 0
     assert report["summary"]["coverage_complete"] is False
     assert {e.split(": ", 1)[1] for e in errors} == {
@@ -158,3 +165,84 @@ def test_tool_failure_is_incomplete_with_detail(repo: Path, bin_dir: Path) -> No
 
     assert errors == ["repo: readcost: exit 2: model missing"]
     assert report["summary"]["coverage_complete"] is False
+
+
+@pytest.mark.parametrize("engine", ["readcost", "vale"])
+def test_selected_tool_checks_markdown_alone(repo: Path, bin_dir: Path, engine: str) -> None:
+    from devguard.fleet import extract_findings
+
+    _fake_direct_tools(bin_dir)
+    (bin_dir / ("vale" if engine == "readcost" else "readcost")).unlink()
+    report, errors = audit_docs_quality(dev_root=repo, max_depth=0, engine=engine)
+    assert not errors and report["summary"]["coverage_complete"]
+    assert report["scope"]["engine"] == engine
+    (finding,) = extract_findings({"docs_quality": report})
+    assert finding["file"] == ("docs/guide.md:2" if engine == "readcost" else "README.md:3")
+    (bin_dir / engine).unlink()
+    report, errors = audit_docs_quality(dev_root=repo, max_depth=0, engine=engine)
+    assert not report["summary"]["coverage_complete"]
+    assert errors == [f"repo: {engine}: not installed"]
+
+
+def test_cap_oversize_and_actual_tool_coverage(repo: Path, bin_dir: Path) -> None:
+    _fake_direct_tools(bin_dir)
+    (repo / "docs" / "big.md").write_bytes(b"a" * (256 * 1024 + 1))
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    report, errors = audit_docs_quality(
+        dev_root=repo, max_depth=0, engine="vale", max_files_per_repo=1
+    )
+    assert not errors
+    summary = report["summary"]
+    assert summary["files_eligible"] == 2
+    assert summary["files_selected"] == summary["files_checked"] == 1
+    assert summary["files_oversized"] == summary["files_omitted_by_limit"] == 1
+    assert not summary["coverage_complete"]
+    assert report["repos"][0]["omitted_by_limit"] == ["docs/guide.md"]
+    assert report["repos"][0]["oversized"] == ["docs/big.md"]
+
+
+@pytest.mark.parametrize(("engine", "name"), [("readcost", "readcost"), ("wrapper", "docs-check")])
+def test_missing_per_file_output_is_partial(
+    repo: Path, bin_dir: Path, engine: str, name: str
+) -> None:
+    _tool(bin_dir, name, 'print("[]")')
+    report, errors = audit_docs_quality(dev_root=repo, max_depth=0, engine=engine)
+    assert len(errors) == 2
+    assert report["summary"]["files_checked"] == 0
+    assert report["summary"]["files_selected"] == 2
+    assert not report["summary"]["coverage_complete"]
+
+
+@pytest.mark.parametrize("engine", ["vale", "readcost", "wrapper"])
+def test_stale_producer_rows_cannot_create_findings(repo: Path, bin_dir: Path, engine: str):
+    names = ["./README.md", str(repo / "docs/guide.md"), "../other/stale.md"]
+    if engine == "vale":
+        record = {"Line": 4, "Check": "test", "Message": "stale"}
+        outputs = {path: [record] if i == 2 else [] for i, path in enumerate(names)}
+        _tool(
+            bin_dir,
+            engine,
+            f"print(json.dumps({{'GBaseStyles': ['Style']}} if sys.argv[1]=='ls-config' else {outputs!r}))",
+        )
+    else:
+        record = {
+            "line": 4,
+            "feature": "test",
+            "tool": "readcost",
+            "rule": "test",
+            "message": "stale",
+        }
+        outputs = [
+            {"path": p, "findings": [record] if i == 2 else [], "unavailable": []}
+            for i, p in enumerate(names)
+        ]
+        _tool(
+            bin_dir,
+            "docs-check" if engine == "wrapper" else engine,
+            f"print(json.dumps({outputs!r}))",
+        )
+    data, errors = audit_docs_quality(dev_root=repo, max_depth=0, engine=engine)
+    assert len(errors) == 1 and "unselected file" in errors[0]
+    assert not data["summary"]["coverage_complete"]
+    assert data["summary"]["total_findings"] == 0
+    assert data["summary"]["files_checked"] == (0 if engine == "vale" else 2)

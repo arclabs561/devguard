@@ -759,7 +759,7 @@ class DocsQualitySweepSpec(BaseModel):
     engine: str = Field(
         "auto",
         description=(
-            "auto (wrapper when on PATH, else direct), wrapper, or direct "
+            "auto (wrapper when on PATH, else direct), wrapper, vale, readcost, or direct "
             "(vale --output=JSON and readcost check --output json)."
         ),
     )

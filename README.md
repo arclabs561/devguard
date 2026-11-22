@@ -154,7 +154,10 @@ rest still finish.
 `docs_quality` is not in that default set, because it reports a repository as
 not fully scanned unless both Vale and readcost are installed and Vale has
 styles configured for it. To check READMEs across repositories, ask for it by
-name: `devguard fleet --mine --only docs_quality`.
+name: `devguard fleet --mine --only docs_quality`. To run only the installed
+checker, set `sweeps.docs_quality.engine` to `vale` or `readcost` in the spec.
+Vale uses the repository’s styles. A missing selected tool or an unconfigured
+Vale reports incomplete coverage.
 
 Two caches live under `$DEVGUARD_CACHE_DIR`, else `$XDG_CACHE_HOME/devguard`,
 else `~/.cache/devguard`:
