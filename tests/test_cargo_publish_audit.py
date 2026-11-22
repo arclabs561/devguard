@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from devguard.sweeps.cargo_publish_audit import _audit_repo
+from devguard.sweeps.cargo_publish_audit import _audit_repo, audit_cargo_publish
 
 CI = """name: ci
 on: [push, pull_request]
@@ -260,3 +260,22 @@ def test_fresh_shell_variable_requires_export_for_cargo(tmp_path: Path) -> None:
     """,
     )
     assert _checks(repo).count("reused_publish_staging") == 2
+
+
+def test_standard_sweep_reaches_nested_workspace(tmp_path: Path) -> None:
+    repo = _workspace(tmp_path, "cargo publish --dry-run")
+    source = repo / "rust"
+    source.mkdir()
+    for entry in ("Cargo.toml", "lib", "bin"):
+        (repo / entry).rename(source / entry)
+    workflow = repo / ".github/workflows/ci.yml"
+    workflow.write_text(
+        workflow.read_text().replace(
+            "      - run: |", "      - working-directory: rust\n        run: |"
+        )
+    )
+    _git(repo, "add", ".")
+    report, errors = audit_cargo_publish(dev_root=tmp_path)
+    assert not errors
+    assert report["scope"]["staging_only_repos"] == ["crate"]
+    assert [f["check"] for f in report["repos"][0]["findings"]] == ["reused_publish_staging"]

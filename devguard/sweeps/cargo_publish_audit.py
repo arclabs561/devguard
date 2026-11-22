@@ -53,10 +53,15 @@ def _iter_rust_repos(root: Path, max_depth: int, exclude_globs: list[str]) -> li
         if cur in seen:
             continue
         seen.add(cur)
-        if (cur / ".git").exists() and (cur / "Cargo.toml").exists():
-            if not any(fnmatch.fnmatch(str(cur), g) for g in exclude_globs):
+        if (cur / ".git").exists():
+            if any(fnmatch.fnmatch(str(cur), g) for g in exclude_globs):
+                continue
+            if (cur / "Cargo.toml").is_file() or (
+                (cur / ".github/workflows").is_dir()
+                and _git_out(cur, "ls-files", "--", ":(glob)**/Cargo.toml")
+            ):
                 repos.append(cur)
-            continue
+                continue
         if depth >= max_depth:
             continue
         try:
@@ -524,6 +529,10 @@ def _audit_repo(
             )
         )
 
+    # In mixed-language repositories the root package checks do not apply.
+    if not (repo / "Cargo.toml").is_file():
+        return result
+
     # Skip unpublishable crates
     if not publish_enabled:
         result.findings.append(
@@ -838,6 +847,7 @@ def audit_cargo_publish(
             "dev_root": str(root),
             "repos_scanned": len(repos),
             "rust_repos_found": len(results),
+            "staging_only_repos": [r.name for r in repos if not (r / "Cargo.toml").is_file()],
             "max_depth": max_depth,
             "only_public": only_public,
             "repo_names_filter": repo_names,
