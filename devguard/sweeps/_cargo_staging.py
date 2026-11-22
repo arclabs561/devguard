@@ -7,8 +7,10 @@ they invoke. Never execute a command or expand paths outside the checkout.
 from __future__ import annotations
 
 import fnmatch
+import os
 import re
 import shlex
+import subprocess
 import tomllib
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -175,6 +177,14 @@ class PublishStep:
     dry_run: bool
     packages: frozenset[Path]
     staging_risk: StagingRisk | None
+    source: str
+    literal_call: bool
+
+    @property
+    def evidence_location(self) -> str:
+        return (
+            self.location if self.source == self.location else f"{self.source} via {self.location}"
+        )
 
 
 def _commands(body: str, allocations: Iterator[int]) -> Iterator[tuple[int, list[str]]]:
@@ -207,6 +217,73 @@ def _commands(body: str, allocations: Iterator[int]) -> Iterator[tuple[int, list
                 command.append(token)
 
 
+def _single_literal_command(body: str) -> bool:
+    """A straight-line wrapper can establish more than a conditional code occurrence."""
+    lines = [
+        line.strip()
+        for line in body.splitlines()
+        if line.strip()
+        and not line.lstrip().startswith("#")
+        and line.strip() not in {"set -e", "set -eu", "set -euo pipefail", "set -o pipefail"}
+    ]
+    return len(lines) == 1 and re.fullmatch(r"[a-zA-Z0-9_./+ =:@-]+", lines[0]) is not None
+
+
+def _literal_dry_run_flags(args: list[str]) -> bool:
+    """Restrict positive local-script coverage to flags whose scope we model."""
+    options = iter(args[1:])  # skip publish
+    for arg in options:
+        if arg in {
+            "--workspace",
+            "--all",
+            "--dry-run",
+            "--locked",
+            "--allow-dirty",
+            "--offline",
+            "--frozen",
+        }:
+            continue
+        key, sep, value = arg.partition("=")
+        if key not in {
+            "-p",
+            "--package",
+            "--exclude",
+            "--manifest-path",
+            "--target-dir",
+            "--registry",
+        }:
+            return False
+        value = value if sep else next(options, "")
+        if not re.fullmatch(r"[a-zA-Z0-9_./][a-zA-Z0-9_./-]*", value):
+            return False
+        if key == "--registry" and value != "crates-io":
+            return False
+    return True
+
+
+def _tracked_script(repo: Path, cwd: Path, executable: str) -> Path | None:
+    raw = Path(executable)
+    if raw.is_absolute() or ".." in raw.parts:
+        return None
+    path = _inside(repo, cwd, executable)
+    if path is None or path != cwd / raw or not path.is_file():
+        return None
+    try:
+        if path.stat().st_size > 256 * 1024:
+            return None
+        relative = str(path.relative_to(repo))
+        tracked = subprocess.run(
+            ["git", "--literal-pathspecs", "ls-files", "--error-unmatch", "--", relative],
+            cwd=repo,
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return path if tracked.returncode == 0 else None
+
+
 def _scan(
     repo: Path,
     cwd: Path,
@@ -217,7 +294,8 @@ def _scan(
     used: set[str],
     seen: set[Path],
     allocations: Iterator[int],
-) -> Iterator[tuple[bool, frozenset[Path], StagingRisk | None]]:
+    literal_call: bool = True,
+) -> Iterator[tuple[bool, frozenset[Path], StagingRisk | None, str, bool]]:
     exported = set(env)
     for line, tokens in _commands(body, allocations):
         tokens = list(tokens)
@@ -256,14 +334,25 @@ def _scan(
             if directory is None:
                 return
             cwd = directory
-        if executable in {"sh", "bash"} and args:
+        shell_invocation = executable in {"sh", "bash"} and bool(args)
+        if shell_invocation:
             executable = args[0]
-        if "/" in executable or executable.endswith(".sh"):
-            script = _inside(repo, cwd, executable)
-            if script and script not in seen and len(seen) < 5 and script.is_file():
+        # A bare command is PATH-resolved. An explicit shell reads its script operand.
+        if "/" in executable or shell_invocation:
+            script = _tracked_script(repo, cwd, executable)
+            if (
+                script
+                and script not in seen
+                and len(seen) < 5
+                and (shell_invocation or os.access(script, os.X_OK))
+            ):
                 try:
                     script_body = script.read_text(encoding="utf-8")
                 except (UnicodeError, OSError):
+                    continue
+                if "<<" in script_body or (
+                    not shell_invocation and not re.match(r"^#![^\n]*\b(?:bash|sh)\b", script_body)
+                ):
                     continue
                 yield from _scan(
                     repo,
@@ -275,6 +364,9 @@ def _scan(
                     used,
                     seen | {script},
                     allocations,
+                    literal_call
+                    and _single_literal_command(body)
+                    and _single_literal_command(script_body),
                 )
         if executable != "cargo":
             continue
@@ -282,15 +374,17 @@ def _scan(
             args = args[1:]
         if args[:1] != ["publish"]:
             continue
+        origin = f"{source}:{line}" if source != step else step
         dry_run = "--dry-run" in args
+        certain = source == step or (literal_call and (not dry_run or _literal_dry_run_flags(args)))
         packages = _selected_packages(repo, cwd, args)
         if "--no-verify" in args and dry_run:
             # Cargo prepares the package without verifying the unpacked crate.
-            yield True, frozenset(), None
+            yield True, frozenset(), None, origin, certain
             continue
         multi = len(packages) > 1 or len(set(_options(args, "-p", "--package"))) > 1
         if not dry_run or not multi:
-            yield dry_run, packages, None
+            yield dry_run, packages, None, origin, certain
             continue
         inherited = (
             values.get("CARGO_TARGET_DIR", "") if "CARGO_TARGET_DIR" in exported | assigned else ""
@@ -302,7 +396,7 @@ def _scan(
         if not target.startswith("\0mktemp:") or ".." in target.split("/") or target in used:
             risk = StagingRisk(source, line, step)
         used.add(target)
-        yield dry_run, packages, risk
+        yield dry_run, packages, risk, origin, certain
 
 
 def publish_steps(repo: Path, workflows: list[tuple[str, str]]) -> Iterator[PublishStep]:
@@ -332,7 +426,9 @@ def publish_steps(repo: Path, workflows: list[tuple[str, str]]) -> Iterator[Publ
                 # job permissions still govern its access to an OIDC token.
                 action = str(step.get("uses", "")).partition("@")[0].lower()
                 if "cargo-publish" in action:
-                    yield PublishStep(name, location, oidc, False, frozenset(), None)
+                    yield PublishStep(
+                        name, location, oidc, False, frozenset(), None, location, False
+                    )
                 if not isinstance(step.get("run"), str):
                     continue
                 directory = "."
@@ -346,7 +442,22 @@ def publish_steps(repo: Path, workflows: list[tuple[str, str]]) -> Iterator[Publ
                 cwd = _inside(repo, repo, str(step.get("working-directory", directory)))
                 if cwd is None:
                     continue
-                for dry_run, packages, risk in _scan(
-                    repo, cwd, step["run"], location, location, env, set(), set(), count()
+                required_step = all(
+                    "if" not in scope and not scope.get("continue-on-error")
+                    for scope in (job, step)
+                )
+                for dry_run, packages, risk, origin, literal in _scan(
+                    repo,
+                    cwd,
+                    step["run"],
+                    location,
+                    location,
+                    env,
+                    set(),
+                    set(),
+                    count(),
+                    required_step,
                 ):
-                    yield PublishStep(name, location, oidc, dry_run, packages, risk)
+                    yield PublishStep(
+                        name, location, oidc, dry_run, packages, risk, origin, literal
+                    )

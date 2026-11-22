@@ -633,9 +633,13 @@ def _audit_repo(
         )
 
     # Check configured dry-run commands. Event reachability is a separate signal.
-    verified = {package for step in steps if step.dry_run for package in step.packages}
+    dry_runs = [step for step in steps if step.dry_run and step.packages]
+    observed = {package for step in dry_runs for package in step.packages}
+    verified = {package for step in dry_runs if step.literal_call for package in step.packages}
     uncovered = {
-        step.location for step in live_steps if not step.packages or not step.packages <= verified
+        step.evidence_location
+        for step in live_steps
+        if not step.packages or not step.packages <= verified
     }
     has_dry_run = bool(verified) and not uncovered
     # Also check for separate CI workflow with cargo check/test
@@ -646,16 +650,35 @@ def _audit_repo(
     )
 
     if has_publish_wf and not has_dry_run:
-        result.findings.append(
-            Finding(
-                check="no_dry_run",
-                severity="warning",
-                message="Missing a configured `cargo publish --dry-run` that verifies each published package",
-                detail="Configure a dry run for each published package without --no-verify. "
-                "Check unresolved selectors or external actions manually: "
-                + ", ".join(sorted(uncovered)),
+        if observed and not any(step.packages - observed for step in live_steps):
+            evidence = set()
+            for step in dry_runs:
+                manifests = ", ".join(
+                    sorted(str(p.relative_to(repo.resolve())) for p in step.packages)
+                )
+                evidence.add(f"{step.evidence_location} ({manifests})")
+            result.findings.append(
+                Finding(
+                    check="unresolved_dry_run_coverage",
+                    severity="warning",
+                    message="Cargo dry-run command found; release coverage remains unresolved",
+                    detail="Observed commands: "
+                    + "; ".join(sorted(evidence))
+                    + ". Confirm execution and package selection for: "
+                    + ", ".join(sorted(uncovered)),
+                )
             )
-        )
+        else:
+            result.findings.append(
+                Finding(
+                    check="no_dry_run",
+                    severity="warning",
+                    message="Missing a configured `cargo publish --dry-run` that verifies each published package",
+                    detail="Configure a dry run for each published package without --no-verify. "
+                    "Check unresolved selectors or external actions manually: "
+                    + ", ".join(sorted(uncovered)),
+                )
+            )
 
     if not has_ci_workflow and not has_dry_run:
         result.findings.append(
