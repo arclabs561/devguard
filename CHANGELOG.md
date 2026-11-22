@@ -2,7 +2,11 @@
 
 Earlier history has not been reconstructed in this changelog.
 
-## [Unreleased]
+## 0.3.0 (pending release)
+
+Dependency findings now survive fleet aggregation. Fleet runs dependency audits by default and reruns them when scanning the same commit. A failed engine or unresolved manifest exits 3. OSV-Scanner v2 covers uv, Poetry, pnpm, Yarn and Go inputs. Use `devguard audit-crate NAME VERSION` for the lockfile in a published crate.
+
+The workflow audit checks mutable action refs in jobs that can write or receive secrets, including reusable workflows and files with custom names. It also checks event-selected checkouts in trusted contexts, event text in scripts, and credentials used with dispatch-selected destinations. Workflow SARIF findings point at the workflow file. Use `github-ci --branch-protection` to report observed protection and unknown coverage separately.
 
 ### Added
 

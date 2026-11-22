@@ -67,7 +67,7 @@ def _extract_ai_editor_config(report: dict) -> list[_Finding]:
                     f.get("check", "unknown"),
                     _sarif_level(sev),
                     f.get("message", ""),
-                    repo_path,
+                    f.get("file") or repo_path,
                     sev,
                 )
             )
@@ -317,6 +317,7 @@ def _extract_mcp_security_audit(report: dict) -> list[_Finding]:
 _EXTRACTORS: dict[str, Any] = {
     "ai_editor_config_audit": _extract_ai_editor_config,
     "cargo_publish_audit": _extract_cargo_publish,
+    "publish_workflow_audit": _extract_ai_editor_config,
     "gitignore_audit": _extract_gitignore_audit,
     "git_identity_audit": _extract_git_identity_audit,
     "dependency_audit": _extract_dependency_audit,

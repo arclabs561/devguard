@@ -16,7 +16,14 @@ from rich.table import Table
 
 from devguard import fleet as fl
 
-_STYLE = {"critical": "bold red", "high": "red", "medium": "yellow", "low": "cyan", "info": "dim"}
+_STYLE = {
+    "critical": "bold red",
+    "high": "red",
+    "medium": "yellow",
+    "low": "cyan",
+    "info": "dim",
+    "unknown": "yellow",
+}
 
 
 def _human_bytes(count: int) -> str:
@@ -248,6 +255,11 @@ def fleet(
     no_cache: bool = typer.Option(
         False, "--no-cache", help="Ignore and do not write cached results."
     ),
+    online_dependencies: bool = typer.Option(
+        False,
+        "--online-dependencies",
+        help="Allow registry/advisory queries for local and non-public repository dependencies.",
+    ),
     offline: bool = typer.Option(
         False, "--offline", help="Use cached clones as they are; do not fetch."
     ),
@@ -359,6 +371,7 @@ def fleet(
         jobs=workers,
         use_cache=not no_cache,
         refresh=not offline,
+        online_dependencies=online_dependencies,
         full_history=full_history,
         timeout=timeout,
     )

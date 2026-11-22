@@ -49,6 +49,7 @@ REPO_SCOPED_SWEEPS: tuple[str, ...] = (
     "repo_lint",
     "gitignore_audit",
     "repo_hygiene",
+    "dependency_audit",
     "cargo_publish_audit",
     "ai_editor_config_audit",
     "publish_audit",
@@ -62,6 +63,7 @@ _RESULT_AFFECTING_TOOLS = (
     "gitleaks",
     "trufflehog",
     "cargo-audit",
+    "osv-scanner",
     "pip-audit",
     "npm",
     "gh",
@@ -71,7 +73,7 @@ _RESULT_AFFECTING_TOOLS = (
     "readcost",
 )
 
-SEVERITIES = ("critical", "high", "medium", "low", "info")
+SEVERITIES = ("critical", "high", "medium", "low", "info", "unknown")
 _SEVERITY_ALIASES = {"error": "high", "warning": "medium", "warn": "medium", "note": "info"}
 _SEVERITY_RANK = {name: rank for rank, name in enumerate(SEVERITIES)}
 
@@ -399,7 +401,7 @@ def result_key(
     if spec_path is not None and spec_path.is_file():
         spec_digest = hashlib.sha256(spec_path.read_bytes()).hexdigest()
     material = {
-        "cache_format": 2,  # Older entries could include ignored checkout contents.
+        "cache_format": 4,  # Earlier workflow reports could omit incomplete inputs.
         "devguard": __version__,
         "repo": name,
         "head": head,
@@ -479,6 +481,19 @@ def extract_findings(reports: dict[str, Any]) -> list[dict[str, Any]]:
         for repo in report.get("repos") or []:
             if not isinstance(repo, dict):
                 continue
+            if sweep == "dependency_audit":
+                for vuln in repo.get("vulns", []):
+                    found.append(
+                        _one_finding(
+                            sweep,
+                            {
+                                "check": vuln["id"],
+                                "severity": vuln["severity"],
+                                "file": repo.get("repo_path"),
+                                "message": f"{vuln['package']}: {vuln['title']}",
+                            },
+                        )
+                    )
             items = repo.get("findings")
             if isinstance(items, list):
                 found.extend(_one_finding(sweep, item) for item in items)
@@ -511,10 +526,17 @@ def _report_errors(reports: dict[str, Any]) -> list[str]:
 
 
 def run_sweeps(
-    path: Path, sweeps: list[str], spec_path: Path | None, timeout: int
+    path: Path,
+    sweeps: list[str],
+    spec_path: Path | None,
+    timeout: int,
+    *,
+    offline_dependencies: bool = False,
 ) -> tuple[int, dict[str, Any], str]:
     """Run `devguard sweep --repo path` in a child process. Returns (exit, reports, error)."""
     cmd = [sys.executable, "-m", "devguard", "sweep", "--repo", str(path), "--format", "json"]
+    if offline_dependencies:
+        cmd.append("--offline-dependencies")
     for name in sweeps:
         cmd += ["--only", name]
     if spec_path is not None and spec_path.is_file():
@@ -543,6 +565,7 @@ def scan_one(
     spec_path: Path | None,
     root: Path,
     use_cache: bool = True,
+    online_dependencies: bool = False,
     refresh: bool = True,
     full_history: bool = False,
     timeout: int = 900,
@@ -567,7 +590,11 @@ def scan_one(
         return result("error", 3, None, errors=[str(exc)])
 
     # A local checkout with uncommitted changes has no stable identity to cache under.
-    cacheable = use_cache and not (ref.path is not None and _worktree_dirty(path))
+    cacheable = (
+        use_cache
+        and "dependency_audit" not in sweeps
+        and not (ref.path is not None and _worktree_dirty(path))
+    )
     key = result_key(
         head=head, sweeps=sweeps, spec_path=spec_path, full_history=full_history, name=ref.identity
     )
@@ -582,13 +609,27 @@ def scan_one(
             reports=reports,
         )
 
-    code, reports, error = run_sweeps(path, sweeps, spec_path, timeout)
+    offline_dependencies = "dependency_audit" in sweeps and (
+        not refresh or (ref.visibility.upper() != "PUBLIC" and not online_dependencies)
+    )
+    code, reports, error = run_sweeps(
+        path,
+        sweeps,
+        spec_path,
+        timeout,
+        **({"offline_dependencies": True} if offline_dependencies else {}),
+    )
     if error:
         return result("error", 3, head, errors=[error])
     if cacheable and code in (0, 2):
         _write_cached_result(root, key, {"exit_code": code, "reports": reports})
+    status = "scanned"
+    if set(sweeps) == {"dependency_audit"} and code == 0:
+        scope = reports.get("dependency_audit", {}).get("scope", {})
+        if scope.get("package_roots_discovered") == 0:
+            status = "not_applicable"
     return result(
-        "scanned",
+        status,
         code,
         head,
         findings=extract_findings(reports),
@@ -605,6 +646,7 @@ def scan_fleet(
     root: Path | None = None,
     jobs: int = 4,
     use_cache: bool = True,
+    online_dependencies: bool = False,
     refresh: bool = True,
     full_history: bool = False,
     timeout: int = 900,
@@ -622,6 +664,7 @@ def scan_fleet(
                 spec_path=spec_path,
                 root=root,
                 use_cache=use_cache,
+                online_dependencies=online_dependencies,
                 refresh=refresh,
                 full_history=full_history,
                 timeout=timeout,
@@ -678,6 +721,11 @@ def fleet_report(
     for res in results:
         row = asdict(res)
         row["counts"] = res.counts
+        if audit := res.reports.get("dependency_audit"):
+            row["dependency_coverage"] = {
+                "package_roots_discovered": audit["scope"]["package_roots_discovered"],
+                "package_roots_complete": audit["summary"]["package_roots_complete"],
+            }
         if not include_reports:
             row.pop("reports")
         repos.append(row)
@@ -691,7 +739,11 @@ def fleet_report(
             "cached": sum(r.status == "cached" for r in results),
             "errors": sum(r.status == "error" for r in results),
             "incomplete": sum(r.status != "error" and r.exit_code == 3 for r in results),
-            "clean": sum(r.exit_code == 0 and not r.findings for r in results),
+            "not_applicable": sum(r.status == "not_applicable" for r in results),
+            "clean": sum(
+                r.exit_code == 0 and not r.findings and r.status != "not_applicable"
+                for r in results
+            ),
             "findings": {s: totals.get(s, 0) for s in SEVERITIES},
             "seconds": round(seconds, 1),
         },
