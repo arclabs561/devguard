@@ -13,6 +13,7 @@ DESCRIPTIONS = {
     "copied_test_subject": "A test calls a local copy of a named production function without exercising the original",
     "flattened_python": "Python source is swallowed by a single shebang comment",
     "masked_test_command": "A test command discards its failure status",
+    "fabricated_scan_report": "A failed scanner is replaced with an empty JSON report",
     "masked_search_error": "A count treats search errors (including missing inputs) as zero",
     "aliased_tier_costs": "Every comparison tier is populated from the same cost variable",
     "identical_method_branches": "Both paths through an algorithm selector perform the same work",
@@ -33,10 +34,15 @@ _ALIASED_COST = re.compile(
 )
 
 
+_SCAN_COMMAND = re.compile(r"^(?:cargo geiger|opengrep scan|ast-grep scan|semgrep scan)\b")
+_EMPTY_REPORT = re.compile(r"""^echo\s+(['"])(?:\{\}|\[\]|\{"results":\[\]\})\1\s*>[^>]""")
+
+
 def _shell_checks(source: str) -> set[str]:
     findings: set[str] = set()
     end = ""
     strip_tabs = False
+    scanner_fallback = False
     for line in source.splitlines():
         if end:
             if (line.lstrip("\t") if strip_tabs else line) == end:
@@ -49,6 +55,14 @@ def _shell_checks(source: str) -> set[str]:
         if doc:
             end = doc[3]
             strip_tabs = bool(doc[1])
+        if scanner_fallback and _EMPTY_REPORT.match(line):
+            findings.add("fabricated_scan_report")
+        scanner_fallback = False
+        if _SCAN_COMMAND.match(line) and "||" in line:
+            fallback = line.rsplit("||", 1)[1].strip()
+            if _EMPTY_REPORT.match(fallback):
+                findings.add("fabricated_scan_report")
+            scanner_fallback = fallback == "{"
         if _COUNT.search(line) and not line.startswith(("echo ", "printf ")):
             findings.add("masked_search_error")
         mask = _DISCARD.search(line)

@@ -39,3 +39,18 @@ def test_local_copy_must_not_be_the_only_subject(tmp_path: Path) -> None:
     for name, content in cases.items():
         (tmp_path / name).write_text(content)
     assert find_false_passes(tmp_path, list(cases)) == {"copied_test_subject": ["test_copy.py"]}
+
+
+def test_empty_scan_documents(tmp_path: Path) -> None:
+    cases = {
+        "array.sh": """ast-grep scan --json target > out || echo '[]' > out""",
+        "results.sh": """opengrep scan --json --output out target || echo '{"results":[]}' > out""",
+        "group.sh": """cargo geiger --output-format json > raw || {\n    echo "{}" > raw\n}""",
+        "status.sh": """cargo geiger --output-format json > raw || echo "unavailable" >&2""",
+        "unrelated.sh": """cat optional.json > out || echo '{}' > out""",
+    }
+    for name, source in cases.items():
+        (tmp_path / name).write_text(source)
+    assert find_false_passes(tmp_path, list(cases)) == {
+        "fabricated_scan_report": ["array.sh", "results.sh", "group.sh"]
+    }
