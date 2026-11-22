@@ -205,6 +205,23 @@ offline. A missing database makes coverage incomplete.
 Explicit package roots record SHA-256 input hashes before and after the audit.
 Fleet reruns dependency audits when the advisory database may have changed. An incomplete or truncated report exits 3. An unrated finding also exits 3 when its severity could change the verdict.
 
+### Read OpenGrep scan artifacts
+
+Pass each expected JSON output explicitly so a missing report appears in the result.
+Use reports from the rule packs and scanner version pinned by the project.
+
+```sh
+devguard opengrep-report --expect-version 1.30.2 artifacts/validated.json artifacts/general.json
+```
+
+The command reads artifacts locally and runs no scanner or repository scripts.
+The JSON contains a status per report and counts for well-formed scan output.
+Exit 0 means every supplied report lists scanned files and zero findings.
+Exit 2 means complete reports include findings. Exit 3 takes precedence when
+any report is missing, unreadable, malformed, reports scanner errors or
+skipped rules, lists zero scanned files, or disagrees with an optional version pin. Coverage refers to the reported
+targets. The files alone cannot establish which policy or revision produced them.
+
 ## Configuration
 
 No spec file is required. Without one, `devguard` uses built-in defaults.
