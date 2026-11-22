@@ -279,3 +279,70 @@ def test_standard_sweep_reaches_nested_workspace(tmp_path: Path) -> None:
     assert not errors
     assert report["scope"]["staging_only_repos"] == ["crate"]
     assert [f["check"] for f in report["repos"][0]["findings"]] == ["reused_publish_staging"]
+
+
+def test_release_evidence_is_scoped_to_executable_steps_and_permissions(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path,
+        PKG,
+        CI
+        + """
+      - run: echo 'Document cargo publish --dry-run'
+      - run: |
+          # cargo publish --dry-run
+  docs:
+    runs-on: ubuntu-latest
+    permissions: {id-token: write}
+    steps:
+      - run: echo 'trusted-publishing'
+""",
+    )
+    release = repo / ".github/workflows/release.yml"
+    workflow = """
+on: workflow_dispatch
+permissions: {id-token: write}
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions: {contents: read}
+    steps:
+      - run: cargo publish --locked
+"""
+    release.write_text(workflow)
+    flags = {"no_oidc", "no_dry_run"}
+    assert flags <= set(_checks(repo))
+
+    release.write_text(workflow.replace("    permissions: {contents: read}\n", ""))
+    assert flags.intersection(_checks(repo)) == {"no_dry_run"}
+    (repo / ".github/workflows/ci.yml").write_text(CI + "      - run: bash scripts/package.sh\n")
+    (repo / "scripts").mkdir()
+    (repo / "scripts/package.sh").write_text("cargo +stable publish --locked --dry-run\n")
+    assert not flags.intersection(_checks(repo))
+
+    release.write_text(
+        workflow
+        + """
+  second_registry:
+    runs-on: ubuntu-latest
+    steps:
+      - run: cargo publish --registry secondary
+"""
+    )
+    assert flags.intersection(_checks(repo)) == {"no_oidc"}
+
+    release.unlink()
+    checks = set(_checks(repo))
+    assert "no_publish_workflow" in checks
+    assert "no_oidc" not in checks
+
+    release.write_text(
+        workflow.replace("    permissions: {contents: read}\n", "")
+        + """
+  action_publisher:
+    runs-on: ubuntu-latest
+    permissions: {contents: read}
+    steps:
+      - uses: example/cargo-publish-action@v1
+"""
+    )
+    assert flags.intersection(_checks(repo)) == {"no_oidc"}
