@@ -149,3 +149,30 @@ def test_artifact_identity_and_identical_revisions_cannot_imply_regression(tmp_p
         ],
     )
     assert rc.exit_code == 3 and "same revision" in rc.stdout
+
+
+@pytest.mark.parametrize(
+    ("search", "replace"),
+    [
+        ('"outcome": "pass"', '"outcome": "fail", "outcome": "pass"'),
+        ('"schema_version": 1', '"schema_version": 2, "schema_version": 1'),
+        ('"exit_code": 0', '"exit_code": -9, "exit_code": 0'),
+        ('"exit_code": 0', '"unknown": Infinity, "exit_code": 0'),
+    ],
+)
+def test_ambiguous_or_invalid_json_is_never_a_pass(tmp_path, search, replace):
+    run_case(tmp_path, None, obs(HEAD), compare=False)
+    path = tmp_path / "evidence.json"
+    original = path.read_text()
+    assert search in original
+    path.write_text(original.replace(search, replace))
+    result = CliRunner().invoke(
+        app, ["consumer-results", str(path), "--repository", "org/sample", "--head", HEAD]
+    )
+    assert result.exit_code == 3 and json.loads(result.stdout)["errors"]
+
+
+def test_signal_can_be_the_asserted_behavior(tmp_path):
+    head = obs(HEAD, "pass", exit_code=-15, reason="worker terminated on the requested SIGTERM")
+    rc, report = run_case(tmp_path, None, head, compare=False)
+    assert rc == 0 and report["cases"][0]["head"]["exit_code"] == -15

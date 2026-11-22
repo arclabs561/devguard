@@ -125,6 +125,23 @@ def import_results(evidence: Evidence, scope: Scope) -> dict:
     }
 
 
+class InvalidEvidenceJSONError(ValueError):
+    """Malformed JSON that a permissive parser would otherwise normalize."""
+
+
+def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise InvalidEvidenceJSONError("Duplicate JSON object key in evidence.")
+        result[key] = value
+    return result
+
+
+def _reject_constant(value: str) -> None:
+    raise InvalidEvidenceJSONError("Non-finite numeric constant in evidence.")
+
+
 def consumer_results(
     report: Path = typer.Argument(..., help="JSON evidence from a trusted producer."),
     repository: str = typer.Option(..., "--repository", help="Expected repository identifier."),
@@ -134,13 +151,23 @@ def consumer_results(
     """Compare recorded consumer assertions at explicit revisions and emit JSON."""
     try:
         scope = Scope(repository=repository, head=head, base=base)
-        evidence = Evidence.model_validate_json(report.read_bytes())
-    except (ValueError, OSError) as error:
+        evidence = Evidence.model_validate(
+            json.loads(
+                report.read_bytes(),
+                object_pairs_hook=_unique_object,
+                parse_constant=_reject_constant,
+            )
+        )
+    except (ValueError, OSError, RecursionError) as error:
         if isinstance(error, ValidationError):
             messages = [
                 ".".join(map(str, item["loc"])) + ": " + item["msg"]
                 for item in error.errors(include_input=False, include_url=False)
             ]
+        elif isinstance(error, InvalidEvidenceJSONError):
+            messages = [str(error)]
+        elif isinstance(error, (UnicodeError, json.JSONDecodeError, RecursionError)):
+            messages = ["Invalid JSON evidence."]
         else:
             messages = ["Could not read evidence file."]
         typer.echo(json.dumps({"errors": messages}))
