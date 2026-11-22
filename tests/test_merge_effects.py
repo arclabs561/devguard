@@ -74,6 +74,8 @@ def test_code_only_cli(repository):
         ("{push: {tags: ['v*']}}", "cargo publish", None, "excluded", "publish"),
         ("workflow_dispatch", "cargo publish", None, "excluded", "publish"),
         ("push", "cargo publish --dry-run", None, "eligible", "dry-run"),
+        ("push", "cargo publish", "github.ref_name == 'TRUNK'", "eligible", "publish"),
+        ("push", "cargo publish", "github.ref_name != 'TRUNK'", "excluded", "publish"),
         ("push", "vercel deploy", None, "eligible", "preview-deploy"),
         ("push", "vercel deploy --target production", None, "eligible", "production-deploy"),
         ("push", "vercel deploy --target custom", None, "eligible", "unresolved-deploy-target"),
@@ -221,3 +223,19 @@ def test_runtime_environment_cannot_prove_publish_dry_run(prelude, expected):
     )
     rows = _workflow(wf, "wf", "trunk", ["src/index.js"])
     assert [e["effect"] for e in rows if e["destination"] == "npm"] == [expected]
+
+
+@pytest.mark.parametrize("needs", ["on", "[on, yes]"])
+def test_job_ids_and_dependencies_preserve_yaml_spelling(needs):
+    wf = (
+        "on: push\njobs:\n"
+        "  on:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm publish --dry-run\n"
+        "  yes:\n    runs-on: ubuntu-latest\n    steps: []\n"
+        f"  ship:\n    needs: {needs}\n    runs-on: ubuntu-latest\n"
+        "    steps:\n      - run: cargo publish --dry-run\n"
+    )
+    effects = _workflow(wf, "wf", "trunk", [])
+    assert [(e["job"], e["status"], e["line"]) for e in effects] == [
+        ("on", "eligible", 6),
+        ("ship", "eligible", 14),
+    ]
