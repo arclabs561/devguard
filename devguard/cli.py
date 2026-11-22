@@ -273,7 +273,7 @@ def _print_repo_hygiene_table(report: dict, title: str = "repo_hygiene findings"
     table.add_column("check")
     table.add_column("severity")
     table.add_column("message", max_width=55)
-    evidence_rows = []
+    evidence_rows: list[tuple[str, list[str]]] = []
     row_count = 0
     for r in repos:
         for f in r.get("findings", []):
