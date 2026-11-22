@@ -534,6 +534,9 @@ def test_dependency_gate_observes_advisories_and_tool_errors_on_same_commit(tmp_
     import os
 
     origin = _make_origin(tmp_path, "app", {"package-lock.json": "{}"})
+    nested = origin / "worker"
+    nested.mkdir()
+    (nested / "package-lock.json").write_text("{}")
     tools = tmp_path / "bin"
     tools.mkdir()
     npm = tools / "npm"
@@ -551,7 +554,7 @@ def test_dependency_gate_observes_advisories_and_tool_errors_on_same_commit(tmp_
     assert "dependency_audit" in fl.REPO_SCOPED_SWEEPS
     for raw, tool_exit, expected, count in [
         ({"vulnerabilities": {}}, 0, 0, 0),
-        ({"vulnerabilities": {"demo": {"severity": "high", "via": [{"title": "test"}]}}}, 1, 2, 1),
+        ({"vulnerabilities": {"demo": {"severity": "high", "via": [{"title": "test"}]}}}, 1, 2, 2),
         ({"error": "unavailable"}, 1, 3, 0),
     ]:
         npm.write_text(
@@ -560,7 +563,10 @@ def test_dependency_gate_observes_advisories_and_tool_errors_on_same_commit(tmp_
         npm.chmod(0o755)
         result = cli.invoke(app, args)
         assert result.exit_code == expected, result.output
-        assert json.loads(result.stdout)["summary"]["findings"]["high"] == count
+        report = json.loads(result.stdout)
+        assert report["summary"]["findings"]["high"] == count
+        if count:
+            assert [f["file"] for f in report["repos"][0]["findings"]] == [str(origin), str(nested)]
 
     no_inputs = _make_origin(tmp_path, "docs", {"README.md": "docs"})
     result = cli.invoke(

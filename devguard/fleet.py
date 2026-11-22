@@ -500,6 +500,7 @@ def extract_findings(reports: dict[str, Any]) -> list[dict[str, Any]]:
                             {
                                 "check": vuln["id"],
                                 "severity": vuln["severity"],
+                                "file": repo.get("repo_path"),
                                 "message": f"{vuln['package']}: {vuln['title']}",
                             },
                         )
