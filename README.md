@@ -154,6 +154,7 @@ With [pkgrank](https://github.com/arclabs561/pkgrank) on your PATH, run
 `devguard fleet --root ~/code --pkgrank` to order findings of equal severity
 by the number of files that depend on the flagged file, including transitive
 imports. The report also lists candidate tests that import the affected code.
+On readable executables, the JSON records the SHA-256 of the local pkgrank launcher so runs from different builds can be distinguished.
 These paths give you tests to run first. Dynamic imports, external consumers
 and runtime coverage can be missing from the graph.
 

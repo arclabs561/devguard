@@ -192,3 +192,19 @@ def test_test_disappearing_during_affected_query_is_unavailable(monkeypatch, tmp
     result = review_rank.rank_findings(tmp_path, [{"file": "module.py"}], 5)
     assert result["missing_files"] == ["test_module.py"]
     assert "tests_unavailable" in result and "candidate_tests" not in result
+
+
+def test_report_identifies_replacement_launcher_at_same_path(tmp_path, monkeypatch):
+    launcher = tmp_path / "pkgrank"
+    source = tmp_path / "example.py"
+    source.touch()
+    monkeypatch.setattr(review_rank.shutil, "which", lambda _: str(launcher))
+    monkeypatch.setattr(review_rank, "_reports", lambda *args: [files([row(source.name, 0)])])
+    launcher.write_bytes(b"a")
+    first = review_rank.rank_findings(tmp_path, [{"file": source.name}], 5)
+    replacement = tmp_path / "replacement"
+    replacement.write_bytes(b"b")
+    replacement.replace(launcher)
+    second = review_rank.rank_findings(tmp_path, [{"file": source.name}], 5)
+    assert first["producer"]["launcher_sha256"] != second["producer"]["launcher_sha256"]
+    assert first["producer"]["name"] == second["producer"]["name"] == "pkgrank"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -9,8 +10,28 @@ import shutil
 import subprocess
 import tempfile
 import time
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
+
+
+@lru_cache(maxsize=16)
+def _launcher_digest(path: Path, identity: tuple[int, ...]) -> str:
+    # The stat key invalidates the digest when the executable is replaced.
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def _producer(path: Path) -> dict[str, str]:
+    producer = {"name": "pkgrank"}
+    try:
+        st = path.stat()
+        identity = (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+        producer["launcher_sha256"] = _launcher_digest(path, identity)
+    except OSError:
+        # An executable can be runnable without granting the user read access.
+        pass
+    return producer
 
 
 def _relative(location: str, root: Path) -> str | None:
@@ -72,12 +93,12 @@ def rank_findings(root: Path, findings: list[dict[str, Any]], timeout: int) -> d
     exe = shutil.which("pkgrank")
     if not exe:
         return {"status": "unavailable", "reason": "pkgrank was not found on PATH"}
+    launcher = Path(exe).resolve()
+    producer = _producer(launcher)
     deadline = time.monotonic() + timeout
     try:
         with tempfile.TemporaryDirectory(prefix="devguard-pkgrank-") as cwd:
-            (graph,) = _reports(
-                str(Path(exe).resolve()), root, cwd, ["--top", "2147483647"], deadline
-            )
+            (graph,) = _reports(str(launcher), root, cwd, ["--top", "2147483647"], deadline)
             rows = graph["rows"]
             if not isinstance(rows, list) or graph.get("rows_total") != len(rows):
                 raise ValueError("incomplete pkgrank file list")
@@ -141,6 +162,7 @@ def rank_findings(root: Path, findings: list[dict[str, Any]], timeout: int) -> d
                         "matched_files": sorted(files),
                     }
             context: dict[str, Any] = {
+                "producer": producer,
                 "status": "ranked",
                 "matched_findings": matched,
                 "files_in_graph": len(rows),
@@ -170,7 +192,7 @@ def rank_findings(root: Path, findings: list[dict[str, Any]], timeout: int) -> d
                 return context
             try:
                 reports = _reports(
-                    str(Path(exe).resolve()), root, cwd, ["--top", "0", "--affected", arg], deadline
+                    str(launcher), root, cwd, ["--top", "0", "--affected", arg], deadline
                 )
                 impact = reports[-1]
                 affected = impact["affected"]
