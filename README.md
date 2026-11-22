@@ -150,6 +150,19 @@ repositories at once. Each repository is scanned by its own `devguard sweep`
 process, so a crash or timeout in one is reported for that repository and the
 rest still finish.
 
+With [pkgrank](https://github.com/arclabs561/pkgrank) on your PATH, run
+`devguard fleet --root ~/code --pkgrank` to order findings of equal severity
+by the number of files that depend on the flagged file, including transitive
+imports. The report also lists candidate tests that import the affected code.
+These paths give you tests to run first. Dynamic imports, external consumers
+and runtime coverage can be missing from the graph.
+
+The JSON `review_order` keeps unmatched findings, including workflow and
+manifest findings. Their dependent count is `null`. A grouped finding uses the
+largest individual file count. Per-repository `pkgrank` results distinguish
+an empty test selection from an unavailable graph. Ranking is optional and
+has no effect on the scan's severity threshold or exit code.
+
 `docs_quality` is not in that default set, because it reports a repository as
 not fully scanned unless both Vale and readcost are installed and Vale has
 styles configured for it. To check READMEs across repositories, ask for it by

@@ -192,6 +192,39 @@ def _print_text(
                     if location != f["file"]:
                         console.print(f"           [dim]{escape(location)}[/dim]", highlight=False)
 
+    if "review_order" in report:
+        ranked = Table(title="Review order", title_justify="left")
+        for label in ("Severity", "Repository", "Check", "File", "Dependent files"):
+            ranked.add_column(label)
+        rows = [
+            row
+            for row in report["review_order"]
+            if fl.severity_at_least(row["severity"], min_severity)
+        ]
+        for row in rows[:top]:
+            reach = row["dependents"]
+            ranked.add_row(
+                row["severity"],
+                escape(row["repo"]),
+                escape(row["check"]),
+                escape(row["file"]),
+                str(reach) if reach is not None else "unknown",
+            )
+        if ranked.row_count:
+            console.print(ranked)
+        for res in results:
+            info = res.pkgrank or {}
+            if info.get("status") == "unavailable":
+                console.print(f"{res.name}: {info['reason']}", markup=False)
+            if info.get("tests_unavailable"):
+                console.print(f"{res.name}: {info['tests_unavailable']}", markup=False)
+            tests = info.get("candidate_tests", [])
+            if tests:
+                console.print(
+                    f"{res.name} related tests ({len(tests)}): " + ", ".join(tests[:top]),
+                    markup=False,
+                )
+
     partial = [r for r in results if r.status == "error" or r.exit_code == 3]
     if partial:
         console.print()
@@ -257,6 +290,11 @@ def fleet(
     ),
     no_cache: bool = typer.Option(
         False, "--no-cache", help="Ignore and do not write cached results."
+    ),
+    pkgrank: bool = typer.Option(
+        False,
+        "--pkgrank",
+        help="Rank findings of equal severity by file reach and list related tests using local pkgrank.",
     ),
     online_dependencies: bool = typer.Option(
         False,
@@ -375,6 +413,7 @@ def fleet(
         use_cache=not no_cache,
         refresh=not offline,
         online_dependencies=online_dependencies,
+        with_pkgrank=pkgrank,
         full_history=full_history,
         timeout=timeout,
     )
@@ -407,6 +446,8 @@ def fleet(
     report = fl.fleet_report(
         results, sweeps=sweeps, seconds=time.monotonic() - started, include_reports=full_reports
     )
+    if pkgrank:
+        report["review_order"] = fl.review_order(results)
     _emit_json(report, stdout=format == "json", output=output)
     if format == "text":
         out = Console()

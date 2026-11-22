@@ -113,6 +113,8 @@ class RepoResult:
     errors: list[str] = field(default_factory=list)
     reports: dict[str, Any] = field(default_factory=dict)
 
+    pkgrank: dict[str, Any] | None = None
+
     @property
     def counts(self) -> dict[str, int]:
         tally = Counter(f["severity"] for f in self.findings)
@@ -582,14 +584,17 @@ def scan_one(
     root: Path,
     use_cache: bool = True,
     online_dependencies: bool = False,
+    with_pkgrank: bool = False,
     refresh: bool = True,
     full_history: bool = False,
     timeout: int = 900,
 ) -> RepoResult:
     started = time.monotonic()
 
-    def result(status: str, code: int, head: str | None, **extra: Any) -> RepoResult:
-        return RepoResult(
+    def result(
+        status: str, code: int, head: str | None, *, checkout: Path | None = None, **extra: Any
+    ) -> RepoResult:
+        item = RepoResult(
             name=ref.name,
             url=ref.url,
             head=head,
@@ -599,6 +604,12 @@ def scan_one(
             seconds=round(time.monotonic() - started, 2),
             **extra,
         )
+
+        if with_pkgrank and checkout is not None:
+            from devguard.review_rank import rank_findings
+
+            item.pkgrank = rank_findings(checkout.resolve(), item.findings, timeout)
+        return item
 
     try:
         path, head = sync_repo(ref, root=root, full_history=full_history, refresh=refresh)
@@ -625,6 +636,7 @@ def scan_one(
             "cached",
             int(hit.get("exit_code", 0)),
             head,
+            checkout=path,
             findings=extract_findings(reports),
             errors=[],
             reports=reports,
@@ -657,6 +669,7 @@ def scan_one(
         status,
         code,
         head,
+        checkout=path,
         findings=findings,
         errors=errors,
         reports=reports,
@@ -672,6 +685,7 @@ def scan_fleet(
     jobs: int = 4,
     use_cache: bool = True,
     online_dependencies: bool = False,
+    with_pkgrank: bool = False,
     refresh: bool = True,
     full_history: bool = False,
     timeout: int = 900,
@@ -690,6 +704,7 @@ def scan_fleet(
                 root=root,
                 use_cache=use_cache,
                 online_dependencies=online_dependencies,
+                with_pkgrank=with_pkgrank,
                 refresh=refresh,
                 full_history=full_history,
                 timeout=timeout,
@@ -735,6 +750,35 @@ def fleet_exit_code(results: list[RepoResult], fail_on: str) -> int:
     return 0
 
 
+def review_order(results: list[RepoResult]) -> list[dict[str, Any]]:
+    """Sort equal severity by the largest known file reach, keeping unmapped findings visible."""
+    entries = []
+    for repo in results:
+        for finding in repo.findings:
+            rank = finding.get("pkgrank", {})
+            entries.append(
+                {
+                    "repo": repo.name,
+                    "sweep": finding["sweep"],
+                    "check": finding["check"],
+                    "severity": finding["severity"],
+                    "file": rank.get("file") or finding["file"],
+                    "dependents": rank.get("dependents"),
+                }
+            )
+    return sorted(
+        entries,
+        key=lambda e: (
+            _SEVERITY_RANK[e["severity"]],
+            -(e["dependents"] if e["dependents"] is not None else -1),
+            e["repo"],
+            e["sweep"],
+            e["check"],
+            e["file"],
+        ),
+    )
+
+
 def fleet_report(
     results: list[RepoResult], *, sweeps: list[str], seconds: float, include_reports: bool = False
 ) -> dict[str, Any]:
@@ -747,6 +791,8 @@ def fleet_report(
     repos = []
     for res in results:
         row = asdict(res)
+        if res.pkgrank is None:
+            row.pop("pkgrank")
         row["counts"] = res.counts
         if audit := res.reports.get("dependency_audit"):
             row["dependency_coverage"] = {
