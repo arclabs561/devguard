@@ -521,3 +521,18 @@ def test_local_script_coverage_distinguishes_uncertainty_and_missing_targets(tmp
     ):
         script.write_text(body)
         assert flags.intersection(_checks(repo)) == {"no_dry_run"}
+
+
+def test_bare_command_is_not_a_repository_script(tmp_path):
+    repo = _workspace(tmp_path, "verify.sh")
+    script = repo / "verify.sh"
+    script.write_text("#!/bin/sh\ncargo publish --dry-run -p lib\n")
+    script.chmod(0o755)
+    _git(repo, "add", "verify.sh")
+    workflow = repo / ".github/workflows/ci.yml"
+    baseline = workflow.read_text() + "      - run: cargo publish -p lib\n"
+    workflow.write_text(baseline)
+    assert "no_dry_run" in _checks(repo)
+    for command in ("./verify.sh", "sh verify.sh"):
+        workflow.write_text(baseline.replace("verify.sh", command))
+        assert not {"no_dry_run", "unresolved_dry_run_coverage"}.intersection(_checks(repo))

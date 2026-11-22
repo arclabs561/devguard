@@ -337,7 +337,8 @@ def _scan(
         shell_invocation = executable in {"sh", "bash"} and bool(args)
         if shell_invocation:
             executable = args[0]
-        if "/" in executable or executable.endswith(".sh"):
+        # A bare command is PATH-resolved. An explicit shell reads its script operand.
+        if "/" in executable or shell_invocation:
             script = _tracked_script(repo, cwd, executable)
             if (
                 script
