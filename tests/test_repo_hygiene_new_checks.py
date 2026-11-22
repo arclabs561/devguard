@@ -460,7 +460,7 @@ def test_unknown_feature_today_burn_flex_case(tmp_path: Path) -> None:
 
 
 def test_ungated_test_using_feature_gated_module_is_flagged(tmp_path: Path) -> None:
-    from devguard.sweeps.repo_hygiene import _check_test_target_missing_gate
+    from devguard.sweeps.repo_hygiene import _check_test_target_feature_gates
 
     repo = _repo(
         tmp_path / "r",
@@ -472,15 +472,14 @@ def test_ungated_test_using_feature_gated_module_is_flagged(tmp_path: Path) -> N
             "tests/ann_matrix.rs": "use vicinity::hnsw::Index;\n",
         },
     )
-    finding = _check_test_target_missing_gate(repo, _git_ls_files(repo))
-    assert finding is not None
+    (finding,) = _check_test_target_feature_gates(repo, _git_ls_files(repo))
     assert finding.check == "test_target_missing_gate"
     assert "ann_matrix.rs" in finding.files[0]
     assert "hnsw" in finding.files[0]
 
 
 def test_gated_test_using_feature_gated_module_is_quiet(tmp_path: Path) -> None:
-    from devguard.sweeps.repo_hygiene import _check_test_target_missing_gate
+    from devguard.sweeps.repo_hygiene import _check_test_target_feature_gates
 
     repo = _repo(
         tmp_path / "r",
@@ -492,11 +491,11 @@ def test_gated_test_using_feature_gated_module_is_quiet(tmp_path: Path) -> None:
             "tests/ann_matrix.rs": '#![cfg(feature = "hnsw")]\nuse vicinity::hnsw::Index;\n',
         },
     )
-    assert _check_test_target_missing_gate(repo, _git_ls_files(repo)) is None
+    assert _check_test_target_feature_gates(repo, _git_ls_files(repo)) == []
 
 
 def test_required_features_target_is_quiet(tmp_path: Path) -> None:
-    from devguard.sweeps.repo_hygiene import _check_test_target_missing_gate
+    from devguard.sweeps.repo_hygiene import _check_test_target_feature_gates
 
     repo = _repo(
         tmp_path / "r",
@@ -510,11 +509,11 @@ def test_required_features_target_is_quiet(tmp_path: Path) -> None:
             "tests/ann_matrix.rs": "use vicinity::hnsw::Index;\n",
         },
     )
-    assert _check_test_target_missing_gate(repo, _git_ls_files(repo)) is None
+    assert _check_test_target_feature_gates(repo, _git_ls_files(repo)) == []
 
 
 def test_ann_matrix_today_case_ungated_use_with_gated_mod(tmp_path: Path) -> None:
-    from devguard.sweeps.repo_hygiene import _check_test_target_missing_gate
+    from devguard.sweeps.repo_hygiene import _check_test_target_feature_gates
 
     repo = _repo(
         tmp_path / "r",
@@ -530,13 +529,12 @@ def test_ann_matrix_today_case_ungated_use_with_gated_mod(tmp_path: Path) -> Non
             ),
         },
     )
-    finding = _check_test_target_missing_gate(repo, _git_ls_files(repo))
-    assert finding is not None
+    (finding,) = _check_test_target_feature_gates(repo, _git_ls_files(repo))
     assert "ann_matrix.rs" in finding.files[0]
 
 
 def test_member_target_and_multiline_gated_function(tmp_path: Path) -> None:
-    from devguard.sweeps.repo_hygiene import _check_test_target_missing_gate
+    from devguard.sweeps.repo_hygiene import _check_test_target_feature_gates
 
     repo = _repo(
         tmp_path / "r",
@@ -551,8 +549,7 @@ def test_member_target_and_multiline_gated_function(tmp_path: Path) -> None:
             "lib/examples/unguarded.rs": "use search::index::Index;\nfn main() {}\n",
         },
     )
-    finding = _check_test_target_missing_gate(repo, _git_ls_files(repo))
-    assert finding is not None
+    (finding,) = _check_test_target_feature_gates(repo, _git_ls_files(repo))
     assert finding.files == ["lib/examples/unguarded.rs: search::index needs feature 'index'"]
 
 
@@ -673,7 +670,7 @@ def test_allow_pragma_window_is_bounded(tmp_path: Path) -> None:
 
 
 def test_local_macro_arguments_are_not_direct_feature_uses(tmp_path: Path) -> None:
-    from devguard.sweeps.repo_hygiene import _check_test_target_missing_gate
+    from devguard.sweeps.repo_hygiene import _check_test_target_feature_gates
 
     local_macro = (
         "macro_rules! generate { ($f:literal, $p:path, $v:expr) => {\n"
@@ -687,13 +684,23 @@ def test_local_macro_arguments_are_not_direct_feature_uses(tmp_path: Path) -> No
             "Cargo.toml": '[package]\nname = "search"\nversion = "0.1.0"\n[features]\nfinger = []\n',
             "src/lib.rs": '#[cfg(feature = "finger")]\npub mod finger;\n',
             "tests/generated.rs": local_macro + call,
+            "tests/unguarded_expansion.rs": (
+                "macro_rules! make { ($p:path) => { type Alias = $p; } }\n"
+                "make!(search::finger::Index);"
+            ),
             "tests/direct.rs": local_macro + call + " use search::finger::Index;",
             "tests/expression.rs": "fn main() { search::other(); search::finger::new(); }",
         },
     )
-    finding = _check_test_target_missing_gate(repo, _git_ls_files(repo))
-    assert finding is not None
+    finding, advisory = _check_test_target_feature_gates(repo, _git_ls_files(repo))
     assert set(finding.files) == {
         "tests/direct.rs: search::finger needs feature 'finger'",
         "tests/expression.rs: search::finger needs feature 'finger'",
+    }
+    assert finding.check == "test_target_missing_gate" and finding.severity == "medium"
+    assert advisory.check == "test_target_macro_feature" and advisory.severity == "low"
+    assert set(advisory.files) == {
+        "tests/direct.rs: search::finger needs feature 'finger'",
+        "tests/generated.rs: search::finger needs feature 'finger'",
+        "tests/unguarded_expansion.rs: search::finger needs feature 'finger'",
     }
