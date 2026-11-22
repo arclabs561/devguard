@@ -1442,6 +1442,30 @@ def _test_target_name(rel: str) -> str | None:
     return None
 
 
+# A local macro may discard path tokens or place them under a generated cfg.
+# Recognize only complete, simple argument lists. Arbitrary Rust token trees
+# would need a parser; partial matches must not hide neighboring direct uses.
+_RUST_PATH_ARG = r"[A-Za-z_]\w*(?:::[A-Za-z_]\w*)*(?:\(\))?"
+_SIMPLE_MACRO_ARG = rf'(?:"[A-Za-z_][\w-]*"|{_RUST_PATH_ARG})'
+_SIMPLE_MACRO_CALL = re.compile(
+    rf"\b(?P<name>[A-Za-z_]\w*)!\s*\(\s*{_SIMPLE_MACRO_ARG}"
+    rf"(?:\s*,\s*{_SIMPLE_MACRO_ARG})*\s*,?\s*\)"
+)
+
+
+def _without_local_macro_arguments(text: str) -> str:
+    names = set(re.findall(r"^\s*macro_rules!\s*(\w+)", text, re.MULTILINE))
+    if not names:
+        return text
+
+    def replace(call: re.Match[str]) -> str:
+        if call["name"] in names:
+            return "\n" * call[0].count("\n") + " "
+        return call[0]
+
+    return _SIMPLE_MACRO_CALL.sub(replace, text)
+
+
 def _check_test_target_missing_gate(repo: Path, tracked: list[str]) -> HygieneFinding | None:
     """A test/example that uses a feature-gated module without gating itself.
 
@@ -1497,24 +1521,21 @@ def _check_test_target_missing_gate(repo: Path, tracked: list[str]) -> HygieneFi
             gated_ranges = _cfg_gated_ranges(lines)
             kind = "test" if target_path.startswith("tests/") else "example"
             required = _target_required_features(manifest, kind, name, target_path)
-            for lineno, line in enumerate(lines):
+            for lineno, line in enumerate(_without_local_macro_arguments(text).splitlines()):
                 if _allowed(allow, "test_target_missing_gate", lineno):
                     continue
                 stripped = line.lstrip()
                 if not stripped or stripped.startswith("//"):
                     continue
-                match = crate_re.search(line)
-                if not match:
-                    continue
-                module = match.group(1)
-                feature = gated.get(module)
-                if feature is None:
-                    continue
-                if feature in required:
-                    continue
                 if any(start <= lineno <= end for start, end in gated_ranges):
                     continue
-                graders.append(f"{rel}: {crate_name}::{module} needs feature {feature!r}")
+                for module in crate_re.findall(line):
+                    feature = gated.get(module)
+                    if feature is not None and feature not in required:
+                        graders.append(f"{rel}: {crate_name}::{module} needs feature {feature!r}")
+                        break
+                else:
+                    continue
                 break
 
     if not graders:
@@ -1524,8 +1545,8 @@ def _check_test_target_missing_gate(repo: Path, tracked: list[str]) -> HygieneFi
         check="test_target_missing_gate",
         severity="medium",
         message=(
-            f"{len(graders)} test/example target(s) use a feature-gated module without a "
-            "cfg gate or required-features -- they break every lane that omits it."
+            f"{len(graders)} test/example target(s) reference a feature-gated module without a detected "
+            "cfg gate or required-features. Check builds that omit the feature."
         ),
         files=graders[:_FEATURE_FINDING_CAP],
     )

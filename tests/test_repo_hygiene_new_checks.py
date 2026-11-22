@@ -670,3 +670,30 @@ def test_allow_pragma_window_is_bounded(tmp_path: Path) -> None:
     finding = _check_unknown_features(repo, _git_ls_files(repo))
     assert finding is not None, "a pragma six lines up must not cover this command"
     assert any("alsoGone" in f for f in finding.files)
+
+
+def test_local_macro_arguments_are_not_direct_feature_uses(tmp_path: Path) -> None:
+    from devguard.sweeps.repo_hygiene import _check_test_target_missing_gate
+
+    local_macro = (
+        "macro_rules! generate { ($f:literal, $p:path, $v:expr) => {\n"
+        "  #[cfg(feature = $f)] fn run() { let _: $p = $v; }\n"
+        "} }\n"
+    )
+    call = 'generate!(\n    "finger",\n    search::finger::Index,\n    search::finger::new()\n);'
+    repo = _repo(
+        tmp_path / "r",
+        {
+            "Cargo.toml": '[package]\nname = "search"\nversion = "0.1.0"\n[features]\nfinger = []\n',
+            "src/lib.rs": '#[cfg(feature = "finger")]\npub mod finger;\n',
+            "tests/generated.rs": local_macro + call,
+            "tests/direct.rs": local_macro + call + " use search::finger::Index;",
+            "tests/expression.rs": "fn main() { search::other(); search::finger::new(); }",
+        },
+    )
+    finding = _check_test_target_missing_gate(repo, _git_ls_files(repo))
+    assert finding is not None
+    assert set(finding.files) == {
+        "tests/direct.rs: search::finger needs feature 'finger'",
+        "tests/expression.rs: search::finger needs feature 'finger'",
+    }
