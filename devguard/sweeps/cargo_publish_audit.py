@@ -611,13 +611,17 @@ def _audit_repo(
                 check="no_oidc",
                 severity=sev,
                 message="Missing evidence of `id-token: write` on a Cargo publishing job",
-                detail="Trusted publishing avoids long-lived API tokens. "
-                "Set `permissions: id-token: write` and configure crates.io trusted publishers.",
+                detail="Review the effective permissions and crates.io trusted publisher for "
+                + ", ".join(sorted({step.location for step in live_steps if not step.oidc})),
             )
         )
 
     # Check configured dry-run commands. Event reachability is a separate signal.
-    has_dry_run = any(step.dry_run for step in steps)
+    verified = {package for step in steps if step.dry_run for package in step.packages}
+    uncovered = {
+        step.location for step in live_steps if not step.packages or not step.packages <= verified
+    }
+    has_dry_run = bool(verified) and not uncovered
     # Also check for separate CI workflow with cargo check/test
     has_ci_workflow = any(
         ("pull_request" in t or "push:" in t)
@@ -630,9 +634,10 @@ def _audit_repo(
             Finding(
                 check="no_dry_run",
                 severity="warning",
-                message="No `cargo publish --dry-run` found in CI",
-                detail="Dry-run catches packaging errors (missing files, bad metadata) before tagging. "
-                "Consider adding it to PR checks.",
+                message="Missing a configured `cargo publish --dry-run` that verifies each published package",
+                detail="Configure a dry run for each published package without --no-verify. "
+                "Check unresolved selectors or external actions manually: "
+                + ", ".join(sorted(uncovered)),
             )
         )
 

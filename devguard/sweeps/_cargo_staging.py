@@ -47,27 +47,33 @@ def _options(args: list[str], *names: str) -> list[str]:
     return values
 
 
-def _multi_package(repo: Path, cwd: Path, args: list[str]) -> bool:
+def _selected_packages(repo: Path, cwd: Path, args: list[str]) -> frozenset[Path]:
     packages = set(_options(args, "-p", "--package"))
-    if len(packages) > 1:
-        return True
     manifest = _inside(repo, cwd, (_options(args, "--manifest-path") or ["Cargo.toml"])[-1])
     if not manifest or not manifest.is_file():
-        return False
+        return frozenset()
     try:
         config = tomllib.loads(manifest.read_text())
     except (OSError, UnicodeError, tomllib.TOMLDecodeError):
-        return False
+        return frozenset()
     workspace = config.get("workspace")
-    if not isinstance(workspace, dict):
-        return False
     root = config.get("package", {}).get("name")
+    if not isinstance(workspace, dict):
+        if (
+            not root
+            or (packages and packages != {root})
+            or "--workspace" in args
+            or "--all" in args
+        ):
+            return frozenset()
+        return frozenset([manifest])
     members = workspace.get("members", [])
     if not packages and "--workspace" not in args and "--all" not in args:
         members = workspace.get("default-members", ["."] if root else members)
     elif root:
         members = [".", *members]
-    names = set()
+    selected = set()
+    matched: set[str] = set()
     excluded = _options(args, "--exclude")
     for pattern in members:
         if (
@@ -89,10 +95,9 @@ def _multi_package(repo: Path, cwd: Path, args: list[str]) -> bool:
             if not name or any(fnmatch.fnmatchcase(name, g) for g in excluded):
                 continue
             if not packages or any(fnmatch.fnmatchcase(name, g) for g in packages):
-                names.add(name)
-                if len(names) > 1:
-                    return True
-    return False
+                selected.add(member.resolve())
+                matched.update(p for p in packages if fnmatch.fnmatchcase(name, p))
+    return frozenset(selected) if matched == packages else frozenset()
 
 
 @dataclass(frozen=True)
@@ -105,8 +110,10 @@ class StagingRisk:
 @dataclass(frozen=True)
 class PublishStep:
     workflow: str
+    location: str
     oidc: bool
     dry_run: bool
+    packages: frozenset[Path]
     staging_risk: StagingRisk | None
 
 
@@ -150,7 +157,7 @@ def _scan(
     used: set[str],
     seen: set[Path],
     allocations: Iterator[int],
-) -> Iterator[tuple[bool, StagingRisk | None]]:
+) -> Iterator[tuple[bool, frozenset[Path], StagingRisk | None]]:
     exported = set(env)
     for line, tokens in _commands(body, allocations):
         tokens = list(tokens)
@@ -216,8 +223,14 @@ def _scan(
         if args[:1] != ["publish"]:
             continue
         dry_run = "--dry-run" in args
-        if not dry_run or "--no-verify" in args or not _multi_package(repo, cwd, args):
-            yield dry_run, None
+        packages = _selected_packages(repo, cwd, args)
+        if "--no-verify" in args and dry_run:
+            # Cargo prepares the package without verifying the unpacked crate.
+            yield True, frozenset(), None
+            continue
+        multi = len(packages) > 1 or len(set(_options(args, "-p", "--package"))) > 1
+        if not dry_run or not multi:
+            yield dry_run, packages, None
             continue
         inherited = (
             values.get("CARGO_TARGET_DIR", "") if "CARGO_TARGET_DIR" in exported | assigned else ""
@@ -229,7 +242,7 @@ def _scan(
         if not target.startswith("\0mktemp:") or ".." in target.split("/") or target in used:
             risk = StagingRisk(source, line, step)
         used.add(target)
-        yield dry_run, risk
+        yield dry_run, packages, risk
 
 
 def publish_steps(repo: Path, workflows: list[tuple[str, str]]) -> Iterator[PublishStep]:
@@ -252,13 +265,14 @@ def publish_steps(repo: Path, workflows: list[tuple[str, str]]) -> Iterator[Publ
                 isinstance(perms, dict) and perms.get("id-token") == "write"
             )
             for idx, step in enumerate(job.get("steps") or [], 1):
+                location = f".github/workflows/{name} (job {job_name}, step {idx})"
                 if not isinstance(step, dict):
                     continue
                 # External publisher internals are opaque, but the caller's
                 # job permissions still govern its access to an OIDC token.
                 action = str(step.get("uses", "")).partition("@")[0].lower()
                 if "cargo-publish" in action:
-                    yield PublishStep(name, oidc, False, None)
+                    yield PublishStep(name, location, oidc, False, frozenset(), None)
                 if not isinstance(step.get("run"), str):
                     continue
                 directory = "."
@@ -272,8 +286,7 @@ def publish_steps(repo: Path, workflows: list[tuple[str, str]]) -> Iterator[Publ
                 cwd = _inside(repo, repo, str(step.get("working-directory", directory)))
                 if cwd is None:
                     continue
-                location = f".github/workflows/{name} (job {job_name}, step {idx})"
-                for dry_run, risk in _scan(
+                for dry_run, packages, risk in _scan(
                     repo, cwd, step["run"], location, location, env, set(), set(), count()
                 ):
-                    yield PublishStep(name, oidc, dry_run, risk)
+                    yield PublishStep(name, location, oidc, dry_run, packages, risk)

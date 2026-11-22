@@ -345,4 +345,28 @@ jobs:
       - uses: example/cargo-publish-action@v1
 """
     )
-    assert flags.intersection(_checks(repo)) == {"no_oidc"}
+    assert flags.intersection(_checks(repo)) == flags
+
+
+def test_dry_run_covers_each_published_package(tmp_path: Path) -> None:
+    repo = _workspace(tmp_path, "cargo publish -p lib")
+    ci = repo / ".github/workflows/ci.yml"
+    live = ci.read_text()
+    for limited in (
+        "cargo publish --package=bin --dry-run",
+        "cargo publish --manifest-path bin/Cargo.toml --dry-run",
+        "cargo publish --manifest-path lib/Cargo.toml --dry-run --no-verify",
+    ):
+        ci.write_text(live + "      - run: " + limited + "\n")
+        assert "no_dry_run" in _checks(repo)
+    for matching in (
+        "cargo publish --package lib --dry-run",
+        "cargo publish --manifest-path lib/Cargo.toml --dry-run",
+        "cargo publish --workspace --dry-run",
+    ):
+        ci.write_text(live + "      - run: " + matching + "\n")
+        assert "no_dry_run" not in _checks(repo)
+    ci.write_text(
+        live + "      - run: cargo publish -p bin\n      - run: cargo publish -p lib --dry-run\n"
+    )
+    assert "no_dry_run" in _checks(repo)
