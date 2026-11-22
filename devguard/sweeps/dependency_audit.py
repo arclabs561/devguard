@@ -13,6 +13,7 @@ import json
 import os
 import shutil
 import subprocess
+import tomllib
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -106,6 +107,48 @@ def resolve_package_roots(repo: Path, requested: list[str]) -> list[Path]:
         if package not in resolved:
             resolved.append(package)
     return resolved
+
+
+def _locked_workspace_members(root: Path) -> set[Path]:
+    """Members named in the workspace manifest and present as local packages in its lock."""
+    try:
+        workspace = tomllib.loads((root / "Cargo.toml").read_text()).get("workspace", {})
+        if not workspace.get("members"):
+            return set()
+        packages = tomllib.loads((root / "Cargo.lock").read_text()).get("package", [])
+        local_names = {p["name"] for p in packages if isinstance(p, dict) and "source" not in p}
+        members: set[Path] = set()
+        for field in ("members", "exclude"):
+            for pattern in workspace.get(field, []):
+                if (
+                    not isinstance(pattern, str)
+                    or Path(pattern).is_absolute()
+                    or ".." in Path(pattern).parts
+                ):
+                    continue
+                for member in root.glob(pattern):
+                    manifest = member / "Cargo.toml"
+                    if field == "exclude":
+                        members.discard(member)
+                    elif (
+                        member != root
+                        and manifest.is_file()
+                        and manifest.resolve().is_relative_to(root.resolve())
+                    ):
+                        name = tomllib.loads(manifest.read_text()).get("package", {}).get("name")
+                        if name in local_names:
+                            members.add(member)
+        return members
+    except (
+        OSError,
+        UnicodeError,
+        tomllib.TOMLDecodeError,
+        KeyError,
+        TypeError,
+        AttributeError,
+        ValueError,
+    ):
+        return set()
 
 
 def _input_hashes(package: Path) -> dict[str, str | None]:
@@ -529,7 +572,7 @@ def audit_dependencies(
     repo_count = len(repos)
     without_inputs: list[str] = []
     if package_roots is None:
-        packages = []
+        packages: list[Path] = []
         ignored = {
             ".git",
             ".venv",
@@ -543,6 +586,7 @@ def audit_dependencies(
         }
         for repo in repos:
             initial_count = len(packages)
+            workspace_members: set[Path] = set()
 
             def walk_error(exc: OSError) -> None:
                 errors.append(f"{repo}: directory discovery failed ({type(exc).__name__})")
@@ -552,11 +596,16 @@ def audit_dependencies(
                 dirs[:] = sorted(
                     d for d in dirs if d not in ignored and not (path / d / ".git").exists()
                 )
-                if set(files).intersection(_INPUT_FILES):
+                inputs = set(files).intersection(_INPUT_FILES)
+                if inputs == {"Cargo.toml"} and path in workspace_members:
+                    continue
+                if inputs:
                     if any((path / name).is_symlink() for name in _INPUT_FILES):
                         errors.append(f"{path}: symlinked package input requires explicit review")
                         continue
                     packages.append(path)
+                    if {"Cargo.toml", "Cargo.lock"} <= inputs:
+                        workspace_members.update(_locked_workspace_members(path))
             if len(packages) == initial_count:
                 without_inputs.append(str(repo))
         repos = packages

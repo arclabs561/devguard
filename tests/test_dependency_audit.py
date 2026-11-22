@@ -615,3 +615,21 @@ def test_published_crate_uses_index_checksum_and_exact_lock(tmp_path, monkeypatc
         checksum = "0" * 64
         assert crate_release.audit_crate_release("demo", "0.1.0")["status"] == "incomplete"
         assert run.call_count == 1
+
+
+def test_rust_workspace_lock_covers_declared_members_only(tmp_path):
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "Cargo.toml").write_text(
+        '[workspace]\nmembers=["crates/*"]\nexclude=["crates/other"]'
+    )
+    (tmp_path / "Cargo.lock").write_text('[[package]]\nname="one"\nversion="1.0.0"')
+    for name in ["one", "other"]:
+        member = tmp_path / "crates" / name
+        member.mkdir(parents=True)
+        (member / "Cargo.toml").write_text(f'[package]\nname="{name}"')
+    with patch("devguard.sweeps.dependency_audit.shutil.which", return_value=None):
+        report, _ = audit_dependencies(dev_root=tmp_path)
+    assert {r["repo_path"] for r in report["repos"]} == {
+        str(tmp_path),
+        str(tmp_path / "crates/other"),
+    }

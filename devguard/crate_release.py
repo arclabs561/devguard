@@ -18,7 +18,7 @@ from devguard.sweeps.dependency_audit import _audit_repo
 def _read_url(url: str, limit: int) -> bytes:
     request = Request(url, headers={"User-Agent": "devguard (github.com/arclabs561/devguard)"})
     with urlopen(request, timeout=30) as response:
-        data = response.read(limit + 1)
+        data: bytes = response.read(limit + 1)
     if len(data) > limit:
         raise ValueError("registry input exceeds size limit")
     return data
