@@ -132,7 +132,7 @@ def _guard(value: Any, branch: str) -> tuple[str, str] | None:
     for name, expected in comparisons.items():
         m = re.fullmatch(re.escape(name) + r"""\s*(==|!=)\s*(['"])([^'"]+)\2""", s)
         if m:
-            if (expected == m[3]) == (m[1] == "=="):
+            if (expected.lower() == m[3].lower()) == (m[1] == "=="):
                 return None
             return "excluded", "Condition excludes the target branch push"
     if (
@@ -267,11 +267,32 @@ def _dependency_guard(
 
 
 def _workflow(text: str, path: str, branch: str, changes: list[str] | None) -> list[dict]:
-    doc = yaml.safe_load(text)
-    node = yaml.compose(text, Loader=yaml.SafeLoader)
-    if not isinstance(doc, dict) or node is None or not isinstance(doc.get("jobs"), dict):
+    loader = yaml.SafeLoader(text)
+    try:
+        node = loader.get_single_node()
+        if not isinstance(node, yaml.MappingNode):
+            raise ValueError("Unrecognized workflow structure")
+        loc = _locations(node)
+        # Job IDs and their references are strings in the Actions schema, even
+        # when the YAML loader would resolve a name such as "on" to a boolean.
+        for key, jobs in node.value:
+            if key.value != "jobs" or not isinstance(jobs, yaml.MappingNode):
+                continue
+            for job_id, job in jobs.value:
+                if isinstance(job_id, yaml.ScalarNode):
+                    job_id.tag = "tag:yaml.org,2002:str"
+                if isinstance(job, yaml.MappingNode):
+                    for field, needs in job.value:
+                        if field.value == "needs":
+                            refs = needs.value if isinstance(needs, yaml.SequenceNode) else [needs]
+                            for ref in refs:
+                                if isinstance(ref, yaml.ScalarNode):
+                                    ref.tag = "tag:yaml.org,2002:str"
+        doc = loader.construct_document(node)
+    finally:
+        loader.dispose()
+    if not isinstance(doc, dict) or not isinstance(doc.get("jobs"), dict):
         raise ValueError("Unrecognized workflow structure")
-    loc = _locations(node)
     trigger = _trigger(doc.get("on", doc.get(True)), branch, changes)
     effects = []
     for job_id, job in doc["jobs"].items():
