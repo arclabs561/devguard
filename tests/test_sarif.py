@@ -179,3 +179,46 @@ def test_docs_finding_tracks_matching_structured_position():
     assert original["partialFingerprints"] == moved["partialFingerprints"]
     assert moved["locations"][0]["physicalLocation"]["region"] == {"startLine": 8}
     assert result(8, "Different text.")["partialFingerprints"] != moved["partialFingerprints"]
+
+
+def test_secret_alerts_keep_their_own_score_in_either_order_and_alone():
+    def scores(rows):
+        run = reports_to_sarif([("public_github_secrets", {"findings": rows})])["runs"][0]
+        rules = run["tool"]["driver"]["rules"]
+        by_file = {}
+        for result in run["results"]:
+            rule = rules[result["ruleIndex"]]
+            assert result["ruleId"] == rule["id"]
+            file = result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+            by_file[file] = (
+                rule["id"],
+                rule["properties"]["security-severity"],
+                result["level"],
+                result["partialFingerprints"],
+            )
+        return rules, by_file
+
+    a = {"type": "fixture", "repo": "example/project", "file": "a.txt", "verified": False}
+    b = {**a, "file": "b.txt", "verified": True}
+    rules, combined = scores([a, b])
+    assert (rules, combined) == scores([b, a])
+    assert combined == scores([a])[1] | scores([b])[1]
+    assert combined["a.txt"][1:3] == ("8.0", "warning")
+    assert combined["b.txt"][1:3] == ("9.5", "error")
+
+
+def test_mixed_generic_rules_preserve_distinct_severities_and_literal_ids():
+    sweep = "sample"
+    names = ["quality", "quality", "quality@sample/high"]
+    findings = [
+        {"check": n, "severity": s} for n, s in zip(names, ["low", "high", "low"], strict=True)
+    ]
+    run = reports_to_sarif([(sweep, {"repos": [{"findings": findings}]})])["runs"][0]
+    rules = run["tool"]["driver"]["rules"]
+    assert len({rule["id"] for rule in rules}) == 3
+    assert run["results"][-1]["ruleId"] == names[-1]
+    assert [rules[r["ruleIndex"]]["properties"]["security-severity"] for r in run["results"]] == [
+        "2.0",
+        "8.0",
+        "2.0",
+    ]

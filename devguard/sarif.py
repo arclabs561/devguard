@@ -342,9 +342,9 @@ def _records(sweep: str, report: dict) -> Iterator[tuple[_Finding, dict]]:
             )
 
 
-def _build_rule(rule_id: str, severity: str, sweep_name: str) -> dict:
+def _build_rule(rule_id: str, rule_name: str, severity: str, sweep_name: str) -> dict:
     """Build a SARIF rule object with all GitHub Code Scanning fields."""
-    short_desc = rule_id.replace("_", " ")
+    short_desc = rule_name.replace("_", " ")
     return {
         "id": rule_id,
         "shortDescription": {"text": short_desc},
@@ -383,38 +383,61 @@ def reports_to_sarif(
     tool_version: str = __version__,
 ) -> dict:
     """Convert one or more sweep reports into a single SARIF run."""
-    rule_ids: dict[str, int] = {}
+    # GitHub reads security-severity from the rule descriptor, so findings
+    # with different ratings cannot correctly share one descriptor.
+    records = [
+        (sweep, row, raw) for sweep, report in sweep_reports for row, raw in _records(sweep, report)
+    ]
+    variants: dict[str, set[tuple[str, str]]] = {}
+    for sweep, (rule, _, _, _, severity), _ in records:
+        variants.setdefault(rule, set()).add((sweep, severity.lower()))
+
+    used_ids = set(variants)
+    descriptors: dict[tuple[str, str, str], tuple[str, int]] = {}
     rules: list[dict] = []
+    for rule, groups in sorted(variants.items()):
+        for sweep, severity in sorted(groups):
+            descriptor_id = rule
+            # Verification can vary even between successive single-alert
+            # scans. Keep this producer's severity-specific ID in both cases.
+            if len(groups) > 1 or sweep in {
+                "public_github_secrets",
+                "local_dirty_worktree_secrets",
+            }:
+                descriptor_id = f"{rule}@{quote(sweep, safe='')}/{quote(severity, safe='')}"
+                while descriptor_id in used_ids:
+                    descriptor_id += "@"
+                used_ids.add(descriptor_id)
+            descriptors[rule, sweep, severity] = descriptor_id, len(rules)
+            rules.append(_build_rule(descriptor_id, rule, severity, sweep))
+
     sarif_results: list[dict] = []
-    for sweep, report in sweep_reports:
-        for (rule, level, message, _, severity), raw in _records(sweep, report):
-            if rule not in rule_ids:
-                rule_ids[rule] = len(rules)
-                rules.append(_build_rule(rule, severity, sweep))
-            points = locations(raw, raw.get("repo_path", ""))
-            primary = points[0][0] if points else ""
-            identity = finding_id(sweep, rule, primary, raw)
-            result: dict[str, Any] = {
-                "ruleId": rule,
-                "ruleIndex": rule_ids[rule],
-                "level": level,
-                "message": {"text": message},
-                "partialFingerprints": {"devguard/v1": identity},
-            }
-            if refs := references(raw):
-                result["properties"] = refs
-                result["message"]["text"] += "\n" + "\n".join(refs.values())
-            for index, (path, line) in enumerate(points):
-                physical: dict[str, Any] = {"artifactLocation": {"uri": quote(path, safe="/:")}}
-                if line is not None:
-                    physical["region"] = {"startLine": line}
-                if index == 0:
-                    result["locations"] = [{"physicalLocation": physical}]
-                else:
-                    result.setdefault("relatedLocations", []).append(
-                        {"id": index, "physicalLocation": physical}
-                    )
-            sarif_results.append(result)
+    for sweep, (rule, level, message, _, severity), raw in records:
+        descriptor_id, rule_index = descriptors[rule, sweep, severity.lower()]
+        points = locations(raw, raw.get("repo_path", ""))
+        primary = points[0][0] if points else ""
+        identity = finding_id(sweep, rule, primary, raw)
+        result: dict[str, Any] = {
+            "ruleId": descriptor_id,
+            "ruleIndex": rule_index,
+            "level": level,
+            "message": {"text": message},
+            "partialFingerprints": {"devguard/v1": identity},
+        }
+        if refs := references(raw):
+            result["properties"] = refs
+            result["message"]["text"] += "\n" + "\n".join(refs.values())
+        for index, (path, line) in enumerate(points):
+            physical: dict[str, Any] = {"artifactLocation": {"uri": quote(path, safe="/:")}}
+            if line is not None:
+                physical["region"] = {"startLine": line}
+            if index == 0:
+                result["locations"] = [{"physicalLocation": physical}]
+            else:
+                result.setdefault("relatedLocations", []).append(
+                    {"id": index, "physicalLocation": physical}
+                )
+        sarif_results.append(result)
 
     return {
         "$schema": SARIF_SCHEMA,
