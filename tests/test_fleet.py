@@ -186,6 +186,32 @@ def test_sync_repo_clones_once_then_fetches(tmp_path: Path) -> None:
     assert not (path / "scratch.tmp").exists()
 
 
+def test_offline_cache_miss_preserves_existing_clone(tmp_path: Path) -> None:
+    origin = _make_origin(tmp_path, "widget", {"a.txt": "one"})
+    ref = _remote(origin)
+    with pytest.raises(RuntimeError, match="offline"):
+        fl.sync_repo(ref, refresh=False)
+    path, _ = fl.sync_repo(ref)
+    other = _make_origin(tmp_path, "other", {"b.txt": "two"})
+    with pytest.raises(RuntimeError, match="offline"):
+        fl.sync_repo(fl.RepoRef(name=ref.name, url=other.as_uri()), refresh=False)
+    assert (path / "a.txt").read_text() == "one"
+
+
+def test_full_history_requires_complete_checkout(tmp_path: Path) -> None:
+    origin = _make_origin(tmp_path, "widget", {"a.txt": "one"})
+    (origin / "a.txt").write_text("two")
+    _git(origin, "commit", "-qam", "second")
+    ref = _remote(origin)
+    path, head = fl.sync_repo(ref)
+    for target in (ref, fl.parse_target(str(path))):
+        with pytest.raises(RuntimeError, match="shallow"):
+            fl.sync_repo(target, full_history=True, refresh=False)
+    assert fl.sync_repo(ref, full_history=True) == (path, head)
+    assert _git(path, "rev-list", "--count", "HEAD") == "2"
+    assert fl.sync_repo(ref, full_history=True, refresh=False) == (path, head)
+
+
 def test_sync_repo_replaces_a_broken_or_foreign_clone(tmp_path: Path) -> None:
     origin = _make_origin(tmp_path, "widget", {"a.txt": "one\n"})
     other = _make_origin(tmp_path, "gadget", {"b.txt": "other\n"})

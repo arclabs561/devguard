@@ -281,6 +281,76 @@ def test_standard_sweep_reaches_nested_workspace(tmp_path: Path) -> None:
     assert [f["check"] for f in report["repos"][0]["findings"]] == ["reused_publish_staging"]
 
 
+def test_feature_test_finding_survives_fleet_serialization(tmp_path: Path) -> None:
+    from devguard.fleet import extract_findings
+
+    repo = _repo(tmp_path, PKG + "[features]\nstore = []\n")
+    (repo / "tests").mkdir()
+    (repo / "tests/mixed.rs").write_text(
+        '#[cfg(feature = "store")]\nmod store_tests { use demo::store::Index; }'
+    )
+    report, errors = audit_cargo_publish(dev_root=tmp_path)
+    assert not errors
+    (raw,) = [f for f in report["repos"][0]["findings"] if f["check"] == "ungated_feature_test"]
+    assert raw["file"] == "tests/mixed.rs"
+    assert raw["severity"] == "warning"
+    assert "cargo test" in raw["message"] and "--features store" in raw["message"]
+    assert "will fail" not in raw["message"] + raw["detail"]
+    findings = extract_findings({"cargo_publish_audit": report})
+    (row,) = [f for f in findings if f["check"] == "ungated_feature_test"]
+    assert (row["file"], row["severity"]) == ("tests/mixed.rs", "medium")
+
+
+def test_feature_test_respects_only_its_own_required_features(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path,
+        PKG + "[features]\nstore = []\nother = []\n"
+        '[[test]]\nname="configured"\npath="./tests/custom.rs"\nrequired-features=["store"]\n'
+        '[[test]]\nname="mismatch"\nrequired-features=["other"]\n',
+    )
+    (repo / "tests").mkdir()
+    for name in ("custom", "mismatch"):
+        (repo / f"tests/{name}.rs").write_text("use demo::store::Index;")
+    hits = [f for f in _audit_repo(repo).findings if f.check == "ungated_feature_test"]
+    assert [f.file for f in hits] == ["tests/mismatch.rs"]
+
+
+def test_feature_test_combines_crate_and_manifest_gates(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path,
+        PKG + "[features]\nwriter=[]\nreader=[]\ncodec=[]\ntransport=[]\n"
+        '[[test]]\nname="roundtrip"\npath="tests/wire.rs"\nrequired-features=["transport","reader"]\n',
+    )
+    (repo / "tests").mkdir()
+    (repo / "tests/wire.rs").write_text(
+        "//! The caller can use either encoding.\n#![allow(dead_code)]\n"
+        '#![cfg(all(\n feature = "codec",\n feature = "reader",\n))]\n'
+        '#![cfg(feature="writer")]\nuse demo::codec::Writer;'
+    )
+    hits = [f for f in _audit_repo(repo).findings if f.check == "ungated_feature_test"]
+    assert [f.file for f in hits] == ["tests/wire.rs"]
+    assert (
+        "`cargo test -p demo --test roundtrip --features transport,reader,codec,writer`"
+        in hits[0].message
+    )
+
+
+def test_compound_configuration_is_uncertain_without_guessing_features(tmp_path: Path) -> None:
+    repo = _repo(tmp_path, PKG + "[features]\ncodec=[]\n")
+    (repo / "tests").mkdir()
+    for name, gate in {
+        "alternate": 'cfg(any(feature="codec",unix))',
+        "negative": 'cfg(not(feature="codec"))',
+        "conditional": 'cfg_attr(unix,cfg(feature="codec"))',
+        "platform": 'cfg(all(feature="codec",target_os="linux"))',
+    }.items():
+        (repo / f"tests/{name}.rs").write_text(f"#![{gate}]\nuse demo::codec::Writer;")
+    hits = [f for f in _audit_repo(repo).findings if f.check == "ungated_feature_test"]
+    assert len(hits) == 4
+    assert all("Resolve the crate-level configuration" in hit.message for hit in hits)
+    assert all("--features" not in hit.message for hit in hits)
+
+
 def test_release_evidence_is_scoped_to_executable_steps_and_permissions(tmp_path: Path) -> None:
     repo = _repo(
         tmp_path,

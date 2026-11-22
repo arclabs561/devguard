@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from devguard.sweeps._common import LICENSE_FILES
 from devguard.sweeps._common import default_dev_root as _default_dev_root
 from devguard.sweeps._common import utc_now as _utc_now
 
@@ -82,8 +83,8 @@ def _iter_repos(root: Path, max_depth: int, exclude_globs: list[str]) -> list[tu
 
 
 def _is_likely_public(repo: Path) -> bool:
-    for name in ("LICENSE", "LICENSE.md", "LICENSE.txt", "LICENSE-MIT", "LICENCE"):
-        if (repo / name).exists():
+    for name in LICENSE_FILES:
+        if (repo / name).is_file():
             return True
     return False
 
@@ -246,7 +247,7 @@ def _audit_pypi_repo(repo: Path) -> RepoAuditResult:
         result.findings.append(
             Finding(
                 check="no_oidc",
-                severity=sev,
+                severity="warning",
                 message="No OIDC trusted publishing (missing `id-token: write`)",
                 detail="PyPI supports trusted publishing via pypa/gh-action-pypi-publish. "
                 "Configure a pending publisher at pypi.org/manage/account/publishing/.",
@@ -268,9 +269,7 @@ def _audit_pypi_repo(repo: Path) -> RepoAuditResult:
 
     # Check: LICENSE
     if is_public:
-        has_license = any(
-            (repo / n).exists() for n in ("LICENSE", "LICENSE.md", "LICENSE.txt", "LICENCE")
-        )
+        has_license = any((repo / name).is_file() for name in LICENSE_FILES)
         if not has_license:
             result.findings.append(
                 Finding(
@@ -362,9 +361,7 @@ def _audit_npm_repo(repo: Path) -> RepoAuditResult:
 
     # Check: LICENSE
     if is_public:
-        has_license = any(
-            (repo / n).exists() for n in ("LICENSE", "LICENSE.md", "LICENSE.txt", "LICENCE")
-        )
+        has_license = any((repo / name).is_file() for name in LICENSE_FILES)
         if not has_license:
             result.findings.append(
                 Finding(
