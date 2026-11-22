@@ -535,6 +535,27 @@ def test_ann_matrix_today_case_ungated_use_with_gated_mod(tmp_path: Path) -> Non
     assert "ann_matrix.rs" in finding.files[0]
 
 
+def test_member_target_and_multiline_gated_function(tmp_path: Path) -> None:
+    from devguard.sweeps.repo_hygiene import _check_test_target_missing_gate
+
+    repo = _repo(
+        tmp_path / "r",
+        {
+            "Cargo.toml": '[workspace]\nmembers = ["lib"]\n',
+            "lib/Cargo.toml": '[package]\nname = "search"\nversion = "0.1.0"\n'
+            "[features]\nindex = []\n",
+            "lib/src/lib.rs": '#[cfg(feature = "index")]\npub mod index;\n',
+            "lib/examples/gated.rs": '#[cfg(feature = "index")]\nfn build(\n'
+            "  size: usize,\n) -> search::index::Index {\n"
+            "  search::index::Index::new(size)\n}\nfn main() {}\n",
+            "lib/examples/unguarded.rs": "use search::index::Index;\nfn main() {}\n",
+        },
+    )
+    finding = _check_test_target_missing_gate(repo, _git_ls_files(repo))
+    assert finding is not None
+    assert finding.files == ["lib/examples/unguarded.rs: search::index needs feature 'index'"]
+
+
 # --- readme_install_version ---------------------------------------------------
 
 

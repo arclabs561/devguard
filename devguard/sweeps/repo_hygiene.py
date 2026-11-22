@@ -1398,9 +1398,14 @@ def _cfg_gated_ranges(lines: list[str]) -> list[tuple[int, int]]:
         if item >= total:
             continue
         start, end = item, item
-        depth = lines[item].count("{") - lines[item].count("}")
+        # The function's parameter list and return type can precede its
+        # opening brace by several lines. Stop at a declaration without a body.
+        if re.match(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+", lines[item]):
+            while end + 1 < total and not any(c in lines[end] for c in "{;"):
+                end += 1
+        depth = lines[end].count("{") - lines[end].count("}")
         if depth > 0:
-            cursor = item + 1
+            cursor = end + 1
             while cursor < total and depth > 0:
                 depth += lines[cursor].count("{") - lines[cursor].count("}")
                 end = cursor
@@ -1470,10 +1475,11 @@ def _check_test_target_missing_gate(repo: Path, tracked: list[str]) -> HygieneFi
         crate_name = pkg.name.replace("-", "_")
         crate_re = re.compile(rf"\b{re.escape(crate_name)}::([A-Za-z_][A-Za-z0-9_]*)")
         for rel in tracked:
-            name = _test_target_name(rel)
-            if name is None:
-                continue
             if pkg.dir_rel != "." and not rel.startswith(pkg.dir_rel + "/"):
+                continue
+            target_path = Path(rel).relative_to(pkg.dir_rel).as_posix()
+            name = _test_target_name(target_path)
+            if name is None:
                 continue
             path = repo / rel
             if not contained_file(path, repo):
@@ -1489,8 +1495,8 @@ def _check_test_target_missing_gate(repo: Path, tracked: list[str]) -> HygieneFi
             lines = text.splitlines()
             allow = _allow_ranges(text)
             gated_ranges = _cfg_gated_ranges(lines)
-            kind = "test" if rel.startswith("tests/") else "example"
-            required = _target_required_features(manifest, kind, name, rel)
+            kind = "test" if target_path.startswith("tests/") else "example"
+            required = _target_required_features(manifest, kind, name, target_path)
             for lineno, line in enumerate(lines):
                 if _allowed(allow, "test_target_missing_gate", lineno):
                     continue
