@@ -19,6 +19,7 @@ DESCRIPTIONS = {
     "swallowed_test_assertion": "A test discards an assertion failure or converts it to a skip in a broad exception handler",
     "copied_test_subject": "A test calls a local copy of a named production function without exercising the original",
     "flattened_python": "A shebang or a long comment contains a flattened Python implementation",
+    "missing_just_script": "A root justfile recipe runs a literal local script missing from the git index",
     "masked_test_command": "A test command discards its failure status",
     "placeholder_rust_trait": "A public trait describes future behavior and contains only an implementation TODO",
     "fabricated_scan_report": "A failed scanner is replaced with an empty JSON report",
@@ -357,8 +358,45 @@ def _python_checks(source: str) -> set[str]:
     return set()
 
 
+_JUST_SCRIPT = re.compile(
+    r"^[ \t]+@?(?:(?:uv +run +)?(?:python3?|bash|sh) +(?:\./)?|\./)"
+    r"((?:scripts|tests)/[A-Za-z0-9_./-]+\.(?:py|sh))(?=\s|$)"
+)
+
+
+def _missing_just_scripts(source: str, tracked: set[str]) -> list[str]:
+    missing: set[str] = set()
+    # A working-directory override, generated recipe or multiline shell command
+    # can change how a relative path resolves. Inspect only simple recipe lines.
+    if "working-directory" in source:
+        return []
+    previous = ""
+    script_recipe = False
+    for line in source.splitlines():
+        if line and not line[0].isspace():
+            script_recipe = False
+        elif line.lstrip().startswith("#!"):
+            script_recipe = True
+        if not script_recipe and not previous.endswith("\\"):
+            match = _JUST_SCRIPT.match(line)
+            if match and ".." not in Path(match[1]).parts and match[1] not in tracked:
+                missing.add(match[1])
+        previous = line.rstrip()
+    return sorted(missing)
+
+
 def find_false_passes(repo: Path, tracked: list[str]) -> dict[str, list[str]]:
     findings: dict[str, list[str]] = {}
+    for name in ("justfile", "Justfile"):
+        path = repo / name
+        if name in tracked and contained_file(path, repo) and path.stat().st_size <= 1024 * 1024:
+            missing = _missing_just_scripts(
+                path.read_text(encoding="utf-8", errors="replace"), set(tracked)
+            )
+            if missing:
+                findings.setdefault("missing_just_script", []).extend(
+                    f"{name} -> {script}" for script in missing
+                )
     for rel in tracked:
         path = repo / rel
         if (

@@ -152,3 +152,19 @@ def test_subprocess_capture_conflicts_with_explicit_streams(tmp_path: Path) -> N
     assert find_false_passes(tmp_path, list(cases)) == {
         "conflicting_subprocess_output": ["bad.py", "stdout.py"]
     }
+
+
+def test_root_justfile_names_missing_literal_scripts(tmp_path: Path) -> None:
+    (tmp_path / "justfile").write_text(
+        "check:\n    @bash scripts/lost.sh\n    uv run python tests/ok.py\n"
+        "    ./scripts/absent.py arg\n    echo 'bash scripts/example.sh'\n"
+        "    cd sub && bash scripts/other.sh\n    bash scripts/{{name}}.sh\n"
+        "custom:\n    #!/bin/sh\n    cd sub\n    bash scripts/elsewhere.sh\n"
+    )
+    assert find_false_passes(tmp_path, ["justfile", "tests/ok.py"]) == {
+        "missing_just_script": ["justfile -> scripts/absent.py", "justfile -> scripts/lost.sh"]
+    }
+    (tmp_path / "justfile").write_text(
+        '[working-directory: "sub"]\nrun:\n    bash scripts/local.sh'
+    )
+    assert find_false_passes(tmp_path, ["justfile"]) == {}
