@@ -25,7 +25,7 @@ from typing import Any
 
 import yaml  # type: ignore[import-untyped]
 
-from devguard.sweeps._common import iter_git_repos, utc_now
+from devguard.sweeps._common import contained_file, iter_git_repos, utc_now
 
 DEFAULT_WORKFLOW_GLOBS = ["publish*.yml", "publish*.yaml", "release*.yml", "release*.yaml"]
 
@@ -151,7 +151,7 @@ def _platform_only(manifest: Path) -> list[str]:
 
 def _crate_manifests(repo: Path) -> list[Path]:
     found = [repo / "Cargo.toml"] + sorted(repo.glob("crates/*/Cargo.toml"))
-    return [p for p in found if p.is_file()]
+    return [p for p in found if contained_file(p, repo)]
 
 
 def _check_semver_features(name: str, doc: Any, repo: Path) -> list[dict[str, Any]]:
@@ -199,17 +199,276 @@ def _check_unpinned(name: str, text: str, repo_pins_shas: bool) -> list[dict[str
     ]
 
 
-def audit_workflows(repo: Path, workflow_globs: list[str] | None = None) -> list[dict[str, Any]]:
-    """Audit one repo's publish/release workflows. Raises nothing for unreadable YAML."""
+def _privileged_refs(name: str, doc: Any) -> list[dict[str, Any]]:
+    findings = []
+    for job_id, job in _jobs(doc).items():
+        if not isinstance(job, dict):
+            continue
+        permissions = job.get("permissions", doc.get("permissions"))
+        writable = permissions == "write-all" or (
+            isinstance(permissions, dict) and "write" in permissions.values()
+        )
+        context = json.dumps([doc.get("env", {}), job], default=str)
+        secrets = job.get("secrets") == "inherit" or bool(
+            re.search(r"\bsecrets\s*(?:\.|\[)", context, re.I)
+        )
+        if not writable and not secrets:
+            continue
+        steps = [job, *(job.get("steps") or [])]
+        refs = set()
+        for step in steps:
+            ref = step.get("uses") if isinstance(step, dict) else None
+            if isinstance(ref, str) and "@" in ref and not ref.startswith(("./", "docker://")):
+                if not _SHA_RE.fullmatch(ref.rsplit("@", 1)[1]):
+                    refs.add(ref)
+        if refs:
+            findings.append(
+                _finding(
+                    "privileged_unpinned_action",
+                    "error",
+                    name,
+                    f"job '{job_id}' uses mutable refs with write permissions or secrets: {', '.join(sorted(refs))}",
+                )
+            )
+    return findings
+
+
+_EVENT_CODE = re.compile(
+    r"\$\{\{[^}]*\bgithub\.(?:head_ref\b|event\.(?:pull_request\.head|client_payload|workflow_run\.head_(?:sha|branch|repository))\b)",
+    re.I,
+)
+_EVENT_TEXT = re.compile(
+    r"\$\{\{[^}]*\bgithub\.(?:head_ref\b|event\.(?:(?:pull_request|issue)\.(?:title|body)|(?:review|comment)\.body|head_commit\.message)\b)",
+    re.I,
+)
+_EVENT_DESTINATION = re.compile(r"\$\{\{[^}]*\bgithub\.event\.client_payload\b", re.I)
+_SECRET_REF = re.compile(r"\$\{\{[^}]*\bsecrets\s*[.\[]", re.I)
+_TRUSTED_CONTEXT_EVENTS = {
+    "pull_request_target",
+    "workflow_run",
+    "repository_dispatch",
+    "issue_comment",
+}
+
+
+_SECURITY_COMMAND = re.compile(
+    r"^\s*(?:cargo\s+audit|cargo\s+test\b[^|&#\n]*\bsecret_scanning\b|gitleaks\s+(?:git|dir|detect)|trufflehog\s+(?:git|filesystem)"
+    r"|npm\s+run\s+(?:test:security|check:secrets:ci))(?:\s|$)"
+)
+_IGNORE_EXIT = re.compile(
+    r"""\|\|\s*(?:true|:|echo\s+(?:"[^"$`]*"|'[^']*'|[\w .()-]+))\s*(?:#.*)?$"""
+)
+
+
+def _owner_event_only(condition: Any) -> bool:
+    # Recognize the simple owner-only job guard. Compound conditions need review.
+    value = str(condition).strip().removeprefix("${{").removesuffix("}}").strip()
+    terms = [part.strip().lower() for part in value.split("==")]
+    return sorted(terms) == ["github.event.repository.owner.id", "github.event.sender.id"]
+
+
+_EVENT_TEST = re.compile(r"github\.event_name\s*(==|!=)\s*'([a-z_]+)'", re.I)
+_GUARD_TOKEN = re.compile(r"'(?:[^']|'')*'|'|[()]|&&|\|\|")
+
+
+def _can_run_on_pr(condition: Any) -> bool:
+    """Exclude a job only when each top-level alternative rules out PRs.
+
+    Functions and grouped expressions are opaque. They can add a review
+    prompt, but cannot suppress one. Quoted operators are data.
+    """
+    expr = str(condition).strip().removeprefix("${{").removesuffix("}}").strip().lower()
+    start = depth = 0
+    possible = True
+    for token in [*_GUARD_TOKEN.finditer(expr), None]:
+        op = token.group() if token else ""
+        if op == "(":
+            depth += 1
+        elif op == ")":
+            depth -= 1
+            if depth < 0:
+                return True
+        elif op == "'":
+            return True  # Unclosed string.
+        elif not depth and op in {"&&", "||", ""}:
+            term = expr[start : token.start() if token else len(expr)].strip()
+            test = _EVENT_TEST.fullmatch(term)
+            if term == "false" or (test and (test[1] == "==") != (test[2] == "pull_request")):
+                possible = False
+            if op != "&&":
+                if possible or not token:
+                    return possible
+                possible = True
+            if token:
+                start = token.end()
+    return True
+
+
+def _workflow_trust(name: str, doc: Any) -> list[dict[str, Any]]:
+    """Flag direct data flows. A trigger name alone cannot establish misuse."""
+    if not isinstance(doc, dict):
+        return []
+    # PyYAML's YAML 1.1 loader reads an unquoted 'on' as True.
+    trigger = doc.get("on", doc.get(True)) or []
+    events = (
+        {trigger}
+        if isinstance(trigger, str)
+        else {event for event in trigger if isinstance(event, str)}
+        if isinstance(trigger, (list, dict))
+        else set()
+    )
+    trusted_context = bool(events & _TRUSTED_CONTEXT_EVENTS)
+    findings = []
+    for job_id, job in _jobs(doc).items():
+        if not isinstance(job, dict):
+            continue
+        permissions = job.get("permissions", doc.get("permissions"))
+        oidc_write = permissions == "write-all" or (
+            isinstance(permissions, dict) and permissions.get("id-token") == "write"
+        )
+        if "pull_request" in events and oidc_write and _can_run_on_pr(job.get("if")):
+            findings.append(
+                _finding(
+                    "review_pr_oidc_permission",
+                    "warning",
+                    name,
+                    f"job '{job_id}' may grant OIDC token access on pull requests. "
+                    "Check the cloud role's trust policy and scope the permission to a trusted job.",
+                )
+            )
+        pr_write = permissions == "write-all" or (
+            isinstance(permissions, dict) and permissions.get("pull-requests") == "write"
+        )
+        if "pull_request_target" in events and pr_write and not _owner_event_only(job.get("if")):
+            findings.append(
+                _finding(
+                    "review_pr_target_write",
+                    "warning",
+                    name,
+                    f"job '{job_id}' can write PR metadata on pull_request_target. "
+                    "Verify which senders may start it and whose contributions it may edit.",
+                )
+            )
+        steps = [step for step in job.get("steps") or [] if isinstance(step, dict)]
+        for index, step in enumerate(steps, start=1):
+            label = f"job '{job_id}', step {index}"
+            action = str(step.get("uses", "")).split("@")[0].lower()
+            inputs = step.get("with") or {}
+            if not isinstance(inputs, dict):
+                continue
+            if (
+                trusted_context
+                and action == "actions/checkout"
+                and any(
+                    _EVENT_CODE.search(str(inputs.get(key, ""))) for key in ("ref", "repository")
+                )
+            ):
+                findings.append(
+                    _finding(
+                        "event_selected_checkout",
+                        "error",
+                        name,
+                        f"{label} selects checkout code from the event in a trusted workflow context. "
+                        "Check out the trusted revision or verify its provenance first.",
+                    )
+                )
+            script = str(step.get("run") or "")
+            if action == "actions/github-script":
+                script = str(inputs.get("script") or "")
+            commands = [line for line in script.splitlines() if _SECURITY_COMMAND.match(line)]
+            if commands and (
+                step.get("continue-on-error") is True
+                or job.get("continue-on-error") is True
+                or any(_IGNORE_EXIT.search(line) for line in commands)
+            ):
+                findings.append(
+                    _finding(
+                        "nonblocking_security_check",
+                        "warning",
+                        name,
+                        f"{label} can report success after its security check fails. "
+                        "Propagate the scanner's exit status or document the advisory-only policy.",
+                    )
+                )
+            if _EVENT_TEXT.search(script):
+                findings.append(
+                    _finding(
+                        "event_text_in_script",
+                        "error",
+                        name,
+                        f"{label} interpolates contributor-controlled text into a script. "
+                        "Pass the value through an environment variable or read the event as data.",
+                    )
+                )
+            if "repository_dispatch" not in events or not script:
+                continue
+            env = {}
+            for scope in (doc, job, step):
+                if isinstance(scope.get("env"), dict):
+                    env.update(scope["env"])
+            if not _SECRET_REF.search(json.dumps([env, script], default=str)):
+                continue
+            for key, value in env.items():
+                if not re.search(r"(?:^|_)(?:URL|URI|ORIGIN|HOST|ENDPOINT)$", str(key), re.I):
+                    continue
+                if not _EVENT_DESTINATION.search(str(value)):
+                    continue
+                if re.search(
+                    r"\$(?:\{" + re.escape(str(key)) + r"\}|" + re.escape(str(key)) + r"\b)", script
+                ) or re.search(r"\b(?:pytest|npm|node|python3?)\b", script):
+                    findings.append(
+                        _finding(
+                            "dispatch_destination_with_credentials",
+                            "error",
+                            name,
+                            f"{label} passes an event-selected destination ({key}) to a credentialed command. "
+                            "Use a configured origin or validate it against an independently trusted allowlist.",
+                        )
+                    )
+                    break
+    return findings
+
+
+def _shape_error(doc: Any) -> str | None:
+    jobs = _jobs(doc)
+    if not jobs:
+        return "expected a nonempty jobs mapping"
+    for job_id, job in jobs.items():
+        if not isinstance(job, dict):
+            return f"expected a mapping for job '{job_id}'"
+        if "uses" in job and "steps" not in job:
+            continue  # Reusable workflow.
+        steps = job.get("steps")
+        if not isinstance(steps, list) or not all(isinstance(step, dict) for step in steps):
+            return f"expected a list of steps for job '{job_id}'"
+        if any("with" in step and not isinstance(step["with"], dict) for step in steps):
+            return f"expected a step inputs mapping for job '{job_id}'"
+    return None
+
+
+def _scan_workflows(
+    repo: Path, workflow_globs: list[str] | None
+) -> tuple[list[dict[str, Any]], int, int]:
     wf_dir = repo / ".github" / "workflows"
-    if not wf_dir.is_dir():
-        return []
+    if not wf_dir.resolve().is_relative_to(repo.resolve()):
+        raise OSError("workflow directory outside repository")
+    try:
+        entries = sorted(wf_dir.iterdir())
+    except FileNotFoundError:
+        return [], 0, 0
+    paths = [p for p in entries if p.suffix in (".yml", ".yaml") and not p.is_dir()]
     globs = workflow_globs or DEFAULT_WORKFLOW_GLOBS
-    all_files = sorted(p for p in wf_dir.iterdir() if p.suffix in (".yml", ".yaml") and p.is_file())
-    texts = {p.name: p.read_text(errors="replace") for p in all_files}
-    targets = [n for n in texts if any(fnmatch.fnmatch(n, g) for g in globs)]
-    if not targets:
-        return []
+    texts = {}
+    findings = []
+    for path in paths:
+        try:
+            if not contained_file(path, repo):
+                raise OSError("not a regular file inside the repository")
+            texts[path.name] = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            findings.append(
+                _finding("workflow_read_error", "warning", path.name, type(exc).__name__)
+            )
 
     ci_text = texts.get("ci.yml") or texts.get("ci.yaml") or ""
     ci_pins = {_normalize_precise(m) for m in _PRECISE_RE.findall(ci_text)}
@@ -218,18 +477,31 @@ def audit_workflows(repo: Path, workflow_globs: list[str] | None = None) -> list
         _SHA_RE.match(u.rsplit("@", 1)[1]) for t in texts.values() for u in _action_refs(t)
     )
 
-    findings: list[dict[str, Any]] = []
-    for name in targets:
-        text = texts[name]
+    scanned = 0
+    for name, text in texts.items():
         try:
             doc = yaml.safe_load(text)
         except yaml.YAMLError:
             findings.append(_finding("workflow_parse_error", "warning", name, "YAML parse error"))
             continue
+        if problem := _shape_error(doc):
+            findings.append(_finding("workflow_parse_error", "warning", name, problem))
+            continue
+        scanned += 1
+        findings += _privileged_refs(name, doc)
+        findings += _workflow_trust(name, doc)
+        if not any(fnmatch.fnmatch(name, g) for g in globs):
+            continue
         findings += _check_tag_push(name, doc)
         findings += _check_msrv_pins(name, text, ci_pins)
         findings += _check_semver_features(name, doc, repo)
         findings += _check_unpinned(name, text, repo_pins_shas)
+    return findings, len(paths), scanned
+
+
+def audit_workflows(repo: Path, workflow_globs: list[str] | None = None) -> list[dict[str, Any]]:
+    """Audit the workflows of one repository."""
+    findings, _, _ = _scan_workflows(repo, workflow_globs)
     return findings
 
 
@@ -248,12 +520,20 @@ def audit_publish_workflows(
         if not any(fnmatch.fnmatch(str(r), g) for g in globs)
     ]
     results: list[dict[str, Any]] = []
+    discovered = scanned = 0
     for repo in repos:
         try:
-            findings = audit_workflows(repo, workflow_globs)
-        except OSError as exc:
-            errors.append(f"{repo.name}: {exc.__class__.__name__}")
+            findings, listed, checked = _scan_workflows(repo, workflow_globs)
+            discovered += listed
+            scanned += checked
+        except (OSError, RuntimeError) as exc:
+            errors.append(f"{repo.name}: workflow discovery failed ({type(exc).__name__})")
             continue
+        errors.extend(
+            f"{repo.name}: {f['message']}"
+            for f in findings
+            if f["check"] in {"workflow_parse_error", "workflow_read_error"}
+        )
         if findings:
             results.append({"repo_path": str(repo), "findings": findings})
     sev: dict[str, int] = {"error": 0, "warning": 0, "note": 0}
@@ -263,7 +543,12 @@ def audit_publish_workflows(
     results.sort(key=lambda r: (-len(r["findings"]), r["repo_path"]))
     report: dict[str, Any] = {
         "generated_at": utc_now(),
-        "scope": {"dev_root": str(dev_root), "repos_scanned": len(repos)},
+        "scope": {
+            "dev_root": str(dev_root),
+            "repos_scanned": len(repos),
+            "workflows_discovered": discovered,
+            "workflows_scanned": scanned,
+        },
         "summary": {
             "repos_with_findings": len(results),
             "total_findings": sum(sev.values()),

@@ -225,3 +225,216 @@ def test_sweep_report_counts_errors(tmp_path: Path) -> None:
     assert errors == []
     assert report["summary"]["total_errors"] == 1
     assert report["repos"][0]["repo_path"] == str(repo.resolve())
+
+
+def test_privilege_follows_job_overrides_and_reusable_workflows(tmp_path):
+    workflows = tmp_path / ".github/workflows"
+    workflows.mkdir(parents=True)
+    (workflows / "nightly.yml").write_text("""
+permissions: write-all
+jobs:
+  publish:
+    steps:
+      - uses: actions/checkout@v4
+  verify:
+    permissions: {contents: read}
+    steps:
+      - uses: actions/checkout@v4
+  upload:
+    permissions: {}
+    uses: org/repo/.github/workflows/jobs.yml@main
+    secrets: inherit
+""")
+    found = audit_workflows(tmp_path)
+    assert [f["check"] for f in found] == ["privileged_unpinned_action"] * 2
+    assert "publish" in found[0]["message"] and "upload" in found[1]["message"]
+
+
+def test_dispatch_checkout_and_secret_destination_survive_normal_sweep(tmp_path):
+    import yaml
+
+    directory = tmp_path / ".github/workflows"
+    directory.mkdir(parents=True)
+    checkout = {
+        "uses": f"actions/checkout@{SHA}",
+        "with": {"ref": "${{ github.event.client_payload.git.sha }}"},
+    }
+    probe = {"env": {"AUTH": "${{ secrets.TEST_KEY }}"}, "run": 'probe "$SERVICE_URL"'}
+    job = {
+        "env": {"SERVICE_URL": "${{ github.event.client_payload.url }}"},
+        "steps": [checkout, probe],
+    }
+    workflow = {"on": {"repository_dispatch": {"types": ["deployment"]}}, "jobs": {"test": job}}
+    dest = directory / "integration.yaml"
+    for secure in [False, True]:
+        if secure:
+            checkout["with"]["ref"] = "${{ github.sha }}"
+            probe["env"]["SERVICE_URL"] = "${{ vars.SERVICE_ORIGIN }}"
+        dest.write_text(yaml.safe_dump(workflow))
+        assert {f["check"] for f in audit_workflows(tmp_path)} == (
+            set()
+            if secure
+            else {"event_selected_checkout", "dispatch_destination_with_credentials"}
+        )
+
+
+def test_comment_text_passed_as_data_and_default_branch_checkout(tmp_path):
+    directory = tmp_path / ".github/workflows"
+    directory.mkdir(parents=True)
+    (directory / "triage.yml").write_text(
+        """
+on: issue_comment
+jobs:
+  check:
+    steps:
+      - uses: actions/checkout@SHA
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - run: 'echo ${{ github.event.comment.body }}'
+      - env:
+          BODY: ${{ github.event.comment.body }}
+        run: 'printf "%s" "$BODY"'
+""".replace("@SHA", "@" + SHA)
+    )
+    assert [f["check"] for f in audit_workflows(tmp_path)] == ["event_text_in_script"]
+
+
+def test_target_pr_metadata_write_is_a_review_prompt(tmp_path):
+    import yaml
+
+    path = tmp_path / ".github/workflows/cleanup.yml"
+    path.parent.mkdir(parents=True)
+    job = {"permissions": {"pull-requests": "write"}, "steps": [{"run": "python tools/cleanup.py"}]}
+    workflow = {"on": "pull_request_target", "jobs": {"cleanup": job}}
+    for guard, expect_warning in [
+        (None, True),
+        ("github.event.sender.id == github.event.repository.owner.id", False),
+        ("github.event.sender.id == github.event.repository.owner.id || always()", True),
+    ]:
+        job["if"] = guard
+        path.write_text(yaml.safe_dump(workflow))
+        assert [(f["check"], f["severity"]) for f in audit_workflows(tmp_path)] == (
+            [("review_pr_target_write", "warning")] if expect_warning else []
+        )
+    job["permissions"] = {"pull-requests": "read"}
+    path.write_text(yaml.safe_dump(workflow))
+    assert not audit_workflows(tmp_path)
+
+
+def test_nonblocking_security_command_is_reported_per_step(tmp_path):
+    directory = tmp_path / ".github/workflows"
+    directory.mkdir(parents=True)
+    (directory / "checks.yml").write_text("""
+on: pull_request
+jobs:
+  checks:
+    steps:
+      - run: cargo audit
+        continue-on-error: true
+      - run: npm run test:security || true
+      - run: |
+          cargo audit
+          echo diagnostic || true
+      - run: cargo test || true
+      - run: cargo test --features e2e secret_scanning --lib || echo "skipped"
+      - run: cargo test --features e2e secret_scanning --lib || echo "failed" && exit 1
+""")
+    assert [f["check"] for f in audit_workflows(tmp_path)] == ["nonblocking_security_check"] * 3
+
+
+def test_pr_oidc_privilege_starts_at_job_boundary(tmp_path):
+    import yaml
+
+    file = tmp_path / ".github/workflows/ci.yml"
+    file.parent.mkdir(parents=True)
+    steps = [{"run": "echo test", "if": "github.event_name == 'push'"}]
+    jobs = {
+        "unguarded": {"steps": steps},
+        "pr-only": {"if": "${{ github.event_name == 'pull_request' }}", "steps": steps},
+        "push-only": {"if": "github.event_name == 'push'", "steps": steps},
+        "no-token": {"permissions": {"contents": "read"}, "steps": steps},
+    }
+    workflow = {"on": ["push", "pull_request"], "permissions": {"id-token": "write"}, "jobs": jobs}
+    file.write_text(yaml.safe_dump(workflow))
+    findings = [f for f in audit_workflows(tmp_path) if f["check"] == "review_pr_oidc_permission"]
+    assert len(findings) == 2
+    assert all(any(name in f["message"] for f in findings) for name in ["'unguarded'", "'pr-only'"])
+    workflow["on"] = ["push"]
+    file.write_text(yaml.safe_dump(workflow))
+    assert not audit_workflows(tmp_path)
+
+
+def test_conditional_oidc_requires_a_job_guard_that_excludes_prs(tmp_path):
+    import yaml
+
+    workflows = tmp_path / ".github/workflows"
+    workflows.mkdir(parents=True)
+    guards = {
+        "status": "always() && !cancelled()",
+        "manual-or-pr": "github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'",
+        "variable": "vars.RUN_TESTS == 'enabled'",
+        "quoted": "contains('a || b', 'b')",
+        "trusted-branches": "github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')",
+        "two-trusted-events": "github.event_name == 'push' || github.event_name == 'workflow_dispatch'",
+        "disabled": False,
+    }
+    jobs = {key: {"if": value, "steps": [{"run": "echo test"}]} for key, value in guards.items()}
+    workflow = {"on": ["pull_request", "push"], "permissions": {"id-token": "write"}, "jobs": jobs}
+    (workflows / "ci.yml").write_text(yaml.safe_dump(workflow))
+    found = [f["message"].split("'")[1] for f in audit_workflows(tmp_path)]
+    assert sorted(found) == ["manual-or-pr", "quoted", "status", "variable"]
+
+
+def test_partial_workflows_preserve_findings_and_fail_both_commands(tmp_path, monkeypatch):
+    import json
+
+    from typer.testing import CliRunner
+
+    from devguard.cli import app
+
+    repo = _repo(
+        tmp_path / "fixture",
+        {
+            "publish.yml": TAG_PUSH_NO_CREDS,
+            "broken.yml": "jobs: [",
+            "empty.yml": "jobs: []",
+            "shape.yml": "jobs: {build: {steps: 42}}",
+        },
+    )
+    (repo / ".github/workflows/unreadable.yml").write_bytes(b"\xff")
+    (repo / ".github/workflows/external.yml").symlink_to(tmp_path / "other.yml")
+    (tmp_path / "other.yml").write_text(TAG_PUSH_DEFAULT_CHECKOUT)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.org",
+            "commit",
+            "-qm",
+            "fixtures",
+        ],
+        check=True,
+    )
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    only = ["--only", "publish_workflow_audit", "--format", "json"]
+    result = runner.invoke(app, ["sweep", "--repo", str(repo), *only])
+    assert result.exit_code == 3, result.output
+    report = json.loads(result.stdout)["publish_workflow_audit"]
+    assert report["scope"]["workflows_discovered"] == 6
+    assert report["scope"]["workflows_scanned"] == 1
+    assert len(report["errors"]) == 5
+    assert set(_checks(report["repos"][0]["findings"])) == {
+        "workflow_parse_error",
+        "workflow_read_error",
+        "tag_push_without_credentials",
+    }
+    result = runner.invoke(app, ["fleet", str(repo), "--no-cache", "--fail-on", "never", *only])
+    assert result.exit_code == 3, result.output
+    assert json.loads(result.stdout)["summary"]["incomplete"] == 1

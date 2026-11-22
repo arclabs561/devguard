@@ -34,6 +34,10 @@ For local development:
 pip install -e ".[dev]"
 ```
 
+The history sweep runs locally. With Gitleaks, the bundled default rules also
+detect literal deployment tokens and passwords in Redis connection strings.
+An explicit Gitleaks configuration takes precedence.
+
 ## Usage
 
 Check external tools:
@@ -48,6 +52,7 @@ GitHub user, including accessible private repositories, forks, and archives:
 ```bash
 devguard github-ci
 devguard github-ci --json --fail-on-red
+devguard github-ci --branch-protection --json
 ```
 
 This command uses an authenticated `gh` CLI and reads GitHub's combined check
@@ -57,6 +62,11 @@ commit. Pull-request-only tests may have run on another commit. `EMPTY` marks
 an empty repository. The JSON includes the branch, commit SHA and link.
 By default this is a report. With `--fail-on-red`, a reported failure or error
 exits 1. An incomplete API request exits 2.
+
+With `--branch-protection`, DevGuard reads the protection flag for each default
+branch. The report distinguishes protected, unprotected, empty repositories,
+and unknown coverage. Any unknown protection result exits 2. This flag does
+not enumerate required checks, bypass actors or fork approval policies.
 
 Run all enabled sweeps:
 
@@ -155,7 +165,8 @@ else `~/.cache/devguard`:
   sweep selection, the spec file and the set of installed scanners are all
   unchanged. Local checkouts with staged changes, modified tracked files, or
   any untracked paths (including ignored files and empty directories) are
-  rescanned because sweeps can inspect them.
+  rescanned because sweeps can inspect them. Selections that include the dependency
+  audit always rescan because advisory data changes independently of the repository.
   `--no-cache` ignores and does not write results.
 
 `devguard cache info` shows the size of both; `devguard cache clear` removes
@@ -168,7 +179,7 @@ per-repository findings, counts and errors; `--full-reports` adds each sweep's
 raw report. Exit codes: 0, 2 when a finding is at `--fail-on` (default `high`)
 or worse, 3 when some repository was not fully scanned.
 
-On one cold run over 96 repositories (2 cores, `--jobs 6`) the sweep took 134
+Before dependency checks were included by default, on one cold run over 96 repositories (2 cores, `--jobs 6`) the sweep took 134
 seconds; the next run, with every clone fetched and no changes, took 17
 seconds, and 1 second with `--offline`.
 
@@ -177,16 +188,22 @@ seconds, and 1 second with `--offline`.
 requires `package-lock.json`, Cargo requires `Cargo.lock`, and Python requires
 a fully pinned `requirements.txt` (audited with
 `pip-audit --no-deps --disable-pip --strict`, so include transitive
-dependencies in the export if you need them covered). Repositories with only
-`uv.lock` or `poetry.lock` report an unsupported-input error. Audit tools may
-contact their advisory services; this mode never installs or fixes packages.
-The JSON report records the resolved scope, engine coverage, and SHA-256 input
-hashes before and after the audit; changed inputs or incomplete engine coverage
-produce an unknown result. A complete dependency audit exits 0 when clean or 2
-with findings. An invalid sweep spec, incomplete dependency audit, or truncated
-dependency report exits 3. Fleet reruns dependency audits even at the same
-commit because the advisory database can change. With a severity threshold,
-fleet exits 3 if an unrated finding leaves the verdict undecided.
+dependencies in the export if you need them covered). OSV-Scanner v2 handles uv, Poetry, Yarn, pnpm and Go files.
+The default fleet selection includes dependency audits. Discovery checks nested
+package directories, excluding build, vendor and virtual environment directories.
+An unresolved manifest or unavailable tool is reported as incomplete (exit 3).
+A checkout scan covers the lockfiles present on disk. A published library or
+its consumer can have a different lockfile. For a public crate, run
+`devguard audit-crate NAME VERSION` to audit the lockfile in that exact release.
+The command verifies the archive against the crates.io index, reports the archive
+and lockfile hashes, and runs OSV-Scanner on the packaged lockfile. Audit tools may contact their
+advisory services. Fleet uses local OSV databases for private repositories
+and repositories with unknown visibility, including local paths. Populate the
+OSV-Scanner offline database cache first. Use `--online-dependencies` to allow
+queries for those packages. `fleet --offline` keeps Git and dependency checks
+offline. A missing database makes coverage incomplete.
+Explicit package roots record SHA-256 input hashes before and after the audit.
+Fleet reruns dependency audits when the advisory database may have changed. An incomplete or truncated report exits 3. An unrated finding also exits 3 when its severity could change the verdict.
 
 ## Configuration
 
@@ -213,7 +230,7 @@ Sweeps that need external access:
 | --- | --- |
 | `public_github_secrets` | `GITHUB_TOKEN` and TruffleHog |
 | `ssh_key_audit` with `check_github: true` | `GITHUB_TOKEN` |
-| `dependency_audit` | `npm`, `pip-audit`, or `cargo-audit`, depending on repo type |
+| `dependency_audit` | `npm`, `pip-audit`, `cargo-audit`, or `osv-scanner` v2, depending on the lockfile |
 | `project_flaudit` | `OPENROUTER_API_KEY` |
 | `docs_quality` | Vale and readcost, or a wrapper with the same `--json` output |
 | `public_text_leak` | `gh` (repo visibility; PR and issue text when enabled) |
@@ -241,7 +258,7 @@ Sweeps that need external access:
 | `project_flaudit` | LLM-assisted repo audit |
 | `docs_quality` | Vale and readcost findings in README and `docs/` Markdown (advisory; missing tools or timeouts exit 3) |
 | `public_text_leak` | Coordination vocabulary and configured private names in recent public commit messages, PR bodies, and comments |
-| `publish_workflow_audit` | Publish/release workflows: tag push without credentials, MSRV pins missing from publish, semver checks over platform-only features, unpinned action refs |
+| `publish_workflow_audit` | Publish/release workflows: tag push without credentials, MSRV pins missing from publish, semver checks over platform-only features, unpinned action refs. Across all workflows: event-selected checkouts in trusted contexts, contributor text in scripts, dispatch URLs used by credentialed commands, PR jobs that may request OIDC tokens, PR-target metadata writers, and security commands whose failure is suppressed. Unreadable or malformed workflow files produce exit 3 in sweep and fleet. The JSON scope counts workflows discovered and scanned. |
 | `repo_lint` | Rust workspace hygiene: own-crate pin drift, README version lines, Cargo metadata, CI gaps (off by default, never changes the exit code) |
 
 The missing-pattern check in `gitignore_audit` is a pattern-presence heuristic.

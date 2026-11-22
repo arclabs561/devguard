@@ -530,6 +530,59 @@ def test_result_key_changes_when_a_docs_tool_is_installed(
         installed.discard(tool)
 
 
+def test_dependency_gate_observes_advisories_and_tool_errors_on_same_commit(tmp_path, monkeypatch):
+    import os
+
+    origin = _make_origin(tmp_path, "app", {"package-lock.json": "{}"})
+    tools = tmp_path / "bin"
+    tools.mkdir()
+    npm = tools / "npm"
+    monkeypatch.setenv("PATH", str(tools) + os.pathsep + os.environ["PATH"])
+    cli = CliRunner()
+    args = [
+        "fleet",
+        str(origin),
+        "--only",
+        "dependency_audit",
+        "--online-dependencies",
+        "--format",
+        "json",
+    ]
+    assert "dependency_audit" in fl.REPO_SCOPED_SWEEPS
+    for raw, tool_exit, expected, count in [
+        ({"vulnerabilities": {}}, 0, 0, 0),
+        ({"vulnerabilities": {"demo": {"severity": "high", "via": [{"title": "test"}]}}}, 1, 2, 1),
+        ({"error": "unavailable"}, 1, 3, 0),
+    ]:
+        npm.write_text(
+            "#!/bin/sh\ncat <<'JSON'\n" + json.dumps(raw) + "\nJSON\nexit " + str(tool_exit) + "\n"
+        )
+        npm.chmod(0o755)
+        result = cli.invoke(app, args)
+        assert result.exit_code == expected, result.output
+        assert json.loads(result.stdout)["summary"]["findings"]["high"] == count
+
+    no_inputs = _make_origin(tmp_path, "docs", {"README.md": "docs"})
+    result = cli.invoke(
+        app, ["fleet", str(no_inputs), "--only", "dependency_audit", "--format", "json"]
+    )
+    summary = json.loads(result.stdout)["summary"]
+    assert result.exit_code == 0
+    assert summary["not_applicable"] == 1
+    assert summary["clean"] == 0
+
+    osv = tools / "osv-scanner"
+    osv.write_text(
+        '#!/bin/sh\ncase " $* " in *" --offline "*) ;; *) exit 8 ;; esac\necho \'{"results":[]}\'\n'
+    )
+    osv.chmod(0o755)
+    npm.write_text("#!/bin/sh\nexit 9\n")
+    result = cli.invoke(
+        app, ["fleet", str(origin), "--only", "dependency_audit", "--format", "json"]
+    )
+    assert result.exit_code == 0, result.output
+
+
 def test_dependency_threshold_uses_advisories_and_unknown_coverage(tmp_path, monkeypatch):
     repo = _make_origin(tmp_path, "example", {"README.md": "fixture\n"})
     ref = fl.parse_target(str(repo))
@@ -537,10 +590,10 @@ def test_dependency_threshold_uses_advisories_and_unknown_coverage(tmp_path, mon
     advisory = {"id": "TEST-1", "severity": "high", "package": "fixture", "title": "upgrade"}
     row = {"repo_path": ".", "status": "complete", "vulns": [advisory]}
     report = {"dependency_audit": {"repos": [row], "errors": []}}
-    monkeypatch.setattr(fl, "run_sweeps", lambda *_: (2, report, ""))
+    monkeypatch.setattr(fl, "run_sweeps", lambda *_, **kw: (2, report, ""))
     result = fl.scan_fleet([ref], sweeps=sweeps)
     assert result[0].status == "scanned"
-    assert result[0].findings[0]["check"] == "TEST-1"
+    assert [f["check"] for f in result[0].findings] == ["TEST-1"]
     assert fl.fleet_exit_code(result, "high") == 2
     assert fl.fleet_exit_code(result, "critical") == 0
     # A new advisory rating must take effect at the same repository revision.

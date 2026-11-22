@@ -42,18 +42,28 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
-      - name: Prepare the locked Python dependency audit
+      - name: Install OSV-Scanner
+        env:
+          OSV_VERSION: v2.7.1
+          OSV_SHA256: fb7dab19a8bd9bbe5c3189f09d4b7ee1820c9553a23bac202648a56efd2f6ee8
         run: |
-          uv tool install pip-audit==2.10.1
-          uv export --locked --all-extras --all-groups --no-emit-workspace --no-hashes \
-            --no-annotate --no-header --output-file requirements.txt > /dev/null
+          cd "$RUNNER_TEMP"
+          curl --fail --silent --show-error --location \
+            "https://github.com/google/osv-scanner/releases/download/$OSV_VERSION/osv-scanner_linux_amd64" -o osv-scanner
+          echo "$OSV_SHA256  osv-scanner" | sha256sum --check
+          chmod +x osv-scanner
+          mkdir -p devguard-bin
+          mv osv-scanner devguard-bin/
+          echo "$RUNNER_TEMP/devguard-bin" >> "$GITHUB_PATH"
       - name: Run devguard sweep
         run: |
           status=0
-          uv run devguard sweep --repo . --only local_dev,gitignore_audit,dependency_audit,ai_editor_config_audit,repo_hygiene --format sarif > devguard-results.sarif || status=$?
-          # Findings go to code scanning. A scanner failure must fail this job.
+          uv run --locked devguard sweep --repo . --only local_dev,gitignore_audit,dependency_audit,ai_editor_config_audit,publish_workflow_audit,repo_hygiene --format sarif > devguard-results.sarif || status=$?
+          # Findings are uploaded to code scanning. An incomplete scan must fail CI.
           case "$status" in 0|2) ;; *) exit "$status" ;; esac
           jq -e '.runs | type == "array" and length > 0' devguard-results.sarif > /dev/null
+      - name: Check for high-severity workflow findings
+        run: uv run --locked devguard fleet . --only publish_workflow_audit --no-cache --fail-on high
       - name: Upload SARIF
         if: always()
         uses: github/codeql-action/upload-sarif@02c5e83432fe5497fd85b873b6c9f16a8578e1d9 # v3.37.0

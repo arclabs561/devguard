@@ -1,0 +1,23 @@
+[extend]
+useDefault = true
+
+[[rules]]
+id = "redis-connection-password"
+description = "Password embedded in a Redis connection URI"
+regex = '''(?i)\brediss?://[^\s/@:'"`]*:([^\s/@?#'"`<>${}]{16,})@'''
+secretGroup = 1
+
+[[rules]]
+id = "deployment-or-kv-token"
+description = "Literal deployment or storage token"
+regex = '''(?i)\b(?:vercel_token|kv_rest_api_token|kv_rest_api_read_only_token)['"]?\s*[:=]\s*['"]?([a-z0-9_-]{20,})\b'''
+secretGroup = 1
+[[rules.allowlists]]
+regexTarget = "secret"
+regexes = ['''(?i)^(?:your[_-]|example|placeholder|redacted)''']
+
+[[rules]]
+id = "hex-client-secret"
+description = "Hexadecimal credential assigned to a secret field"
+regex = '''(?im)^[\t ]*['"]?(?:client[_-]secret|secret)['"]?[\t ]*[:=][\t ]*['"]?([a-f0-9]{32,64})(?:['"\s,#}]|$)'''
+secretGroup = 1

@@ -30,6 +30,22 @@ console = Console()
 _MAX_TABLE_ROWS = 15
 
 
+@app.command("audit-crate")
+def audit_crate(name: str, version: str) -> None:
+    """Audit a published crates.io lockfile by exact name and version (JSON)."""
+    from devguard.crate_release import audit_crate_release
+
+    try:
+        report = audit_crate_release(name, version)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from None
+    typer.echo(json.dumps(report, indent=2))
+    if report["status"] != "complete":
+        raise typer.Exit(3)
+    if report["audit"]["vulns"]:
+        raise typer.Exit(2)
+
+
 def _sev_style(severity: str) -> str:
     """Return a Rich style string for the given severity level."""
     s = severity.lower()
@@ -1161,6 +1177,11 @@ def sweep(
         "--package-root",
         help="Audit this relative package directory only (repeatable; local --repo and --only dependency_audit required).",
     ),
+    offline_dependencies: bool = typer.Option(
+        False,
+        "--offline-dependencies",
+        help="Compare dependency locks with local OSV databases only.",
+    ),
     only: list[str] = typer.Option(
         None,
         "--only",
@@ -1227,6 +1248,7 @@ def sweep(
             machine_output,
             sweep_reports,
             package_root,
+            offline_dependencies,
         )
     finally:
         if _cleanup_dir:
@@ -1242,6 +1264,7 @@ def _sweep_body(
     machine_output: bool,
     sweep_reports: list[tuple[str, dict]],
     package_roots: list[str] | None = None,
+    offline_dependencies: bool = False,
 ) -> None:
     """Inner body of sweep(), extracted to allow try/finally cleanup in caller."""
     import sys
@@ -1665,7 +1688,8 @@ def _sweep_body(
             engines=depaudit.engines,
             max_concurrency=depaudit.max_concurrency,
             timeout_s=depaudit.timeout_s,
-            **({"package_roots": package_roots} if package_roots else {}),
+            package_roots=package_roots,
+            offline=offline_dependencies,
         )
         out_path = Path(depaudit.output).expanduser()
         write_depaudit(out_path, report)
@@ -2079,6 +2103,8 @@ def _sweep_body(
             _print_repo_hygiene_table(report, "publish_workflow_audit findings")
         if report["summary"]["total_errors"] > 0:
             exit_code = max(exit_code, 2)
+        if errors:
+            exit_code = max(exit_code, 3)
 
     any_enabled = (
         local.enabled

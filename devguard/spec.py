@@ -362,8 +362,8 @@ class DependencyAuditSweepSpec(BaseModel):
     max_concurrency: int = Field(4, description="Maximum concurrent repo scans.")
     timeout_s: int = Field(120, description="Per-repo timeout upper bound in seconds.")
     engines: list[str] = Field(
-        default_factory=lambda: ["cargo-audit", "npm-audit", "pip-audit"],
-        description="Audit engines to run. Supported: cargo-audit, npm-audit, pip-audit.",
+        default_factory=lambda: ["cargo-audit", "npm-audit", "pip-audit", "osv-scanner"],
+        description="Audit engines to run. Supported: cargo-audit, npm-audit, pip-audit, osv-scanner.",
     )
     output: str = Field(
         ".state/devguard/dependency-audit.json",

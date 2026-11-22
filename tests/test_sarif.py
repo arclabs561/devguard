@@ -52,3 +52,25 @@ def test_mcp_security_audit_findings_reach_sarif(tmp_path: Path) -> None:
 
     assert {r["ruleId"] for r in results} == expected
     assert len(results) == len(report["findings"])
+
+
+def test_workflow_finding_points_to_workflow_in_checkout():
+    path = ".github/workflows/release.yml"
+    report = {
+        "repos": [
+            {
+                "repo_path": "/some/runner/checkout",
+                "findings": [
+                    {
+                        "check": "event_selected_checkout",
+                        "severity": "error",
+                        "file": path,
+                        "message": "checkout",
+                    }
+                ],
+            }
+        ]
+    }
+    [result] = _results("publish_workflow_audit", report)
+    assert result["ruleId"] == "event_selected_checkout"
+    assert result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] == path

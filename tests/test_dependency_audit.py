@@ -218,13 +218,13 @@ class TestDetectEngines:
         (tmp_path / "yarn.lock").touch()
         engines = detect_engines(tmp_path)
         assert len(engines) == 1
-        assert engines[0].engine == "npm-audit"
+        assert engines[0].engine == "osv-scanner"
 
     def test_python_repo_uv(self, tmp_path: Path):
         (tmp_path / "uv.lock").touch()
         engines = detect_engines(tmp_path)
         assert len(engines) == 1
-        assert engines[0].engine == "pip-audit"
+        assert engines[0].engine == "osv-scanner"
 
     def test_python_repo_requirements(self, tmp_path: Path):
         (tmp_path / "requirements.txt").touch()
@@ -245,13 +245,10 @@ class TestDetectEngines:
         engines = detect_engines(tmp_path)
         assert engines == []
 
-    def test_deduplicates_engines(self, tmp_path: Path):
-        """Multiple JS lockfiles should produce only one npm-audit entry."""
+    def test_independent_js_lockfiles_use_their_own_tools(self, tmp_path: Path):
         (tmp_path / "package-lock.json").touch()
         (tmp_path / "yarn.lock").touch()
-        engines = detect_engines(tmp_path)
-        assert len(engines) == 1
-        assert engines[0].engine == "npm-audit"
+        assert {e.engine for e in detect_engines(tmp_path)} == {"npm-audit", "osv-scanner"}
 
 
 class TestRepoDiscovery:
@@ -295,7 +292,7 @@ class TestGracefulSkip:
             )
 
         assert report["summary"]["total_vulns"] == 0
-        assert len(errors) == 0
+        assert errors
         # The repo should appear with a skipped engine
         repo_entries = [r for r in report["repos"] if "myrepo" in r["repo_path"]]
         assert len(repo_entries) == 1
@@ -435,17 +432,60 @@ def test_real_audit_result_boundary(tmp_path, engine, manifest, clean, finding, 
 
 
 @pytest.mark.parametrize("manifest", ["uv.lock", "poetry.lock"])
-def test_python_lock_only_is_unsupported_not_host_audit(tmp_path, manifest):
+def test_osv_uses_exact_nested_lockfile(tmp_path, manifest):
     (tmp_path / ".git").mkdir()
-    (tmp_path / manifest).touch()
+    nested = tmp_path / "service"
+    nested.mkdir()
+    (nested / manifest).touch()
+    payload = {
+        "results": [
+            {
+                "packages": [
+                    {
+                        "package": {"name": "demo"},
+                        "vulnerabilities": [
+                            {
+                                "id": "TEST-1",
+                                "summary": "test",
+                                "database_specific": {"severity": "HIGH"},
+                            }
+                        ],
+                    }
+                ]
+            }
+        ]
+    }
     with (
-        patch("devguard.sweeps.dependency_audit.shutil.which", return_value="pip-audit"),
-        patch("devguard.sweeps.dependency_audit.subprocess.run") as run,
+        patch("devguard.sweeps.dependency_audit.shutil.which", return_value="osv-scanner"),
+        patch(
+            "devguard.sweeps.dependency_audit.subprocess.run",
+            return_value=subprocess.CompletedProcess([], 1, json.dumps(payload), ""),
+        ) as run,
     ):
         report, errors = audit_dependencies(dev_root=tmp_path)
-    run.assert_not_called()
-    assert "unsupported input" in errors[0]
-    assert report["repos"][0]["engines_run"] == []
+    assert not errors
+    assert run.call_args.args[0][-2:] == ["--lockfile", manifest]
+    assert run.call_args.kwargs["cwd"] == str(nested)
+    assert report["repos"][0]["vulns"][0]["severity"] == "high"
+
+
+def test_manifest_only_is_incomplete(tmp_path):
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "Cargo.toml").touch()
+    report, errors = audit_dependencies(dev_root=tmp_path)
+    assert errors and report["repos"][0]["status"] == "unknown"
+    assert not report["repos"][0]["engines_run"]
+
+
+def test_cvss_vector_takes_precedence_over_category():
+    advisory = {
+        "id": "TEST",
+        "title": "test",
+        "categories": ["denial-of-service"],
+        "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+    }
+    payload = {"vulnerabilities": {"list": [{"advisory": advisory, "package": {"name": "demo"}}]}}
+    assert parse_cargo_audit_json(json.dumps(payload))[0].severity == "high"
 
 
 @pytest.mark.parametrize(
@@ -536,3 +576,60 @@ def test_explicit_package_rejects_invalid_scope_before_any_audit(tmp_path, selec
         with pytest.raises(ValueError):
             audit_dependencies(dev_root=root, package_roots=[selection])
     audit.assert_not_called()
+
+
+def test_published_crate_uses_index_checksum_and_exact_lock(tmp_path, monkeypatch):
+    import hashlib
+    import io
+    import tarfile
+
+    from devguard import crate_release
+
+    buf = io.BytesIO()
+    lock = b"version = 4\n"
+    with tarfile.open(fileobj=buf, mode="w:gz") as archive:
+        member = tarfile.TarInfo("demo-0.1.0/Cargo.lock")
+        member.size = len(lock)
+        archive.addfile(member, io.BytesIO(lock))
+    data = buf.getvalue()
+    checksum = hashlib.sha256(data).hexdigest()
+
+    def registry(url, _limit):
+        if url.endswith("/de/mo/demo"):
+            return json.dumps({"name": "demo", "vers": "0.1.0", "cksum": checksum}).encode()
+        assert url.endswith("/demo/demo-0.1.0.crate")
+        return data
+
+    monkeypatch.setattr(crate_release, "_read_url", registry)
+    with (
+        patch("devguard.sweeps.dependency_audit.shutil.which", return_value="osv-scanner"),
+        patch(
+            "devguard.sweeps.dependency_audit.subprocess.run",
+            return_value=subprocess.CompletedProcess([], 0, '{"results":[]}', ""),
+        ) as run,
+    ):
+        result = crate_release.audit_crate_release("demo", "0.1.0")
+        assert result["status"] == "complete"
+        assert run.call_args.args[0][-2:] == ["--lockfile", "Cargo.lock"]
+        assert result["source"]["lock_sha256"] == hashlib.sha256(lock).hexdigest()
+        checksum = "0" * 64
+        assert crate_release.audit_crate_release("demo", "0.1.0")["status"] == "incomplete"
+        assert run.call_count == 1
+
+
+def test_rust_workspace_lock_covers_declared_members_only(tmp_path):
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "Cargo.toml").write_text(
+        '[workspace]\nmembers=["crates/*"]\nexclude=["crates/other"]'
+    )
+    (tmp_path / "Cargo.lock").write_text('[[package]]\nname="one"\nversion="1.0.0"')
+    for name in ["one", "other"]:
+        member = tmp_path / "crates" / name
+        member.mkdir(parents=True)
+        (member / "Cargo.toml").write_text(f'[package]\nname="{name}"')
+    with patch("devguard.sweeps.dependency_audit.shutil.which", return_value=None):
+        report, _ = audit_dependencies(dev_root=tmp_path)
+    assert {r["repo_path"] for r in report["repos"]} == {
+        str(tmp_path),
+        str(tmp_path / "crates/other"),
+    }
