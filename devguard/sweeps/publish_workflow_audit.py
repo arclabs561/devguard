@@ -336,6 +336,7 @@ def _workflow_trust(name: str, doc: Any) -> list[dict[str, Any]]:
                     f"job '{job_id}' inherits the repository's default GITHUB_TOKEN permissions "
                     "on pull requests. Declare the permissions required by this job or workflow.",
                 )
+                | {"job": job_id}
             )
         if runs_on_pr and oidc_write:
             findings.append(

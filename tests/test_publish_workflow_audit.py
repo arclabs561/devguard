@@ -460,13 +460,14 @@ def test_pull_request_jobs_report_implicit_token_scope(tmp_path):
 
     def implicit_jobs():
         return [
-            f["message"]
+            f
             for f in audit_workflows(tmp_path)
             if f["check"] == "implicit_pr_token_permissions"
         ]
 
-    messages = implicit_jobs()
-    assert len(messages) == 1 and "'test'" in messages[0]
+    [finding] = implicit_jobs()
+    assert finding["job"] == "test"
+    assert "'test'" in finding["message"]
     workflow["permissions"] = {"contents": "read"}
     path.write_text(yaml.safe_dump(workflow))
     assert implicit_jobs() == []
