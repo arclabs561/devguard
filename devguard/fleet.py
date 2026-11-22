@@ -71,7 +71,8 @@ _RESULT_AFFECTING_TOOLS = (
     "readcost",
 )
 
-SEVERITIES = ("critical", "high", "medium", "low", "info")
+THRESHOLDS = ("critical", "high", "medium", "low", "info")
+SEVERITIES = (*THRESHOLDS, "unknown")
 _SEVERITY_ALIASES = {"error": "high", "warning": "medium", "warn": "medium", "note": "info"}
 _SEVERITY_RANK = {name: rank for rank, name in enumerate(SEVERITIES)}
 
@@ -127,7 +128,7 @@ def normalize_severity(value: Any) -> str:
 
 
 def severity_at_least(severity: str, threshold: str) -> bool:
-    return _SEVERITY_RANK[severity] <= _SEVERITY_RANK[threshold]
+    return threshold == "info" or _SEVERITY_RANK[severity] <= _SEVERITY_RANK[threshold]
 
 
 # ---------------------------------------------------------------------------
@@ -399,7 +400,7 @@ def result_key(
     if spec_path is not None and spec_path.is_file():
         spec_digest = hashlib.sha256(spec_path.read_bytes()).hexdigest()
     material = {
-        "cache_format": 2,  # Older entries could include ignored checkout contents.
+        "cache_format": 3,  # Older entries may have omitted a requested sweep.
         "devguard": __version__,
         "repo": name,
         "head": head,
@@ -482,6 +483,18 @@ def extract_findings(reports: dict[str, Any]) -> list[dict[str, Any]]:
             items = repo.get("findings")
             if isinstance(items, list):
                 found.extend(_one_finding(sweep, item) for item in items)
+            if sweep == "dependency_audit":
+                for vuln in repo.get("vulns", []):
+                    found.append(
+                        _one_finding(
+                            sweep,
+                            {
+                                "check": vuln["id"],
+                                "severity": vuln["severity"],
+                                "message": f"{vuln['package']}: {vuln['title']}",
+                            },
+                        )
+                    )
             for pattern in repo.get("missing_patterns") or []:
                 found.append(
                     {
@@ -496,12 +509,20 @@ def extract_findings(reports: dict[str, Any]) -> list[dict[str, Any]]:
     return found
 
 
-def _report_errors(reports: dict[str, Any]) -> list[str]:
+def _report_errors(reports: dict[str, Any], sweeps: list[str]) -> list[str]:
     errors: list[str] = []
+    for name in sweeps:
+        if not isinstance(reports.get(name), dict) or not reports[name]:
+            errors.append(f"{name}: requested sweep returned no report")
     for sweep, report in reports.items():
-        if isinstance(report, dict):
-            for err in report.get("errors") or []:
-                errors.append(f"{sweep}: {err}")
+        if not isinstance(report, dict):
+            continue
+        for err in report.get("errors") or []:
+            errors.append(f"{sweep}: {err}")
+        if sweep == "dependency_audit":
+            from devguard.sweeps.dependency_audit import coverage_gaps
+
+            errors.extend(f"{sweep}: {gap}" for gap in coverage_gaps(report))
     return errors
 
 
@@ -567,32 +588,45 @@ def scan_one(
         return result("error", 3, None, errors=[str(exc)])
 
     # A local checkout with uncommitted changes has no stable identity to cache under.
-    cacheable = use_cache and not (ref.path is not None and _worktree_dirty(path))
+    # Advisory databases can change independently of the repository and spec.
+    cacheable = (
+        use_cache
+        and "dependency_audit" not in sweeps
+        and not (ref.path is not None and _worktree_dirty(path))
+    )
     key = result_key(
         head=head, sweeps=sweeps, spec_path=spec_path, full_history=full_history, name=ref.identity
     )
-    if cacheable and (hit := _read_cached_result(root, key)):
+    if (
+        cacheable
+        and (hit := _read_cached_result(root, key))
+        and not _report_errors(hit["reports"], sweeps)
+    ):
         reports = hit["reports"]
         return result(
             "cached",
             int(hit.get("exit_code", 0)),
             head,
             findings=extract_findings(reports),
-            errors=_report_errors(reports),
+            errors=[],
             reports=reports,
         )
 
     code, reports, error = run_sweeps(path, sweeps, spec_path, timeout)
     if error:
         return result("error", 3, head, errors=[error])
+    errors = _report_errors(reports, sweeps)
+    if errors:
+        code = 3
+    findings = extract_findings(reports)
     if cacheable and code in (0, 2):
         _write_cached_result(root, key, {"exit_code": code, "reports": reports})
     return result(
         "scanned",
         code,
         head,
-        findings=extract_findings(reports),
-        errors=_report_errors(reports),
+        findings=findings,
+        errors=errors,
         reports=reports,
     )
 
@@ -658,10 +692,12 @@ def fleet_exit_code(results: list[RepoResult], fail_on: str) -> int:
     """3 when any repository was not fully scanned, else 2 on findings at *fail_on* or worse."""
     if any(r.status == "error" or r.exit_code == 3 for r in results):
         return 3
-    if fail_on != "never" and any(
-        severity_at_least(f["severity"], fail_on) for r in results for f in r.findings
-    ):
-        return 2
+    if fail_on != "never":
+        severities = {f["severity"] for r in results for f in r.findings}
+        if any(severity_at_least(severity, fail_on) for severity in severities):
+            return 2
+        if "unknown" in severities:
+            return 3
     return 0
 
 

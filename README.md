@@ -182,8 +182,11 @@ dependencies in the export if you need them covered). Repositories with only
 contact their advisory services; this mode never installs or fixes packages.
 The JSON report records the resolved scope, engine coverage, and SHA-256 input
 hashes before and after the audit; changed inputs or incomplete engine coverage
-produce an unknown result. Tool failures and invalid output exit 2; missing
-tools are reported as skipped.
+produce an unknown result. A complete dependency audit exits 0 when clean or 2
+with findings. An invalid sweep spec, incomplete dependency audit, or truncated
+dependency report exits 3. Fleet reruns dependency audits even at the same
+commit because the advisory database can change. With a severity threshold,
+fleet exits 3 if an unrated finding leaves the verdict undecided.
 
 ## Configuration
 

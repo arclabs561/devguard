@@ -438,6 +438,19 @@ def _audit_repo(
 # ---------------------------------------------------------------------------
 
 
+def coverage_gaps(report: dict[str, Any]) -> list[str]:
+    """Explain why the published rows cannot support a complete fleet verdict."""
+    gaps = []
+    for repo in report.get("repos", []):
+        if repo.get("status") == "unknown":
+            gaps.append(f"incomplete coverage for {repo.get('repo_path', 'repository')}")
+        if repo.get("vulns_omitted"):
+            gaps.append("vulnerability list was truncated")
+    if report.get("truncation", {}).get("repos_omitted"):
+        gaps.append("repository list was truncated")
+    return gaps
+
+
 def audit_dependencies(
     *,
     dev_root: Path | None = None,

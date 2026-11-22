@@ -528,3 +528,61 @@ def test_result_key_changes_when_a_docs_tool_is_installed(
         installed.add(tool)
         assert fl.result_key(**base) != without, tool
         installed.discard(tool)
+
+
+def test_dependency_threshold_uses_advisories_and_unknown_coverage(tmp_path, monkeypatch):
+    repo = _make_origin(tmp_path, "example", {"README.md": "fixture\n"})
+    ref = fl.parse_target(str(repo))
+    sweeps = ["dependency_audit"]
+    advisory = {"id": "TEST-1", "severity": "high", "package": "fixture", "title": "upgrade"}
+    row = {"repo_path": ".", "status": "complete", "vulns": [advisory]}
+    report = {"dependency_audit": {"repos": [row], "errors": []}}
+    monkeypatch.setattr(fl, "run_sweeps", lambda *_: (2, report, ""))
+    result = fl.scan_fleet([ref], sweeps=sweeps)
+    assert result[0].status == "scanned"
+    assert result[0].findings[0]["check"] == "TEST-1"
+    assert fl.fleet_exit_code(result, "high") == 2
+    assert fl.fleet_exit_code(result, "critical") == 0
+    # A new advisory rating must take effect at the same repository revision.
+    advisory["severity"] = "unknown"
+    unrated = fl.scan_fleet([ref], sweeps=sweeps)
+    assert unrated[0].counts["unknown"] == 1
+    assert fl.fleet_exit_code(unrated, "high") == 3
+    assert fl.fleet_exit_code(unrated, "info") == 2
+    assert fl.fleet_exit_code(unrated, "never") == 0
+    row["status"] = "unknown"
+    partial = fl.scan_fleet([ref], sweeps=sweeps, use_cache=False)
+    assert partial[0].findings
+    assert fl.fleet_exit_code(partial, "never") == 3
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"repo_hygiene": {"findings": []}},
+        {"repo_hygiene": {"findings": []}, "pre_commit_audit": None},
+        {"repo_hygiene": {"errors": ["interrupted"]}, "pre_commit_audit": {"repos": []}},
+    ],
+)
+def test_missing_sweep_or_embedded_error_retries_after_cache_and_live_scan(
+    tmp_path, monkeypatch, bad
+):
+    repo = _make_origin(tmp_path, "example", {"README.md": "fixture\n"})
+    ref = fl.parse_target(str(repo))
+    sweeps = ["repo_hygiene", "pre_commit_audit"]
+    key = fl.result_key(
+        head=_git(repo, "rev-parse", "HEAD"),
+        sweeps=sweeps,
+        spec_path=None,
+        full_history=False,
+        name=ref.identity,
+    )
+    fl._write_cached_result(fl.cache_root(), key, {"exit_code": 0, "reports": bad})
+    good = {name: {"repos": []} for name in sweeps}
+    runs = iter([(0, bad, ""), (0, good, "")])
+    monkeypatch.setattr(fl, "run_sweeps", lambda *_: next(runs))
+    partial = fl.scan_fleet([ref], sweeps=sweeps)
+    assert fl.fleet_exit_code(partial, "never") == 3
+    assert partial[0].errors
+    assert fl.scan_fleet([ref], sweeps=sweeps)[0].status == "scanned"
+    assert fl.scan_fleet([ref], sweeps=sweeps)[0].status == "cached"

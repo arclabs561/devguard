@@ -272,10 +272,10 @@ class TestCloneRepo:
             1,
             2,
         ),
-        ("private-output-must-not-escape", 0, 2),
-        ('{"error":"private-output-must-not-escape"}', 1, 2),
-        ('{"dependencies": [], "fixes": []}', 8, 2),
-        ("timeout", 0, 2),
+        ("private-output-must-not-escape", 0, 3),
+        ('{"error":"private-output-must-not-escape"}', 1, 3),
+        ('{"dependencies": [], "fixes": []}', 8, 3),
+        ("timeout", 0, 3),
     ],
 )
 def test_dependency_audit_cli_real_report_errors(runner, tmp_path, raw, tool_exit, expected_exit):
@@ -311,7 +311,7 @@ def test_dependency_audit_cli_real_report_errors(runner, tmp_path, raw, tool_exi
     assert result.exit_code == expected_exit, result.output
     report = json.loads(output.read_text())
     assert "private-output-must-not-escape" not in result.output + json.dumps(report)
-    if expected_exit == 2 and report["summary"]["total_vulns"] == 0:
+    if expected_exit == 3:
         assert report["errors"]
 
 
@@ -394,7 +394,7 @@ def test_invalid_sweep_spec_is_redacted_before_scanning(
         result = runner.invoke(
             app, ["sweep", "--spec", str(spec), "--only", "dependency_audit", "--format", format]
         )
-    assert result.exit_code == 2
+    assert result.exit_code == 3
     assert category in result.stderr
     assert "DUMMY_SECRET_MUST_NOT_LEAK" not in result.output + result.stderr
     assert "Traceback" not in result.output + result.stderr
