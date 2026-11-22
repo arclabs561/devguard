@@ -409,6 +409,7 @@ def result_key(
         "repo": name,
         "head": head,
         "sweeps": sorted(sweeps),
+        **({"pr_token_permissions": 1} if "publish_workflow_audit" in sweeps else {}),
         "spec": spec_digest,
         "full_history": full_history,
         "tools": [t for t in _RESULT_AFFECTING_TOOLS if shutil.which(t)],
