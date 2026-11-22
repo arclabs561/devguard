@@ -1527,9 +1527,10 @@ def _check_test_target_missing_gate(repo: Path, tracked: list[str]) -> HygieneFi
                 stripped = line.lstrip()
                 if not stripped or stripped.startswith("//"):
                     continue
-                if any(start <= lineno <= end for start, end in gated_ranges):
+                modules = crate_re.findall(line)
+                if not modules or any(start <= lineno <= end for start, end in gated_ranges):
                     continue
-                for module in crate_re.findall(line):
+                for module in modules:
                     feature = gated.get(module)
                     if feature is not None and feature not in required:
                         graders.append(f"{rel}: {crate_name}::{module} needs feature {feature!r}")
