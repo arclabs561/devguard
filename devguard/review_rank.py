@@ -86,6 +86,8 @@ def rank_findings(root: Path, findings: list[dict[str, Any]], timeout: int) -> d
                 if (
                     not isinstance(row, dict)
                     or not isinstance(row.get("file"), str)
+                    or Path(row["file"]).is_absolute()
+                    or ".." in Path(row["file"]).parts
                     or not isinstance(row.get("role"), str)
                 ):
                     raise ValueError("invalid pkgrank file row")
@@ -97,6 +99,15 @@ def rank_findings(root: Path, findings: list[dict[str, Any]], timeout: int) -> d
                     raise ValueError("invalid pkgrank dependent count or duplicate file")
                 index[row["file"]] = row
 
+            # Git can list tracked files already removed from a dirty checkout.
+            # Their old nodes can also affect the reach reported for surviving files.
+            missing = sorted(file for file in index if not (root / file).is_file())
+            if missing:
+                return {
+                    "status": "unavailable",
+                    "reason": "pkgrank listed files missing from the checkout",
+                    "missing_files": missing,
+                }
             nested = graph.get("unscanned_projects", [])
             if not isinstance(nested, list) or any(
                 not isinstance(project, dict)
@@ -170,9 +181,13 @@ def rank_findings(root: Path, findings: list[dict[str, Any]], timeout: int) -> d
                     or impact.get("changed") != sorted(seeds)
                 ):
                     raise ValueError("invalid pkgrank affected-file report")
-                context["candidate_tests"] = sorted(
-                    f for f in seeds.union(affected) if index[f]["role"] == "test"
-                )
+                selected = sorted(f for f in seeds.union(affected) if index[f]["role"] == "test")
+                missing = [f for f in selected if not (root / f).is_file()]
+                if missing:
+                    context["tests_unavailable"] = "test files disappeared during selection"
+                    context["missing_files"] = missing
+                else:
+                    context["candidate_tests"] = selected
             except (ValueError, KeyError, OSError, subprocess.TimeoutExpired):
                 context["tests_unavailable"] = "pkgrank could not resolve affected test files"
             return context

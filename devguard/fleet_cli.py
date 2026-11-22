@@ -216,6 +216,9 @@ def _print_text(
             info = res.pkgrank or {}
             if info.get("status") == "unavailable":
                 console.print(f"{res.name}: {info['reason']}", markup=False)
+            if info.get("missing_files"):
+                missing = ", ".join(info["missing_files"][:top])
+                console.print(f"{res.name}: missing file paths: {missing}", markup=False)
             if info.get("unscanned_projects"):
                 manifests = ", ".join(p["manifest"] for p in info["unscanned_projects"])
                 console.print(f"{res.name}: omitted nested projects: {manifests}", markup=False)

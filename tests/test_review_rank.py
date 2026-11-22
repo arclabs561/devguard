@@ -11,6 +11,13 @@ def row(path, reach, role="source"):
     return {"file": path, "dependents": reach, "role": role}
 
 
+def write_rows(root, rows):
+    for r in rows:
+        path = root / r["file"]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+
+
 def files(rows):
     return {
         "schema_version": 1,
@@ -24,6 +31,7 @@ def files(rows):
 @pytest.mark.parametrize("legacy", [False, True])
 def test_exact_matches_and_affected_tests(monkeypatch, tmp_path, legacy):
     rows = [row("pkg/shared.py", 3), row("pkg/leaf.py", 0), row("tests/test_api.py", 0, "test")]
+    write_rows(tmp_path, rows)
     impact = {
         "changed": ["pkg/leaf.py", "pkg/shared.py"],
         "affected": ["tests/test_api.py"],
@@ -81,6 +89,8 @@ def test_missing_and_partial_graph(monkeypatch, tmp_path):
 
 
 def test_leaf_tests_are_their_own_candidates(monkeypatch, tmp_path):
+    write_rows(tmp_path, [row("tests/test_leaf.py", 0), row("leaf.py", 0)])
+
     def reports(_exe, _root, _cwd, args, _deadline):
         assert "--affected" not in args
         return [files([row("tests/test_leaf.py", 0, "test"), row("leaf.py", 0)])]
@@ -94,6 +104,8 @@ def test_leaf_tests_are_their_own_candidates(monkeypatch, tmp_path):
 
 
 def test_failed_test_selection_preserves_file_evidence(monkeypatch, tmp_path):
+    write_rows(tmp_path, [row("hot.py", 3)])
+
     def reports(_exe, _root, _cwd, args, _deadline):
         if "--affected" in args:
             raise TimeoutExpired("pkgrank", 1)
@@ -125,6 +137,7 @@ def test_review_order_keeps_severity_and_unknowns():
 @pytest.mark.parametrize("rows,status", [([], "empty"), ([row("main.py", 0)], "partial")])
 def test_uncovered_nested_finding_has_no_test_selection(monkeypatch, tmp_path, rows, status):
     nested = [{"ecosystem": "js", "manifest": "ui/package.json"}]
+    write_rows(tmp_path, rows)
     graph = files(rows) | {"unscanned_projects": nested}
     monkeypatch.setattr(review_rank.shutil, "which", lambda _: "/bin/pkgrank")
     monkeypatch.setattr(review_rank, "_reports", lambda *args: [graph])
@@ -140,6 +153,7 @@ def test_uncovered_nested_finding_has_no_test_selection(monkeypatch, tmp_path, r
 
 def test_partial_graph_preserves_verified_test_candidates(monkeypatch, tmp_path):
     nested = [{"ecosystem": "js", "manifest": "web/package.json"}]
+    write_rows(tmp_path, [row("tests/test_api.py", 0)])
     graph = files([row("tests/test_api.py", 0, "test")]) | {"unscanned_projects": nested}
     monkeypatch.setattr(review_rank.shutil, "which", lambda _: "/bin/pkgrank")
     monkeypatch.setattr(review_rank, "_reports", lambda *args: [graph])
@@ -147,3 +161,34 @@ def test_partial_graph_preserves_verified_test_candidates(monkeypatch, tmp_path)
     assert result["candidate_tests"] == ["tests/test_api.py"]
     assert result["unmatched_files"] == ["web/ui.js"]
     assert result["status"] == "partial"
+
+
+def test_deleted_tracked_finding_does_not_suggest_a_nonexistent_test(monkeypatch, tmp_path):
+    graph = files([row("tests/test_deleted.py", 0, "test")])
+    monkeypatch.setattr(review_rank.shutil, "which", lambda _: "/bin/pkgrank")
+    monkeypatch.setattr(review_rank, "_reports", lambda *args: [graph])
+    findings = [{"file": "tests/test_deleted.py"}]
+    result = review_rank.rank_findings(tmp_path, findings, 5)
+    assert result["status"] == "unavailable"
+    assert result["missing_files"] == ["tests/test_deleted.py"]
+    assert "candidate_tests" not in result and "pkgrank" not in findings[0]
+
+
+def test_test_disappearing_during_affected_query_is_unavailable(monkeypatch, tmp_path):
+    rows = [row("module.py", 1), row("test_module.py", 0, "test")]
+    write_rows(tmp_path, rows)
+
+    def reports(_exe, _root, _cwd, args, _deadline):
+        if "--affected" in args:
+            (tmp_path / "test_module.py").unlink()
+            return [
+                files([])
+                | {"affected": ["test_module.py"], "affected_count": 1, "changed": ["module.py"]}
+            ]
+        return [files(rows)]
+
+    monkeypatch.setattr(review_rank.shutil, "which", lambda _: "/bin/pkgrank")
+    monkeypatch.setattr(review_rank, "_reports", reports)
+    result = review_rank.rank_findings(tmp_path, [{"file": "module.py"}], 5)
+    assert result["missing_files"] == ["test_module.py"]
+    assert "tests_unavailable" in result and "candidate_tests" not in result
